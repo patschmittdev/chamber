@@ -20,6 +20,7 @@ import {
   GenesisMindTemplateInstaller,
   GenesisMindTemplateMarketplaceCatalog,
   GitHubRegistryClient,
+  GitHubReleaseAssetClient,
   CronService,
   IdentityLoader,
   MarketplaceToolCatalog,
@@ -28,11 +29,13 @@ import {
   MindManager,
   MindScaffold,
   TaskManager,
+  ChildProcessRunner,
   ToolInstaller,
   ToolsService,
   TurnQueue,
   ViewDiscovery,
   configureSdkRuntimeLayout,
+  getChamberToolsBinDir,
   type AppPaths,
   type CredentialStore,
   type GenesisMindTemplateMarketplaceSource,
@@ -118,7 +121,8 @@ const notifier: Notifier = {
   },
 };
 
-const clientFactory = new CopilotClientFactory();
+const chamberToolsBinDir = getChamberToolsBinDir();
+const clientFactory = new CopilotClientFactory({ toolsBinDir: chamberToolsBinDir });
 const configService = new ConfigService();
 const identityLoader = new IdentityLoader(() => configService.load().installedTools ?? []);
 const getGenesisMarketplaceSources = (): GenesisMindTemplateMarketplaceSource[] =>
@@ -140,7 +144,15 @@ const genesisTemplateCatalog = new GenesisMindTemplateMarketplaceCatalog(githubR
 const genesisTemplateInstaller = new GenesisMindTemplateInstaller(githubRegistryClient, clientFactory, getGenesisMarketplaceSources);
 const marketplaceRegistryService = new MarketplaceRegistryService(configService, githubRegistryClient);
 const marketplaceToolCatalog = new MarketplaceToolCatalog(githubRegistryClient, getGenesisMarketplaceSources);
-const toolsService = new ToolsService(marketplaceToolCatalog, new ToolInstaller(), configService);
+const toolsService = new ToolsService(
+  marketplaceToolCatalog,
+  new ToolInstaller(
+    new ChildProcessRunner(),
+    GitHubReleaseAssetClient.withCredentialStore(credentialStore),
+    chamberToolsBinDir,
+  ),
+  configService,
+);
 const viewDiscovery = new ViewDiscovery();
 
 // --- Services (business rules, all dependencies injected) ---
@@ -324,6 +336,19 @@ const showMarketplaceProtocolMessage = (type: 'info' | 'error', message: string,
   }
 };
 
+const reconcileMarketplaceTools = (): void => {
+  toolsService.reconcile()
+    .then((outcome) => {
+      if (outcome.installed.length > 0) {
+        log.info(`Installed ${outcome.installed.length} new marketplace tool(s):`, outcome.installed.map((tool) => tool.id));
+      }
+      if (outcome.errors.length > 0) {
+        log.warn(`Tool reconcile encountered ${outcome.errors.length} error(s):`, outcome.errors);
+      }
+    })
+    .catch((error: unknown) => log.warn('Tool reconciliation failed:', error));
+};
+
 const confirmMarketplaceProtocolEnrollment = async (registryUrl: string): Promise<boolean> => {
   const options: MessageBoxOptions = {
     type: 'question',
@@ -363,6 +388,7 @@ const handleProtocolUrl = (rawUrl: string): void => {
     })
     .then((added) => {
       if (added) {
+        reconcileMarketplaceTools();
         showMarketplaceProtocolMessage('info', 'Marketplace added to Chamber', installUrl.registryUrl);
       }
     })
@@ -480,7 +506,7 @@ app.on('ready', async () => {
     }},
     genesisTemplateInstaller,
   );
-  setupMarketplaceIPC(marketplaceRegistryService);
+  setupMarketplaceIPC(marketplaceRegistryService, { onRegistryToolsChanged: reconcileMarketplaceTools });
   setupToolsIPC(toolsService);
   setupAuthIPC(authService, mindManager);
   setupA2AIPC(a2aEventBus, agentCardRegistry, taskManager);
@@ -489,16 +515,7 @@ app.on('ready', async () => {
 
   // Fire-and-forget tool reconciliation: install any new marketplace tools.
   // Errors are logged in ToolsService and surface via tools:list later.
-  toolsService.reconcile()
-    .then((outcome) => {
-      if (outcome.installed.length > 0) {
-        log.info(`Installed ${outcome.installed.length} new marketplace tool(s):`, outcome.installed.map((tool) => tool.id));
-      }
-      if (outcome.errors.length > 0) {
-        log.warn(`Tool reconcile encountered ${outcome.errors.length} error(s):`, outcome.errors);
-      }
-    })
-    .catch((error: unknown) => log.warn('Tool reconciliation failed:', error));
+  reconcileMarketplaceTools();
 
   // Window controls
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
