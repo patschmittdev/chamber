@@ -43,10 +43,22 @@ function prepareSharpRuntime(platform: string, arch: string): void {
   }
 }
 
+function prepareMsalRuntime(): void {
+  const scriptPath = path.resolve(__dirname, 'scripts', 'prepare-msal-runtime.js');
+  const result = spawnSync(process.execPath, [scriptPath], {
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+
+  if (result.status !== 0) {
+    throw new Error('Failed to prepare packaged MSAL broker runtime.');
+  }
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: '**/node_modules/{sharp,@img}/**/*',
+      unpack: '**/node_modules/{sharp,@img,@azure/msal-node-runtime}/**/*',
     },
     executableName: 'chamber',
     icon: APP_ICON_PATH,
@@ -60,6 +72,7 @@ const config: ForgeConfig = {
       './resources/node',
       './resources/copilot-runtime',
       './resources/sharp-runtime',
+      './resources/msal-runtime',
       './apps/server/dist',
       './node_modules/keytar',
       './apps/desktop/src/main/assets/lens-skill',
@@ -83,6 +96,7 @@ const config: ForgeConfig = {
     prePackage: async (_forgeConfig, platform, arch) => {
       prepareCopilotRuntime(platform, arch);
       prepareSharpRuntime(platform, arch);
+      prepareMsalRuntime();
     },
   },
   makers: [
