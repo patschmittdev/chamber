@@ -4,6 +4,8 @@ import { RadioTower, ShieldCheck, Unplug, RefreshCw } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 
+type RelayAuthMode = 'static' | 'interactive';
+
 const disconnectedStatus: A2ARelayStatus = {
   state: 'disconnected',
   mode: 'local',
@@ -17,12 +19,15 @@ const disconnectedStatus: A2ARelayStatus = {
 
 export function A2ARelayView() {
   const [relayBaseUrl, setRelayBaseUrl] = useState('http://127.0.0.1:4317');
+  const [authMode, setAuthMode] = useState<RelayAuthMode>('static');
   const [relayToken, setRelayToken] = useState('');
   const [status, setStatus] = useState<A2ARelayStatus>(disconnectedStatus);
   const [error, setError] = useState<string | null>(null);
 
   const busy = status.state === 'connecting' || status.state === 'disconnecting';
   const connected = status.state === 'connected';
+  const canConnect = relayBaseUrl.trim().length > 0
+    && (authMode === 'static' ? relayToken.trim().length > 0 : true);
 
   useEffect(() => {
     let mounted = true;
@@ -49,10 +54,16 @@ export function A2ARelayView() {
   const connect = async () => {
     setError(null);
     try {
-      const nextStatus = await window.electronAPI.a2a.relayConnect({
-        relayBaseUrl,
-        relayToken,
-      });
+      const nextStatus = await window.electronAPI.a2a.relayConnect(authMode === 'static'
+        ? {
+            relayBaseUrl,
+            authMode: 'static',
+            relayToken,
+          }
+        : {
+            relayBaseUrl,
+            authMode: 'interactive',
+          });
       setStatus(nextStatus);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -109,15 +120,30 @@ export function A2ARelayView() {
                   label="Relay base URL"
                   value={relayBaseUrl}
                   onChange={setRelayBaseUrl}
-                  hint="Paste the base_url returned by chamber_a2a_server_start."
+                  hint="Use an HTTPS Switchboard URL for cloud relays or an HTTP loopback URL for local relays."
                 />
-                <Field
-                  label="Relay bearer token"
-                  value={relayToken}
-                  onChange={setRelayToken}
-                  type="password"
-                  hint="Used by Chamber to register cards, enqueue messages, poll its mailbox, and ack delivered messages."
+                <SelectField
+                  label="Authentication mode"
+                  onChange={(value) => setAuthMode(value as RelayAuthMode)}
+                  options={[
+                    { label: 'Static bearer token', value: 'static' },
+                    { label: 'Microsoft Entra interactive', value: 'interactive' },
+                  ]}
+                  value={authMode}
                 />
+                {authMode === 'static' ? (
+                  <Field
+                    label="Relay bearer token"
+                    value={relayToken}
+                    onChange={setRelayToken}
+                    type="password"
+                    hint="Used for local development and private relay instances."
+                  />
+                ) : (
+                  <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                    Microsoft Entra opens a browser sign-in and uses Chamber's configured Switchboard app registration.
+                  </div>
+                )}
                 {error && (
                   <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-red-200">
                     {error}
@@ -126,7 +152,7 @@ export function A2ARelayView() {
                 <div className="flex flex-wrap gap-3 pt-2">
                   <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={busy || !relayBaseUrl.trim() || !relayToken.trim()}
+                    disabled={busy || !canConnect}
                     onClick={connect}
                   >
                     {connected ? 'Reconnect' : 'Connect'}
@@ -172,8 +198,7 @@ export function A2ARelayView() {
             </Card>
 
             <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-100">
-              <strong>Safety note:</strong> this first cut is session-only and assumes loopback-only relay access.
-              Public relay endpoints would need a separate security review.
+              <strong>Safety note:</strong> static tokens are for local/private relays. Cloud Switchboard should use Microsoft Entra interactive auth.
             </div>
           </main>
 
@@ -239,6 +264,25 @@ function Field({ label, value, onChange, hint, type = 'text' }: { label: string;
         value={value}
       />
       {hint && <span className="mt-2 block text-xs text-muted-foreground">{hint}</span>}
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ label: string; value: string }> }) {
+  const id = `a2a-relay-${label.toLowerCase().replaceAll(' ', '-')}`;
+  return (
+    <div className="block">
+      <label className="text-sm font-medium text-muted-foreground" htmlFor={id}>{label}</label>
+      <select
+        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-purple-400"
+        id={id}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
     </div>
   );
 }
