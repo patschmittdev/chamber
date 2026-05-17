@@ -753,13 +753,16 @@ describe('appReducer', () => {
       expect(state.isStreaming).toBe(true);
     });
 
-    it('does not set global isStreaming when target is not active mind', () => {
+    it('records inactive mind relay messages without stealing focus', () => {
       const state = appReducer(withActiveMind, {
         type: 'A2A_INCOMING',
         payload: a2aPayload({ targetMindId: 'other-mind' }),
       });
-      expect(state.isStreaming).toBe(false);
+      expect(state.activeMindId).toBe(mindId);
+      expect(state.activeView).toBe(withActiveMind.activeView);
+      expect(state.isStreaming).toBe(withActiveMind.isStreaming);
       expect(state.streamingByMind['other-mind']).toBe(true);
+      expect(state.messagesByMind['other-mind']).toHaveLength(2);
     });
 
     it('appends to existing messages in target mind', () => {
@@ -770,6 +773,7 @@ describe('appReducer', () => {
       const state = appReducer(stateWithMsgs, { type: 'A2A_INCOMING', payload: a2aPayload() });
       expect(state.messagesByMind[mindId]).toHaveLength(3);
     });
+
   });
 
   // -------------------------------------------------------------------------

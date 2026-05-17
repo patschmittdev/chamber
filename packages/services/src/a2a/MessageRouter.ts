@@ -41,7 +41,7 @@ export class MessageRouter {
       },
     };
 
-    if (!card.mindId && this.resolver.canSendMessage?.() === true && this.resolver.sendMessage) {
+    if (this.resolver.canSendMessage?.() === true && this.resolver.sendMessage) {
       return this.resolver.sendMessage({
         ...request,
         message: deliveryMessage,

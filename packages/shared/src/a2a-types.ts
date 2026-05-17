@@ -227,6 +227,8 @@ export interface A2ARelayStatus {
   state: A2ARelayConnectionState;
   mode: 'local' | 'relay';
   relayBaseUrl: string | null;
+  authMode?: 'static' | 'interactive';
+  hasStoredRelayToken?: boolean;
   publishedBaseUrl: string | null;
   publishedAgentCount: number;
   relayAgentCount: number;
@@ -244,7 +246,7 @@ export interface A2ARelayConnectBaseRequest {
 
 export interface A2ARelayStaticConnectRequest extends A2ARelayConnectBaseRequest {
   authMode?: 'static' | 'auto';
-  relayToken: string;
+  relayToken?: string;
 }
 
 export interface A2ARelayInteractiveConnectRequest extends A2ARelayConnectBaseRequest {
@@ -262,11 +264,9 @@ export function isA2ARelayConnectRequest(value: unknown): value is A2ARelayConne
   if (!isRecord(value)) return false;
   const authMode = value.authMode === undefined ? 'static' : value.authMode;
   const hasRelayToken = typeof value.relayToken === 'string' && value.relayToken.trim().length > 0;
-  const hasInteractiveFields = value.clientId !== undefined || value.tenantId !== undefined || value.scope !== undefined;
   if (authMode !== 'auto' && authMode !== 'static' && authMode !== 'interactive') return false;
-  if (authMode === 'static' && !hasRelayToken) return false;
+  if (authMode === 'static' && value.relayToken !== undefined && !hasRelayToken) return false;
   if (authMode === 'interactive' && (hasRelayToken || !areOptionalStrings(value, ['clientId', 'tenantId', 'scope']))) return false;
-  if (authMode === 'auto' && !hasRelayToken && !hasInteractiveFields) return false;
   if (authMode === 'auto' && hasRelayToken && !areOptionalStrings(value, ['clientId', 'tenantId', 'scope'])) return false;
   return (
     typeof value.relayBaseUrl === 'string' &&

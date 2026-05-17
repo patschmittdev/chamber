@@ -33,14 +33,13 @@ function a2aIncoming(state: AppState, action: Extract<AppAction, { type: 'A2A_IN
     timestamp: Date.now(),
     isStreaming: true,
   };
-  const isActiveMind = targetMindId === state.activeMindId;
   return {
     messagesByMind: {
       ...state.messagesByMind,
       [targetMindId]: [...targetMsgs, senderMessage, replyPlaceholder],
     },
     streamingByMind: { ...state.streamingByMind, [targetMindId]: true },
-    isStreaming: isActiveMind ? true : state.isStreaming,
+    isStreaming: targetMindId === state.activeMindId ? true : state.isStreaming,
   };
 }
 

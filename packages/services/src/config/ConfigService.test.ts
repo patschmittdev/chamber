@@ -86,6 +86,23 @@ describe('ConfigService', () => {
       });
     });
 
+    it('preserves saved A2A relay settings', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [],
+        activeMindId: null,
+        activeLogin: null,
+        theme: 'dark',
+        a2aRelayBaseUrl: ' https://switchboard.example.com ',
+        a2aRelayAuthMode: 'static',
+      }));
+
+      expect(svc.load()).toEqual(expect.objectContaining({
+        a2aRelayBaseUrl: 'https://switchboard.example.com',
+        a2aRelayAuthMode: 'static',
+      }));
+    });
+
     it('preserves per-mind conversation history metadata without transcript text', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         version: 2,

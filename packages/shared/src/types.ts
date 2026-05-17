@@ -295,6 +295,8 @@ export interface AppConfig {
    * `copilot --acp` process. Default false.
    */
   chamberCopilotEnabled?: boolean;
+  a2aRelayBaseUrl?: string;
+  a2aRelayAuthMode?: 'static' | 'interactive';
 }
 
 interface InstalledToolBase {

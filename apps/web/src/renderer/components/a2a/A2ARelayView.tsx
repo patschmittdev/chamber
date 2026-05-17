@@ -26,8 +26,9 @@ export function A2ARelayView() {
 
   const busy = status.state === 'connecting' || status.state === 'disconnecting';
   const connected = status.state === 'connected';
+  const hasStoredTokenForRelay = status.hasStoredRelayToken === true && status.relayBaseUrl === relayBaseUrl.trim();
   const canConnect = relayBaseUrl.trim().length > 0
-    && (authMode === 'static' ? relayToken.trim().length > 0 : true);
+    && (authMode === 'static' ? relayToken.trim().length > 0 || hasStoredTokenForRelay : true);
 
   useEffect(() => {
     let mounted = true;
@@ -36,6 +37,7 @@ export function A2ARelayView() {
         if (!mounted) return;
         setStatus(nextStatus);
         if (nextStatus.relayBaseUrl) setRelayBaseUrl(nextStatus.relayBaseUrl);
+        if (nextStatus.authMode) setAuthMode(nextStatus.authMode);
       })
       .catch((err: unknown) => {
         if (mounted) setError(err instanceof Error ? err.message : String(err));
@@ -44,6 +46,7 @@ export function A2ARelayView() {
       setStatus(nextStatus);
       setError(nextStatus.lastError);
       if (nextStatus.relayBaseUrl) setRelayBaseUrl(nextStatus.relayBaseUrl);
+      if (nextStatus.authMode) setAuthMode(nextStatus.authMode);
     });
     return () => {
       mounted = false;
@@ -58,7 +61,7 @@ export function A2ARelayView() {
         ? {
             relayBaseUrl,
             authMode: 'static',
-            relayToken,
+            ...(relayToken.trim().length > 0 ? { relayToken } : {}),
           }
         : {
             relayBaseUrl,
@@ -112,7 +115,7 @@ export function A2ARelayView() {
               <CardHeader>
                 <CardTitle>Connection</CardTitle>
                 <CardDescription>
-                  Relay credentials are session-only. Chamber polls the relay mailbox while connected.
+                  Static relay tokens are saved in the OS credential store. Chamber polls the relay mailbox while connected.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -137,7 +140,7 @@ export function A2ARelayView() {
                     value={relayToken}
                     onChange={setRelayToken}
                     type="password"
-                    hint="Used for local development and private relay instances."
+                    hint={hasStoredTokenForRelay ? 'Leave blank to reuse the saved OS keychain token for this relay.' : 'Used for local development and private relay instances.'}
                   />
                 ) : (
                   <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
