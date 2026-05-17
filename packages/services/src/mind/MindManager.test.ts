@@ -448,6 +448,9 @@ describe('MindManager', () => {
         const normalized = String(candidate).replace(/\\/g, '/').toLowerCase();
         return normalized === '/tmp/agents/q/soul.md' || normalized === '/tmp/agents/q/.github';
       });
+      vi.mocked(fs.realpathSync.native).mockImplementation((candidate) =>
+        String(candidate).replace(/\\/g, '/').toLowerCase(),
+      );
 
       const mind1 = await manager.loadMind('/tmp/agents/q');
       const mind2 = await manager.loadMind('/tmp/agents/Q/');
@@ -1672,6 +1675,31 @@ describe('MindManager', () => {
       const createSessionCall = mockCreateSession.mock.calls[mockCreateSession.mock.calls.length - 1]?.[0] as Record<string, unknown> | undefined;
       expect(createSessionCall?.provider).toEqual(provider);
       expect(createSessionCall?.model).toBe('gemma-4-e4b');
+    });
+
+    it('restores BYO-selected minds with the default provider when BYO is disabled', async () => {
+      currentConfig = {
+        version: 2,
+        minds: [{ id: 'q-a1b2', path: '/tmp/agents/q', selectedModel: 'gemma-4-e4b', selectedModelProvider: 'byo' }],
+        activeMindId: 'q-a1b2',
+        activeLogin: null,
+        theme: 'dark',
+      };
+      const mgr = new MindManager(
+        mockClientFactory as unknown as CopilotClientFactory,
+        mockIdentityLoader as unknown as IdentityLoader,
+        mockConfigService as unknown as ConfigService,
+        mockViewDiscovery as unknown as ViewDiscovery,
+        () => null,
+      );
+
+      await mgr.restoreFromConfig();
+
+      const createSessionCall = mockCreateSession.mock.calls[mockCreateSession.mock.calls.length - 1]?.[0] as Record<string, unknown> | undefined;
+      expect(createSessionCall?.provider).toBeUndefined();
+      expect(createSessionCall?.model).toBeUndefined();
+      expect(mgr.listMinds()[0].selectedModel).toBeUndefined();
+      expect(mgr.listMinds()[0].selectedModelProvider).toBeUndefined();
     });
 
     it('BVT-MM02: omits provider from createSession when BYO is enabled but no BYO model is selected', async () => {
