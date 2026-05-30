@@ -27,11 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Replace four-job cron model with author-your-own ttasks scripts** — Cron jobs now have a single shape (`{name, schedule, scriptPath, enabled?, timeoutMs?}`). Minds author TypeScript files under `.chamber/automation/*.ts` using `@chamber/automation-runtime` + `@ianphil/ttasks-ts`; cron schedules execute them via a bundled Node + tsx + typescript runtime under `resources/automation-runtime/`. Existing v1 cron files (`prompt|shell|webhook|notification`) are migrated in-place on first load with `cron.v1.backup.json` next to the source. New tools: `automation_run`, `automation_validate`, `cron_run_detail`. Loopback `AutomationBridge` provides per-spawn Bearer-token-scoped `/prompt` and `/notify` endpoints for scripts to call back into Chamber.
 - **Persist cron run history in ttasks** — Cron history now reads and writes run records through the per-mind ttasks store while keeping recurring job definitions in cron JSON for now. (#359)
 
 ### Packaging
 
 - **Refresh packaged Copilot runtime** — Updated the pinned packaged Copilot CLI runtime to match the version required by package smoke.
+- **Fix packaged build on Windows** — prepare-automation-runtime.js spawned npm directly, which fails on Windows (ENOENT for npm, EINVAL for npm.cmd under Node 24); npm is now resolved to npm.cmd and routed through cmd.exe like the other runtime prep scripts, and spawn errors are surfaced instead of misreported as a failed install
 
 ### CI
 

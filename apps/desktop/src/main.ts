@@ -46,6 +46,8 @@ import {
   GitHubRegistryClient,
   GitHubReleaseAssetClient,
   CronService,
+  ScriptRunner,
+  AutomationBridge,
   IdentityLoader,
   MarketplaceToolCatalog,
   MessageRouter,
@@ -223,6 +225,7 @@ let a2aRelayModeService: A2ARelayModeService;
 let chatroomService: ChatroomService;
 let canvasService: CanvasService;
 let cronService: CronService;
+let automationBridgeStop: (() => Promise<void>) | null = null;
 let authService: AuthService;
 let chamberCopilotService: ChamberCopilotService | null = null;
 let updaterService: UpdaterService;
@@ -361,14 +364,39 @@ async function initializeRuntime(): Promise<void> {
     },
     openExternal: { open: (url) => shell.openExternal(url) },
   });
-  cronService = new CronService({
-    getTaskManager: () => taskManager,
-    showMind: (mindId) => {
-      mindManager.setActiveMind(mindId);
-      showMainWindow();
+  const automationBridge = new AutomationBridge({
+    onPrompt: async ({ mindId, prompt, recipient }) => {
+      if (recipient && recipient !== mindId) {
+        // Cross-mind prompt routing is intentionally unsupported in v2 (see
+        // AGENTS.md orchestration-safety boundary). Fail loudly rather than
+        // silently delivering to the wrong mind.
+        throw new Error(
+          `cross-mind prompt routing to "${recipient}" is not supported; prompts run against the script's owning mind`,
+        );
+      }
+      const mindPath = mindManager.getMind(mindId)?.mindPath;
+      if (!mindPath) {
+        throw new Error(`mind ${mindId} not active`);
+      }
+      // Background prompt: unattended path through MindManager. Returns void;
+      // we acknowledge to the script. Scripts that need a response value should
+      // use a downstream tool/lens, not the prompt return value.
+      await mindManager.sendBackgroundPrompt(mindPath, prompt);
+      return { text: 'queued' };
     },
-    notifier,
-    createTaskLedger,
+    onNotify: async ({ title, body }) => {
+      notifier.notify({ kind: 'info', title, body });
+    },
+  });
+  const bridgeStart = await automationBridge.start();
+  automationBridgeStop = bridgeStart.stop;
+  const scriptRunner = new ScriptRunner({
+    bridgeUrl: bridgeStart.url,
+    tokens: automationBridge.tokens,
+  });
+  cronService = new CronService({
+    scriptRunner,
+    createCronRunStore: undefined,
   });
   const a2aToolProvider = new A2aToolProvider(messageRouter, activeA2AResolver, taskManager);
   const mindToolProviders: ChamberToolProvider[] = [cronService, canvasService, a2aToolProvider];
@@ -861,6 +889,10 @@ app.on('before-quit', (e) => {
 app.on('will-quit', () => {
   appTray?.destroy();
   appTray = null;
+  if (automationBridgeStop) {
+    void automationBridgeStop().catch(() => { /* noop */ });
+    automationBridgeStop = null;
+  }
 });
 
 function createLensRefreshHandler(sendBackgroundPrompt: (mindPath: string, prompt: string) => Promise<void>) {
