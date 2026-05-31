@@ -3,6 +3,7 @@
   "productName": "Chamber",
   "version": "0.63.0",
   "description": "Genesis Mind Interface — desktop chat UI for Genesis agents",
+  "//copilotPin": "@github/copilot is pinned in devDependencies AND chamber-copilot-runtime/package.json — both must match. Pin drift / make:sandbox version-mismatch? See ai-docs/copilot-runtime-version-pin.html.",
   "main": ".vite/build/main.js",
   "private": true,
   "workspaces": [
@@ -21,8 +22,8 @@
     "sandbox": "node scripts/sandbox-test.js",
     "publish": "npm --workspace @chamber/server run build && node scripts/prepare-node-runtime.js && electron-forge publish",
     "lint": "tsc --noEmit && eslint . && npm run deps:check && npm run lint:yaml && npm run lint:md",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules/**\" \"#resources\" \"#chamber-*-runtime/**\" \"#dist\" \"#out\" \"#coverage\" \"#test-results\" \"#.vite\" \"#.cache\" \"#.working-memory\" \"#CHANGELOG.md\"",
-    "lint:md:fix": "markdownlint-cli2 --fix \"**/*.md\" \"#**/node_modules/**\" \"#resources\" \"#chamber-*-runtime/**\" \"#dist\" \"#out\" \"#coverage\" \"#test-results\" \"#.vite\" \"#.cache\" \"#.working-memory\" \"#CHANGELOG.md\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules/**\" \"#resources\" \"#chamber-*-runtime/**\" \"#apps/desktop/src/main/assets/ttasks-skill/**\" \"#dist\" \"#out\" \"#coverage\" \"#test-results\" \"#.vite\" \"#.cache\" \"#.working-memory\" \"#CHANGELOG.md\"",
+    "lint:md:fix": "markdownlint-cli2 --fix \"**/*.md\" \"#**/node_modules/**\" \"#resources\" \"#chamber-*-runtime/**\" \"#apps/desktop/src/main/assets/ttasks-skill/**\" \"#dist\" \"#out\" \"#coverage\" \"#test-results\" \"#.vite\" \"#.cache\" \"#.working-memory\" \"#CHANGELOG.md\"",
     "lint:yaml": "node scripts/ensure-actionlint.js && actionlint -color -shellcheck=",
     "deps:check": "depcruise apps packages --config config/dependency-cruiser.cjs",
     "typecheck": "tsc --noEmit",
@@ -60,7 +61,7 @@
     "@electron-forge/publisher-github": "^7.11.1",
     "@electron/fuses": "^2.1.1",
     "@eslint/js": "^10.0.1",
-    "@github/copilot": "1.0.55-1",
+    "@github/copilot": "1.0.57-2",
     "@github/copilot-sdk": "1.0.0-beta.8",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/typography": "^0.5.19",
@@ -122,6 +123,7 @@
     "@electron-forge/plugin-fuses": {
       "@electron/fuses": "$@electron/fuses"
     },
+    "@github/copilot": "$@github/copilot",
     "@electron/rebuild": "^4.0.4",
     "tmp": "^0.2.5",
     "yauzl": "^3.3.1"
