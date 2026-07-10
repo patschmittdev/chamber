@@ -61,6 +61,7 @@ import {
   MindManager,
   MindProfileService,
   MindScaffold,
+  MindSkillDiscovery,
   TaskManager,
   TaskLedger,
   ChildProcessRunner,
@@ -113,6 +114,7 @@ import { setupChatroomIPC } from './main/ipc/chatroom';
 import { setupConversationHistoryIPC } from './main/ipc/conversationHistory';
 import { setupUpdaterIPC } from './main/ipc/updater';
 import { setupUserProfileIPC } from './main/ipc/userProfile';
+import { setupSkillsIPC } from './main/ipc/skills';
 
 import { EventEmitter } from 'events';
 import { wireLifecycleEvents } from './main/wireLifecycleEvents';
@@ -823,6 +825,7 @@ app.on('ready', async () => {
   }
 
   // --- IPC adapters (thin, parameter-injected) ---
+  const skillDiscovery = new MindSkillDiscovery();
   setupChatIPC(chatService, mindManager);
   setupConversationHistoryIPC(chatService);
   setupMindIPC(mindManager, chatService, {
@@ -857,6 +860,10 @@ app.on('ready', async () => {
       return mindPath ? createTaskLedger(mindPath) : undefined;
     },
   });
+  setupSkillsIPC(
+    { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
+    skillDiscovery,
+  );
   setupAuthIPC(authService, mindManager, async () => {
     await chamberCopilotService?.resetAuthState();
   });
