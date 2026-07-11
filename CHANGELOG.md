@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Align desktop appearance before first paint** - Desktop theme preference, font scale, and density now persist through ConfigService while browser mode keeps localStorage, with preload backed first paint and native chrome parity. Fixes ianphil/chamber#401
 - **Chatroom @mentions target selected agents** - Routes selected @mentions by stable mindId, falls back only for exact unique names, avoids broadcasts when mentioned agents are disabled or unavailable, and preserves hydrated event IDs for message reconciliation (#48)
 - **Isolate packaged Copilot runtime validation** — Runs the bundled CLI smoke check with a temporary home so self-updated developer cache builds cannot cause false package-version mismatches.
+- **Promote WTD runtimes across Windows volumes** — Falls back to copy-and-remove when temporary staging and the Actions workspace are on different drives, so Insiders packaging can complete (#400)
 
 ### Tests
 
