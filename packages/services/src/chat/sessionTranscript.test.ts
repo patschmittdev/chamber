@@ -51,6 +51,22 @@ describe('mapSessionEventsToChatMessages', () => {
     ]);
   });
 
+  it('anchors a folded assistant turn to the first assistant-side event id', () => {
+    const events = [
+      { id: 'evt-user', type: 'user.message', timestamp: '2026-05-05T22:00:00.000Z', data: { messageId: 'u1', content: 'Think first' } },
+      { id: 'evt-reasoning', type: 'assistant.reasoning', timestamp: '2026-05-05T22:00:01.000Z', data: { reasoningId: 'r1', content: 'Planning.' } },
+      { id: 'evt-assistant', type: 'assistant.message', timestamp: '2026-05-05T22:00:02.000Z', data: { messageId: 'a1', content: 'Done.' } },
+    ];
+
+    const messages = mapSessionEventsToChatMessages(events);
+
+    expect(messages[1]).toMatchObject({
+      id: 'a1',
+      role: 'assistant',
+      eventId: 'evt-reasoning',
+    });
+  });
+
   it('strips Chamber-injected datetime context from user messages', () => {
     const events = [
       {

@@ -5,6 +5,12 @@ import type { ChatroomService } from '@chamber/services';
 import type { ChatroomStateChange } from '@chamber/shared/chatroom-types';
 
 const MAX_ROUND_ID_LENGTH = 128;
+const MAX_TARGET_MIND_IDS = 64;
+
+const sendOptionsSchema = z.object({
+  targetMindIds: z.array(z.string().min(1, 'must be a non-empty string')).max(MAX_TARGET_MIND_IDS).optional(),
+  routingText: z.string().optional(),
+}).strict();
 
 const sendArgsSchema = z.object({
   message: z.string().min(1, 'must be a non-empty string'),
@@ -14,6 +20,7 @@ const sendArgsSchema = z.object({
     .min(1, 'must be a non-empty string when provided')
     .max(MAX_ROUND_ID_LENGTH, `must be at most ${MAX_ROUND_ID_LENGTH} characters`)
     .optional(),
+  options: sendOptionsSchema.optional(),
 });
 
 const groupChatConfigSchema = z
@@ -56,12 +63,16 @@ const setOrchestrationArgsSchema = z.discriminatedUnion('mode', [
 ]);
 
 export function setupChatroomIPC(chatroomService: ChatroomService): void {
-  ipcMain.handle(IPC.CHATROOM.SEND, async (_event, message: unknown, model?: unknown, roundId?: unknown) => {
+  ipcMain.handle(IPC.CHATROOM.SEND, async (_event, message: unknown, model?: unknown, roundId?: unknown, options?: unknown) => {
     const parsed = parseIpcArgs(
       IPC.CHATROOM.SEND,
       sendArgsSchema,
-      { message, model, roundId },
+      { message, model, roundId, options },
     );
+    if (parsed.options !== undefined) {
+      await chatroomService.broadcast(parsed.message, parsed.roundId, parsed.model, parsed.options);
+      return;
+    }
     await chatroomService.broadcast(parsed.message, parsed.roundId, parsed.model);
   });
 

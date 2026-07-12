@@ -140,7 +140,8 @@ const electronAPI: ElectronAPI = {
     audit: (mindId) => ipcRenderer.invoke(IPC.TASKS.AUDIT, mindId),
   },
   chatroom: {
-    send: (message: string, model?: string, roundId?: string) => ipcRenderer.invoke(IPC.CHATROOM.SEND, message, model, roundId),
+    send: (message, model, roundId, options) =>
+      ipcRenderer.invoke(IPC.CHATROOM.SEND, message, model, roundId, options),
     history: () => ipcRenderer.invoke(IPC.CHATROOM.HISTORY),
     taskLedger: () => ipcRenderer.invoke(IPC.CHATROOM.TASK_LEDGER),
     clear: () => ipcRenderer.invoke(IPC.CHATROOM.CLEAR),

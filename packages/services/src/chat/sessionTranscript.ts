@@ -63,6 +63,9 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         blocks: [],
         timestamp: toTimestamp(event.timestamp),
       };
+      if (typeof event.id === 'string') {
+        assistantEventIdOverride = event.id;
+      }
     }
     if (assistantEventIdOverride === null && typeof event.id === 'string') {
       assistantEventIdOverride = event.id;

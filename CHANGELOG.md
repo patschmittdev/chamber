@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refresh packaged Copilot runtime pin** — Aligns the committed @github/copilot runtime pin with the launcher-resolved 1.0.58 build so package smoke validates the bundled CLI.
 - **Stop Copilot CLI auth popups after sign-in** — Pass Chamber's stored GitHub OAuth token into SDK-created CLI clients and disable CLI auto-login so device-flow browser prompts only occur from Chamber's explicit sign-in flow.
 - **Align desktop appearance before first paint** - Desktop theme preference, font scale, and density now persist through ConfigService while browser mode keeps localStorage, with preload backed first paint and native chrome parity. Fixes ianphil/chamber#401
+- **Chatroom @mentions target selected agents** - Routes selected @mentions by stable mindId, falls back only for exact unique names, avoids broadcasts when mentioned agents are disabled or unavailable, and preserves hydrated event IDs for message reconciliation (#48)
 
 ### Tests
 

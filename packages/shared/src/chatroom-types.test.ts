@@ -4,6 +4,7 @@ import type {
   ChatroomTranscript,
   ChatroomStreamEvent,
   ChatroomAPI,
+  ChatroomSendOptions,
   OrchestrationMode,
   GroupChatConfig,
   OrchestrationEvent,
@@ -42,6 +43,7 @@ describe('chatroom-types', () => {
 
   it('ChatroomAPI defines the full IPC surface', () => {
     expectTypeOf<ChatroomAPI['send']>().toBeFunction();
+    expectTypeOf<Parameters<ChatroomAPI['send']>[3]>().toEqualTypeOf<ChatroomSendOptions | undefined>();
     expectTypeOf<ChatroomAPI['history']>().toBeFunction();
     expectTypeOf<ChatroomAPI['clear']>().toBeFunction();
     expectTypeOf<ChatroomAPI['stop']>().toBeFunction();

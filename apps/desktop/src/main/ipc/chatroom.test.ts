@@ -70,6 +70,13 @@ describe('Chatroom IPC', () => {
     expect(mockService.broadcast).toHaveBeenCalledWith('Hello agents', 'renderer-round-2', undefined);
   });
 
+  it('chatroom:send forwards target mind ids to the service', async () => {
+    const handler = getHandler('chatroom:send');
+    const options = { targetMindIds: ['jarvis'], routingText: 'Hello @Jarvis' };
+    await handler(EVT, 'Hello @Jarvis', 'gpt-4', 'renderer-round-3', options);
+    expect(mockService.broadcast).toHaveBeenCalledWith('Hello @Jarvis', 'renderer-round-3', 'gpt-4', options);
+  });
+
   describe('chatroom:send input validation', () => {
     const invalidMessages: Array<[string, unknown]> = [
       ['number', 42],
@@ -142,12 +149,20 @@ describe('Chatroom IPC', () => {
       await handler(EVT, 'hello', undefined, exact);
       expect(mockService.broadcast).toHaveBeenCalledWith('hello', exact, undefined);
     });
+
+    it('rejects malformed targetMindIds without invoking broadcast', async () => {
+      const handler = getHandler('chatroom:send');
+      await expect(handler(EVT, 'hello', undefined, 'round-1', { targetMindIds: ['jarvis', ''] })).rejects.toThrow(TypeError);
+      expect(mockService.broadcast).not.toHaveBeenCalled();
+    });
+
     it('TypeError message names the channel and the bad field by name', async () => {
       const handler = getHandler('chatroom:send');
       await expect(handler(EVT, '')).rejects.toThrow(/chatroom:send/);
       await expect(handler(EVT, '')).rejects.toThrow(/message/);
       await expect(handler(EVT, 'hello', 7)).rejects.toThrow(/model/);
       await expect(handler(EVT, 'hello', undefined, '')).rejects.toThrow(/roundId/);
+      await expect(handler(EVT, 'hello', undefined, 'round-1', { targetMindIds: [''] })).rejects.toThrow(/targetMindIds/);
     });
   });
 

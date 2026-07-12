@@ -5,9 +5,10 @@ import { StreamingMessage } from '../chat/StreamingMessage';
 import { OrchestrationPicker } from './OrchestrationPicker';
 import { TaskLedgerPanel } from './TaskLedgerPanel';
 import { cn, formatTime } from '../../lib/utils';
-import type { MindContext, UserProfile } from '@chamber/shared/types';
+import type { ChatImageAttachment, MindContext, UserProfile } from '@chamber/shared/types';
 import type { ChatroomMessage } from '@chamber/shared/chatroom-types';
 import type { AgentProfileSummary } from '../../lib/store/state';
+import type { ComposerSendMetadata } from '../../lib/composer';
 import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
 import { useUserProfile } from '../../hooks/useUserProfile';
@@ -545,8 +546,18 @@ export function ChatroomPanel() {
     void window.electronAPI.chatroom.setMindEnabled(mindId, enabled);
   }, []);
 
-  const handleSend = useCallback(async (content: string) => {
+  const handleSend = useCallback(async (
+    content: string,
+    _attachments?: ChatImageAttachment[],
+    metadata?: ComposerSendMetadata,
+  ) => {
     const roundId = crypto.randomUUID();
+    const targetMindIds = metadata?.mentionTargets.map((target) => target.mindId);
+    const sendOptions = targetMindIds && targetMindIds.length > 0
+      ? { targetMindIds, routingText: metadata?.visibleText }
+      : metadata?.visibleText
+        ? { routingText: metadata.visibleText }
+        : undefined;
     dispatch({
       type: 'CHATROOM_USER_MESSAGE',
       payload: {
@@ -558,6 +569,10 @@ export function ChatroomPanel() {
         roundId,
       },
     });
+    if (sendOptions) {
+      await window.electronAPI.chatroom.send(content, selectedModel ?? undefined, roundId, sendOptions);
+      return;
+    }
     await window.electronAPI.chatroom.send(content, selectedModel ?? undefined, roundId);
   }, [dispatch, selectedModel]);
 
@@ -644,6 +659,7 @@ export function ChatroomPanel() {
         selectedModel={selectedModel}
         onModelChange={(model) => dispatch({ type: 'SET_SELECTED_MODEL', payload: model })}
         placeholder="Message the chatroom…"
+        includeComposerMetadata
       />
     </div>
   );
