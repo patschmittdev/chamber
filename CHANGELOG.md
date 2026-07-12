@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Expose bounded per-mind skill discovery** — Adds renderer-safe on-disk skill metadata IPC with asynchronous bounded reads, deterministic limits, and path/link safeguards without conflating managed provenance or integrity.
 - **Add insiders-gated local voice dictation** — Adds local Foundry/Nemotron dictation with a dedicated Settings page, chat mic and push-to-talk controls, explicit runtime capability gating, and insiders-only prepared runtime packaging. (#385) (#385)
 - **Add appearance preferences** — Adds a Settings > Appearance section with light/dark/system theme, font size (small/medium/large), and density (comfortable/compact) that apply live and persist across reloads. An always-on renderer store follows the OS color scheme for the system option and syncs preferences across windows, and the native Windows title-bar overlay repaints to match the active theme.
+- **Add global command palette** — Adds a Cmd/Ctrl-K command palette built on the existing cmdk primitive and mounted once in the app shell, to switch between loaded agents, open Chat, Chatroom, Settings, and discovered Lens views, add an agent, and start a guarded new conversation for the active mind that is withheld while it is streaming or switching models.
 
 ### Refactor
 
