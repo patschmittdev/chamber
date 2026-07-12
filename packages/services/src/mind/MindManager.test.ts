@@ -44,7 +44,10 @@ function createSessionStub(sessionId = `sdk-session-${sessionCounter += 1}`) {
   off: vi.fn(),
   disconnect: vi.fn(async () => undefined),
   setModel: vi.fn(async () => undefined),
-  rpc: { permissions: { setApproveAll: vi.fn(async () => ({ success: true })) } },
+  rpc: {
+    permissions: { setApproveAll: vi.fn(async () => ({ success: true })) },
+    history: { truncate: vi.fn(async () => ({ eventsRemoved: 0 })) },
+  },
   };
 }
 
@@ -707,6 +710,74 @@ describe('MindManager', () => {
       const sessionConfig = mockCreateSession.mock.calls[0][0] as { onPermissionRequest?: unknown };
       expect(sessionConfig.onPermissionRequest).toBe(approveForSessionCompat);
       expect(created.rpc.permissions.setApproveAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('conversation history mutations', () => {
+    const liveSessionFor = (mindId: string) =>
+      manager.getMind(mindId)?.session as unknown as ReturnType<typeof createSessionStub>;
+
+    it('maps persisted events to chat messages with their backing event ids', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Hi' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Hello' } },
+      ]);
+
+      const messages = await manager.getActiveConversationMessages(mind.mindId);
+
+      expect(messages).toEqual([
+        { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'Hi' }], timestamp: 1, eventId: 'evt-1' },
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: 'Hello' }], timestamp: 2, eventId: 'evt-2' },
+      ]);
+    });
+
+    it('exposes ordered event references for reconciliation', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Hi' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Hello' } },
+      ]);
+
+      expect(await manager.getConversationEventRefs(mind.mindId)).toEqual([
+        { eventId: 'evt-1', messageId: 'u1', role: 'user' },
+        { eventId: 'evt-2', messageId: 'a1', role: 'assistant' },
+      ]);
+    });
+
+    it('truncates SDK history and keeps hasMessages when turns remain', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const session = liveSessionFor(mind.mindId);
+      session.getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Hi' } },
+      ]);
+
+      const conversations = await manager.truncateActiveConversation(mind.mindId, 'evt-9');
+
+      expect(session.rpc.history.truncate).toHaveBeenCalledWith({ eventId: 'evt-9' });
+      expect(conversations.find((conversation) => conversation.active)?.hasMessages).toBe(true);
+    });
+
+    it('clears hasMessages when truncation empties the conversation', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([]);
+
+      const conversations = await manager.truncateActiveConversation(mind.mindId, 'evt-1');
+
+      expect(conversations.find((conversation) => conversation.active)?.hasMessages).toBe(false);
+    });
+
+    it('treats truncation as committed even when the post-truncate readback fails', async () => {
+      // The truncate RPC succeeded; a failing read-back (e.g. session went stale
+      // right after) must not resurface as a truncate failure, or the caller
+      // would retry and truncate again — removing further turns.
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const session = liveSessionFor(mind.mindId);
+      session.getEvents.mockRejectedValueOnce(new Error('Session not found: abc-123'));
+
+      await expect(manager.truncateActiveConversation(mind.mindId, 'evt-9')).resolves.toBeDefined();
+      expect(session.rpc.history.truncate).toHaveBeenCalledTimes(1);
+      expect(session.rpc.history.truncate).toHaveBeenCalledWith({ eventId: 'evt-9' });
     });
   });
 

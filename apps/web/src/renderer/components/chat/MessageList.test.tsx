@@ -268,4 +268,157 @@ describe('MessageList', () => {
     expect(scroller.scrollTop).toBe(2000);
     expect(screen.queryByLabelText('Jump to latest message')).toBeNull();
   });
+
+  describe('message action gating', () => {
+    function query(name: RegExp | string) {
+      return screen.queryByRole('button', { name }) as HTMLButtonElement | null;
+    }
+
+    it('disables Edit for a saved user turn that mixes text and an image', () => {
+      renderMessages([
+        {
+          id: 'u-mixed',
+          role: 'user',
+          eventId: 'evt-mixed',
+          blocks: [
+            { type: 'image', name: 'shot.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,aaa' },
+            { type: 'text', content: 'What is this?' },
+          ],
+          timestamp: 1000,
+        },
+      ]);
+
+      const edit = query('Edit message');
+      expect(edit).not.toBeNull();
+      expect(edit?.disabled).toBe(true);
+      expect(edit?.title).toMatch(/images/i);
+    });
+
+    it('disables Edit for a saved image-only user turn', () => {
+      renderMessages([
+        {
+          id: 'u-image',
+          role: 'user',
+          eventId: 'evt-image',
+          blocks: [{ type: 'image', name: 'only.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,bbb' }],
+          timestamp: 1000,
+        },
+      ]);
+
+      const edit = query('Edit message');
+      expect(edit).not.toBeNull();
+      expect(edit?.disabled).toBe(true);
+    });
+
+    it('disables Regenerate on the newest reply when the preceding user turn has images', () => {
+      renderMessages([
+        {
+          id: 'u-image',
+          role: 'user',
+          eventId: 'evt-image',
+          blocks: [{ type: 'image', name: 'only.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,ccc' }],
+          timestamp: 1000,
+        },
+        {
+          id: 'a-reply',
+          role: 'assistant',
+          eventId: 'evt-reply',
+          blocks: [{ type: 'text', content: 'That is a cat.' }],
+          timestamp: 1001,
+        },
+      ]);
+
+      const regen = query('Regenerate response');
+      expect(regen).not.toBeNull();
+      expect(regen?.disabled).toBe(true);
+      expect(regen?.title).toMatch(/images/i);
+    });
+
+    it('hides Edit, Delete, and Regenerate for turns not yet persisted (no event id, e.g. browser mode)', () => {
+      renderMessages([
+        {
+          id: 'u-unsaved',
+          role: 'user',
+          blocks: [{ type: 'text', content: 'just typed' }],
+          timestamp: 1000,
+        },
+        {
+          id: 'a-unsaved',
+          role: 'assistant',
+          blocks: [{ type: 'text', content: 'a reply' }],
+          timestamp: 1001,
+        },
+      ]);
+
+      expect(query('Edit message')).toBeNull();
+      expect(query('Delete this message and all following messages')).toBeNull();
+      expect(query('Regenerate response')).toBeNull();
+      // Copy stays available regardless of persistence.
+      expect(screen.getAllByRole('button', { name: 'Copy message' }).length).toBeGreaterThan(0);
+    });
+
+    it('enables Edit and Delete for a saved text-only user turn', () => {
+      renderMessages([
+        {
+          id: 'u-text',
+          role: 'user',
+          eventId: 'evt-text',
+          blocks: [{ type: 'text', content: 'plain question' }],
+          timestamp: 1000,
+        },
+      ]);
+
+      const edit = query('Edit message');
+      const del = query('Delete this message and all following messages');
+      expect(edit?.disabled).toBe(false);
+      expect(del?.disabled).toBe(false);
+    });
+
+    it('warns that editing an earlier turn removes the turns after it', () => {
+      renderMessages([
+        {
+          id: 'u-first',
+          role: 'user',
+          eventId: 'evt-u1',
+          blocks: [{ type: 'text', content: 'first question' }],
+          timestamp: 1000,
+        },
+        {
+          id: 'a-first',
+          role: 'assistant',
+          eventId: 'evt-a1',
+          blocks: [{ type: 'text', content: 'first answer' }],
+          timestamp: 1001,
+        },
+        {
+          id: 'u-second',
+          role: 'user',
+          eventId: 'evt-u2',
+          blocks: [{ type: 'text', content: 'second question' }],
+          timestamp: 1002,
+        },
+      ]);
+
+      // Enter the editor for the first (earliest) user turn — two turns follow it.
+      const edits = screen.getAllByRole('button', { name: 'Edit message' });
+      fireEvent.click(edits[0]);
+
+      expect(screen.getByText('Resubmitting removes the 2 turns after this one.')).toBeTruthy();
+    });
+
+    it('does not warn when editing the most recent user turn', () => {
+      renderMessages([
+        {
+          id: 'u-only',
+          role: 'user',
+          eventId: 'evt-only',
+          blocks: [{ type: 'text', content: 'only question' }],
+          timestamp: 1000,
+        },
+      ]);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit message' }));
+      expect(screen.queryByText(/Resubmitting removes/)).toBeNull();
+    });
+  });
 });

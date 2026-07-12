@@ -3,7 +3,7 @@
 
 import type { MindManager } from '../mind';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { ChatEvent, ChatImageAttachment, ConversationResumeResult, ConversationSummary, ModelInfo } from '@chamber/shared/types';
+import type { ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationResumeResult, ConversationSummary, ModelInfo } from '@chamber/shared/types';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import type { CopilotSession } from '../mind/types';
 import { isStaleSessionError, SEND_TIMEOUT_MS, sendTimeoutError } from '@chamber/shared/sessionErrors';
@@ -59,9 +59,107 @@ export class ChatService {
     model?: string,
     attachments?: ChatImageAttachment[],
   ): Promise<void> {
+    return this.runTurn(mindId, messageId, emit, async () => prompt, { model, attachments });
+  }
+
+  /**
+   * Deletes a turn from the active conversation. Truncation removes the target
+   * event and every later event, so this also drops any turns that followed it.
+   * Serialized through the turn queue so it never races an in-flight stream.
+   */
+  async deleteMessage(mindId: string, eventId: string): Promise<ConversationSummary[]> {
+    return this.turnQueue.enqueue(mindId, () => this.mindManager.truncateActiveConversation(mindId, eventId));
+  }
+
+  /**
+   * Replaces a user turn with an edited prompt: truncates history back to that
+   * turn (removing it and the assistant reply that followed), then streams a
+   * fresh response to the new prompt.
+   */
+  async editMessage(
+    mindId: string,
+    eventId: string,
+    prompt: string,
+    messageId: string,
+    emit: (event: ChatEvent) => void,
+    model?: string,
+  ): Promise<void> {
+    return this.runTurn(mindId, messageId, emit, async () => {
+      await this.mindManager.truncateActiveConversation(mindId, eventId);
+      return prompt;
+    }, { model });
+  }
+
+  /**
+   * Re-runs the most recent user turn to produce a fresh assistant response.
+   * Resolves the last user turn from persisted history, truncates back to it,
+   * and resends its original prompt.
+   */
+  async regenerate(
+    mindId: string,
+    messageId: string,
+    emit: (event: ChatEvent) => void,
+    model?: string,
+  ): Promise<void> {
+    return this.runTurn(mindId, messageId, emit, async () => {
+      const messages = await this.mindManager.getActiveConversationMessages(mindId);
+      const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+      if (!lastUser?.eventId) {
+        emit({ type: 'error', message: 'There is no user message to regenerate.' });
+        return null;
+      }
+      await this.mindManager.truncateActiveConversation(mindId, lastUser.eventId);
+      return plainTextOf(lastUser);
+    }, { model });
+  }
+
+  /** Ordered references to persisted user/assistant turns, for reconciling live messages with event ids. */
+  async getConversationEvents(mindId: string): Promise<ConversationEventRef[]> {
+    return this.mindManager.getConversationEventRefs(mindId);
+  }
+
+  /**
+   * Shared turn driver for send/edit/regenerate. `resolvePrompt` performs any
+   * one-time history mutation (e.g. truncation) and returns the prompt to send,
+   * or null to abort the turn. It is invoked at most once per action: the
+   * resolved prompt is cached so a stale-session retry re-sends the same prompt
+   * WITHOUT re-running the resolver. Re-truncating on retry would remove the
+   * target event (already gone) plus the turns after it, so idempotency here is
+   * a correctness requirement, not an optimization. The resolver only throws if
+   * the truncation RPC itself fails to commit (truncateActiveConversation
+   * swallows post-truncate read failures), so a thrown resolver always means the
+   * mutation did NOT happen and the recovered attempt can safely re-run it.
+   */
+  private async runTurn(
+    mindId: string,
+    messageId: string,
+    emit: (event: ChatEvent) => void,
+    resolvePrompt: () => Promise<string | null>,
+    options: { model?: string; attachments?: ChatImageAttachment[] } = {},
+  ): Promise<void> {
     return this.turnQueue.enqueue(mindId, async () => {
       const abortController = new AbortController();
       this.abortControllers.set(mindId, { messageId, controller: abortController });
+
+      let prepared = false;
+      let preparedPrompt: string | null = null;
+      const prepareOnce = async (): Promise<string | null> => {
+        if (prepared) return preparedPrompt;
+        preparedPrompt = await resolvePrompt();
+        prepared = true;
+        return preparedPrompt;
+      };
+
+      const streamOn = async (session: CopilotSession): Promise<void> => {
+        const prompt = await prepareOnce();
+        if (prompt === null) {
+          if (!abortController.signal.aborted) emit({ type: 'done' });
+          return;
+        }
+        await this.streamTurn(session, prompt, abortController, emit, options.attachments, () => {
+          this.mindManager.markActiveConversationHasMessages(mindId, prompt);
+        });
+      };
 
       try {
         const context = this.mindManager.getMind(mindId);
@@ -70,12 +168,10 @@ export class ChatService {
         }
 
         try {
-          const session = model ? await this.mindManager.setMindModel(mindId, model) : null;
+          const session = options.model ? await this.mindManager.setMindModel(mindId, options.model) : null;
           const currentSession = session ? this.mindManager.getMind(mindId)?.session : context.session;
           if (!currentSession) throw new Error(`Mind ${mindId} not found or has no session`);
-          await this.streamTurn(currentSession, prompt, abortController, emit, attachments, () => {
-            this.mindManager.markActiveConversationHasMessages(mindId, prompt);
-          });
+          await streamOn(currentSession);
         } catch (err) {
           if (abortController.signal.aborted) return;
           if (!isStaleSessionError(err)) throw err;
@@ -85,9 +181,7 @@ export class ChatService {
           emit({ type: 'reconnecting' });
           const recoveredSession = await this.mindManager.recoverActiveConversationSession(mindId);
           if (abortController.signal.aborted) return;
-          await this.streamTurn(recoveredSession, prompt, abortController, emit, attachments, () => {
-            this.mindManager.markActiveConversationHasMessages(mindId, prompt);
-          });
+          await streamOn(recoveredSession);
         }
       } catch (err) {
         if (abortController.signal.aborted) return;
@@ -478,6 +572,17 @@ export class ChatService {
   }
 }
 
+
+/**
+ * Concatenates a chat message's text blocks. Used to recover the original
+ * prompt of a persisted user turn when regenerating its response.
+ */
+function plainTextOf(message: ChatMessage): string {
+  return message.blocks
+    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+    .map((block) => block.content)
+    .join('');
+}
 
 /**
  * Friendly mapper for upstream LLM errors that originate from BYO LLM endpoints.

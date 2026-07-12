@@ -114,6 +114,10 @@ export function mockElectronAPI(): ElectronAPI {
       getEventSequence: vi.fn().mockResolvedValue(0),
       replayEvents: vi.fn().mockResolvedValue([]),
       onEvent: vi.fn().mockReturnValue(vi.fn()),
+      deleteMessage: vi.fn().mockResolvedValue([]),
+      editMessage: vi.fn().mockResolvedValue(undefined),
+      regenerate: vi.fn().mockResolvedValue(undefined),
+      getConversationEvents: vi.fn().mockResolvedValue([]),
     },
     conversationHistory: {
       list: vi.fn().mockResolvedValue([]),

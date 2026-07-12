@@ -16,6 +16,14 @@ const electronAPI: ElectronAPI = {
     getEventSequence: () => ipcRenderer.invoke(IPC.CHAT.GET_EVENT_SEQUENCE),
     replayEvents: (afterSequence) => ipcRenderer.invoke(IPC.CHAT.REPLAY_EVENTS, afterSequence),
     onEvent: (callback) => createIpcListener(ipcRenderer, IPC.CHAT.EVENT, callback),
+    deleteMessage: (mindId, eventId) =>
+      ipcRenderer.invoke(IPC.CHAT.DELETE_MESSAGE, mindId, eventId),
+    editMessage: (mindId, eventId, prompt, messageId, model) =>
+      ipcRenderer.invoke(IPC.CHAT.EDIT_MESSAGE, mindId, eventId, prompt, messageId, model),
+    regenerate: (mindId, messageId, model) =>
+      ipcRenderer.invoke(IPC.CHAT.REGENERATE, mindId, messageId, model),
+    getConversationEvents: (mindId) =>
+      ipcRenderer.invoke(IPC.CHAT.GET_CONVERSATION_EVENTS, mindId),
   },
   conversationHistory: {
     list: (mindId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.LIST, mindId),

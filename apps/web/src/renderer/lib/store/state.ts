@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatEvent, ConversationSummary, ModelInfo, LensViewManifest, MindContext, ImageBlock } from '@chamber/shared/types';
+import type { ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, ModelInfo, LensViewManifest, MindContext, ImageBlock } from '@chamber/shared/types';
 import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent } from '@chamber/shared/a2a-types';
 import type { ChatroomMessage, ChatroomStreamEvent, OrchestrationMode, GroupChatConfig, HandoffConfig, MagenticConfig, TaskLedgerItem } from '@chamber/shared/chatroom-types';
 import { DEFAULT_APP_FEATURE_FLAGS, type AppFeatureFlags } from '@chamber/shared/feature-flags';
@@ -73,6 +73,8 @@ export type AppAction =
   | { type: 'ADD_USER_MESSAGE'; payload: { id: string; content: string; timestamp: number; images?: ImageBlock[] } }
   | { type: 'ADD_ASSISTANT_MESSAGE'; payload: { id: string; timestamp: number } }
   | { type: 'CHAT_EVENT'; payload: { mindId: string; messageId: string; event: ChatEvent } }
+  | { type: 'TRUNCATE_AFTER'; payload: { mindId: string; messageId: string } }
+  | { type: 'RECONCILE_EVENT_IDS'; payload: { mindId: string; events: ConversationEventRef[] } }
   | { type: 'HYDRATE_CHAT_STATE'; payload: { messagesByMind: Record<string, ChatMessage[]>; streamingByMind: Record<string, boolean>; conversationViewByMind?: Record<string, ConversationViewState> } }
   | { type: 'SET_CONVERSATION_HISTORY'; payload: { mindId: string; conversations: ConversationSummary[] } }
   | { type: 'CONVERSATION_HYDRATING'; payload: { mindId: string; sessionId: string } }

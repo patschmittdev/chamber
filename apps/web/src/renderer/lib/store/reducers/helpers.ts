@@ -1,5 +1,5 @@
 import { modelSelectionEqualsModel, modelSelectionKey, modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
-import type { ChatEvent, ChatMessage, ContentBlock, ConversationSummary } from '@chamber/shared/types';
+import type { ChatEvent, ChatMessage, ContentBlock, ConversationEventRef, ConversationSummary } from '@chamber/shared/types';
 import type { AppState, ConversationViewState } from '../state';
 
 export function nonEmptyString(value: unknown, fallback: string): string {
@@ -92,6 +92,79 @@ export function getPlainContent(message: ChatMessage): string {
     .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
     .map((b) => b.content)
     .join('');
+}
+
+/**
+ * Annotates live messages with the backing SDK event ids they lack, using the
+ * persisted turn references returned after a turn completes. Assistant turns
+ * match by their streamed `sdkMessageId`; user turns (which carry no SDK id in
+ * the renderer) match positionally against the persisted user turns in order.
+ * Messages that already have an `eventId` are left untouched. Returns the same
+ * array reference when nothing changed so the reducer can no-op.
+ */
+export function reconcileMessageEventIds(
+  messages: ChatMessage[],
+  events: ConversationEventRef[],
+): ChatMessage[] {
+  const assistantEventByMessageId = new Map<string, string>();
+  const userEventIds: string[] = [];
+  for (const ref of events) {
+    if (ref.role === 'assistant') {
+      assistantEventByMessageId.set(ref.messageId, ref.eventId);
+    } else {
+      userEventIds.push(ref.eventId);
+    }
+  }
+
+  // User turns carry no SDK id in the renderer, so they can only be matched
+  // positionally. Only trust that when the displayed and persisted user turns
+  // line up 1:1 — otherwise a turn that failed to persist could shift every id
+  // and mistarget a later edit/delete. Assistant turns always match by their
+  // streamed sdkMessageId, which is unaffected.
+  //
+  // KNOWN LIMITATION: SDK skill-context injections are persisted as synthetic
+  // `user.message` events but are never streamed as user rows, so mid-session
+  // their presence trips this guard (counts disagree) and user-turn actions
+  // simply do not appear until a resume re-hydrates the injections and the
+  // counts line up again. That is graceful (no mistargeting), just surprising
+  // for lens/cron workflows.
+  const displayedUserCount = messages.reduce((count, message) => message.role === 'user' ? count + 1 : count, 0);
+  const canPositionUsers = displayedUserCount === userEventIds.length;
+
+  let userIndex = 0;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.role === 'user') {
+      const eventId = userEventIds[userIndex];
+      userIndex += 1;
+      if (canPositionUsers && !message.eventId && eventId) {
+        changed = true;
+        return { ...message, eventId };
+      }
+      return message;
+    }
+
+    // Assistant rows match by their streamed sdkMessageId. KNOWN LIMITATION: a
+    // tool-first assistant turn (whose eliciting `assistant.message` carries no
+    // text and is dropped by the main-process mapper) reconciles to its FINAL
+    // message event. Deleting such a row truncates at that final event, so the
+    // turn's earlier tool events remain in SDK history (they are invisible after
+    // reload, since the mapper only surfaces user/assistant messages). Follow-up
+    // would surface a turn-boundary event id for turn-atomic truncation.
+    if (message.eventId) return message;
+    const sdkMessageId = message.blocks.find(
+      (block): block is Extract<ContentBlock, { type: 'text' }> =>
+        block.type === 'text' && typeof block.sdkMessageId === 'string',
+    )?.sdkMessageId;
+    const eventId = sdkMessageId ? assistantEventByMessageId.get(sdkMessageId) : undefined;
+    if (eventId) {
+      changed = true;
+      return { ...message, eventId };
+    }
+    return message;
+  });
+
+  return changed ? next : messages;
 }
 
 export function handleChatEvent<T extends ChatMessage>(messages: T[], messageId: string, event: ChatEvent): T[] {

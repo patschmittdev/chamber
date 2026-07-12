@@ -1,6 +1,6 @@
 import type { ChatMessage, ContentBlock } from '@chamber/shared/types';
 import type { AppState, AppAction } from '../state';
-import { conversationViewFor, handleChatEvent, isMindChatStreaming, setConversationView } from './helpers';
+import { conversationViewFor, handleChatEvent, isMindChatStreaming, reconcileMessageEventIds, setConversationView } from './helpers';
 
 type Handler<T extends AppAction['type']> = (
   state: AppState,
@@ -181,10 +181,34 @@ function setModelSwitching(state: AppState, action: Extract<AppAction, { type: '
   };
 }
 
+function truncateAfter(state: AppState, action: Extract<AppAction, { type: 'TRUNCATE_AFTER' }>): Partial<AppState> | AppState {
+  const { mindId, messageId } = action.payload;
+  const messages = state.messagesByMind[mindId];
+  if (!messages) return state;
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return state;
+  return {
+    messagesByMind: { ...state.messagesByMind, [mindId]: messages.slice(0, index) },
+  };
+}
+
+function reconcileEventIds(state: AppState, action: Extract<AppAction, { type: 'RECONCILE_EVENT_IDS' }>): Partial<AppState> | AppState {
+  const { mindId, events } = action.payload;
+  const messages = state.messagesByMind[mindId];
+  if (!messages) return state;
+  const next = reconcileMessageEventIds(messages, events);
+  if (next === messages) return state;
+  return {
+    messagesByMind: { ...state.messagesByMind, [mindId]: next },
+  };
+}
+
 export const messagesHandlers: {
   ADD_USER_MESSAGE: Handler<'ADD_USER_MESSAGE'>;
   ADD_ASSISTANT_MESSAGE: Handler<'ADD_ASSISTANT_MESSAGE'>;
   CHAT_EVENT: Handler<'CHAT_EVENT'>;
+  TRUNCATE_AFTER: Handler<'TRUNCATE_AFTER'>;
+  RECONCILE_EVENT_IDS: Handler<'RECONCILE_EVENT_IDS'>;
   HYDRATE_CHAT_STATE: Handler<'HYDRATE_CHAT_STATE'>;
   CLEAR_MESSAGES: Handler<'CLEAR_MESSAGES'>;
   NEW_CONVERSATION: Handler<'NEW_CONVERSATION'>;
@@ -194,6 +218,8 @@ export const messagesHandlers: {
   ADD_USER_MESSAGE: addUserMessage,
   ADD_ASSISTANT_MESSAGE: addAssistantMessage,
   CHAT_EVENT: chatEvent,
+  TRUNCATE_AFTER: truncateAfter,
+  RECONCILE_EVENT_IDS: reconcileEventIds,
   HYDRATE_CHAT_STATE: hydrateChatState,
   CLEAR_MESSAGES: clearMessages,
   NEW_CONVERSATION: newConversation,
