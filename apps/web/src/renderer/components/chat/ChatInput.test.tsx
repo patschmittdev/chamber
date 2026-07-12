@@ -823,24 +823,24 @@ describe('ChatInput file attachments', () => {
     ]);
   });
 
-  it('can include visible composer text metadata before text attachments are folded', async () => {
+  it('includes visible composer text metadata alongside selected mention targets', async () => {
     const onSend = vi.fn();
+    appStateMock.current.minds = [makeMind('m1', 'Ada'), makeMind('m2', 'Alan')];
     render(<ChatInput {...defaultProps} onSend={onSend} includeComposerMetadata />);
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-    const fileInput = screen.getByTestId('composer-file-input') as HTMLInputElement;
-    const file = new File(['hello @Jarvis'], 'notes.txt', { type: 'text/plain' });
-
-    fireEvent.change(fileInput, { target: { files: [file] } });
-    await waitFor(() => expect(textarea.value).toMatch(/\[📄#\d+ notes\.txt\]/));
+    typeAtEnd(textarea, 'hey @al');
+    await screen.findByTestId('mention-popover');
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() => expect(textarea.value).toBe('hey @Alan '));
     const visibleText = textarea.value;
 
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
     const [message, attachments, metadata] = onSend.mock.calls[0];
-    expect(message).toContain('hello @Jarvis');
+    expect(message).toBe('hey @Alan ');
     expect(attachments).toBeUndefined();
     expect(metadata).toEqual({
-      mentionTargets: [],
+      mentionTargets: [{ mindId: 'm2', name: 'Alan' }],
       visibleText,
     });
   });

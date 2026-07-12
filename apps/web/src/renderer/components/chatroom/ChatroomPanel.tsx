@@ -5,7 +5,7 @@ import { StreamingMessage } from '../chat/StreamingMessage';
 import { OrchestrationPicker } from './OrchestrationPicker';
 import { TaskLedgerPanel } from './TaskLedgerPanel';
 import { cn, formatTime } from '../../lib/utils';
-import type { ChatImageAttachment, MindContext, UserProfile } from '@chamber/shared/types';
+import type { ChatAttachment, MindContext, UserProfile } from '@chamber/shared/types';
 import type { ChatroomMessage } from '@chamber/shared/chatroom-types';
 import type { AgentProfileSummary } from '../../lib/store/state';
 import type { ComposerSendMetadata } from '../../lib/composer';
@@ -548,7 +548,7 @@ export function ChatroomPanel() {
 
   const handleSend = useCallback(async (
     content: string,
-    _attachments?: ChatImageAttachment[],
+    _attachments?: ChatAttachment[],
     metadata?: ComposerSendMetadata,
   ) => {
     const roundId = crypto.randomUUID();
