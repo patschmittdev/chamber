@@ -79,25 +79,45 @@ export function ActivityBar() {
         {discoveredViews.length > 0 && <Separator className="my-1 w-8" />}
 
         {/* Discovered views */}
-        {discoveredViews.map((view: LensViewManifest) => (
-          <Tooltip key={view.id} delayDuration={300}>
-            <TooltipTrigger asChild>
-              <button
-                aria-label={view.name}
-                onClick={() => dispatch({ type: 'SET_ACTIVE_VIEW', payload: view.id })}
-                className={cn(
-                  'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
-                  activeView === view.id
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                )}
-              >
-                {getIcon(view.icon)}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8}>{view.name}</TooltipContent>
-          </Tooltip>
-        ))}
+        {discoveredViews.map((view: LensViewManifest, index) => {
+          const description = view.description?.trim();
+          const descriptionId = description ? `activity-bar-lens-${index}-description` : undefined;
+
+          return (
+            <Tooltip key={view.id} delayDuration={300}>
+              <TooltipTrigger asChild>
+                <button
+                  aria-label={view.name}
+                  aria-describedby={descriptionId}
+                  onClick={() => dispatch({ type: 'SET_ACTIVE_VIEW', payload: view.id })}
+                  className={cn(
+                    'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                    activeView === view.id
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  )}
+                >
+                  {getIcon(view.icon)}
+                  {description && (
+                    <span id={descriptionId} className="sr-only">
+                      {description}
+                    </span>
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                <div className="max-w-64">
+                  <div className="font-medium">{view.name}</div>
+                  {description && (
+                    <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                      {description}
+                    </p>
+                  )}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
       </div>
 
       {/* Bottom-pinned settings */}

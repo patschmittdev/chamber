@@ -29,6 +29,39 @@ describe('LensViewRenderer', () => {
     vi.restoreAllMocks();
   });
 
+  it('renders the Lens description in the prompt empty state', async () => {
+    const api = mockElectronAPI();
+    installElectronAPI(api);
+
+    render(
+      <LensViewRenderer
+        view={makeLensViewManifest({
+          description: 'Generate a concise daily briefing.',
+          prompt: 'Build the briefing',
+        })}
+      />,
+    );
+
+    expect(await screen.findByText('No data yet')).toBeTruthy();
+    expect(screen.getByText('Generate a concise daily briefing.')).toBeTruthy();
+  });
+
+  it('renders the default prompt empty-state copy without a Lens description', async () => {
+    const api = mockElectronAPI();
+    installElectronAPI(api);
+
+    render(
+      <LensViewRenderer
+        view={makeLensViewManifest({
+          prompt: 'Build the briefing',
+        })}
+      />,
+    );
+
+    expect(await screen.findByText('No data yet')).toBeTruthy();
+    expect(screen.getByText('Generate this view to populate it with live data from the mind.')).toBeTruthy();
+  });
+
   it('applies an in-flight refresh result after the view remounts', async () => {
     const api = mockElectronAPI();
     vi.mocked(api.lens.getViewData).mockResolvedValue({ status: 'stale' });

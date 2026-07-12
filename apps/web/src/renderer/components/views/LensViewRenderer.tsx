@@ -113,6 +113,7 @@ export function LensViewRenderer({ view }: Props) {
 
   const isWideView = view.view === 'table' || view.view === 'status-board' || view.view === 'timeline';
   const isProseView = view.view === 'detail';
+  const description = view.description?.trim();
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-6">
@@ -174,7 +175,7 @@ export function LensViewRenderer({ view }: Props) {
               <>
                 <p className="text-sm font-medium text-foreground">No data yet</p>
                 <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                  {view.description || 'Generate this view to populate it with live data from the mind.'}
+                  {description || 'Generate this view to populate it with live data from the mind.'}
                 </p>
                 <button
                   onClick={handleRefresh}
