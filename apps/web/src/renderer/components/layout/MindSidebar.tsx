@@ -3,10 +3,9 @@ import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Plus, X, Bot, ExternalLink, UserCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { AgentProfileModal } from '../profile/AgentProfileModal';
 import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
-import type { AgentProfile, MindContext } from '@chamber/shared/types';
+import type { MindContext } from '@chamber/shared/types';
 
 const MIN_WIDTH = 140;
 const MAX_WIDTH = 400;
@@ -17,15 +16,14 @@ function statusColor(status: MindContext['status']): string {
     case 'ready': return 'bg-green-500';
     case 'loading': return 'bg-yellow-500 animate-pulse';
     case 'error': return 'bg-red-500';
-    case 'unloading': return 'bg-gray-400';
-    default: return 'bg-gray-400';
+    case 'unloading': return 'bg-muted-foreground';
+    default: return 'bg-muted-foreground';
   }
 }
 
 export function MindSidebar() {
   const { minds, activeMindId } = useAppState();
   const dispatch = useAppDispatch();
-  const [profileMind, setProfileMind] = useState<MindContext | null>(null);
   const profileByMindId = useMindProfiles(minds);
   const [width, setWidth] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -55,7 +53,8 @@ export function MindSidebar() {
 
   const handleProfile = (e: React.MouseEvent, mind: MindContext) => {
     e.stopPropagation();
-    setProfileMind(mind);
+    dispatch({ type: 'SET_PENDING_SETTINGS_INTENT', payload: { section: 'agents', mindId: mind.mindId } });
+    dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'settings' });
   };
 
   const handleRemoveMind = async (e: React.MouseEvent, mindId: string) => {
@@ -90,21 +89,9 @@ export function MindSidebar() {
     localStorage.setItem(STORAGE_KEY, String(width));
   }, [width]);
 
-  const handleProfileChanged = (profile: AgentProfile) => {
-    dispatch({
-      type: 'SET_AGENT_PROFILE_SUMMARY',
-      payload: {
-        mindId: profile.mindId,
-        displayName: profile.displayName,
-        avatarDataUrl: profile.avatarDataUrl,
-      },
-    });
-  };
-
   if (minds.length === 0) return null;
 
   return (
-    <>
     <div className="relative bg-card border border-border rounded-xl overflow-hidden flex flex-col shrink-0" style={{ width }}>
       {/* Resize handle */}
       <div
@@ -152,14 +139,14 @@ export function MindSidebar() {
                   <TooltipTrigger asChild>
                     <span
                       role="button"
-                      aria-label={`Edit ${mind.identity.name} profile`}
+                      aria-label={`Manage ${mind.identity.name}`}
                       onClick={(e) => handleProfile(e, mind)}
                       className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
                     >
                       <UserCircle size={13} />
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="right">Edit profile</TooltipContent>
+                  <TooltipContent side="right">Manage agent</TooltipContent>
                 </Tooltip>
                 <Tooltip delayDuration={300}>
                   <TooltipTrigger asChild>
@@ -203,12 +190,5 @@ export function MindSidebar() {
         </button>
       </div>
     </div>
-    <AgentProfileModal
-      mind={profileMind}
-      open={Boolean(profileMind)}
-      onOpenChange={(open) => { if (!open) setProfileMind(null); }}
-      onProfileChanged={handleProfileChanged}
-    />
-    </>
   );
 }

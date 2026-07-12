@@ -214,7 +214,7 @@ async function captureConversationHistory(page, monica) {
 
 async function captureMindProfileControls(page) {
   await page.locator('button').filter({ hasText: /\bLucy\b/ }).first().click();
-  await page.getByRole('button', { name: 'Edit Lucy profile', exact: true }).waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: 'Manage Lucy', exact: true }).waitFor({ state: 'visible' });
   await screenshot(page, 'mind-profile-controls.png');
 }
 

@@ -11,6 +11,13 @@ function setActiveView(_state: AppState, action: Extract<AppAction, { type: 'SET
   return { activeView: action.payload };
 }
 
+function setPendingSettingsIntent(
+  _state: AppState,
+  action: Extract<AppAction, { type: 'SET_PENDING_SETTINGS_INTENT' }>,
+): Partial<AppState> {
+  return { pendingSettingsIntent: action.payload };
+}
+
 function setFeatureFlags(
   _state: AppState,
   action: Extract<AppAction, { type: 'SET_FEATURE_FLAGS' }>,
@@ -95,6 +102,7 @@ function loggedOut(): Partial<AppState> {
 
 export const lifecycleHandlers: {
   SET_ACTIVE_VIEW: Handler<'SET_ACTIVE_VIEW'>;
+  SET_PENDING_SETTINGS_INTENT: Handler<'SET_PENDING_SETTINGS_INTENT'>;
   SET_FEATURE_FLAGS: Handler<'SET_FEATURE_FLAGS'>;
   SET_DISCOVERED_VIEWS: Handler<'SET_DISCOVERED_VIEWS'>;
   SET_DISABLED_LENS_VIEW_IDS: Handler<'SET_DISABLED_LENS_VIEW_IDS'>;
@@ -106,6 +114,7 @@ export const lifecycleHandlers: {
   LOGGED_OUT: Handler<'LOGGED_OUT'>;
 } = {
   SET_ACTIVE_VIEW: setActiveView,
+  SET_PENDING_SETTINGS_INTENT: setPendingSettingsIntent,
   SET_FEATURE_FLAGS: setFeatureFlags,
   SET_DISCOVERED_VIEWS: setDiscoveredViews,
   SET_DISABLED_LENS_VIEW_IDS: setDisabledLensViewIds,
