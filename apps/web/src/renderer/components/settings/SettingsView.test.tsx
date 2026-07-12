@@ -7,12 +7,13 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import { version } from '../../../../../../package.json';
 import { SettingsView } from './SettingsView';
 import { AppStateProvider } from '../../lib/store';
+import { APPEARANCE_STORAGE_KEYS } from '../../lib/appearance';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
 
 // Settings is now tabbed. Tests that assert on Account / Marketplaces /
 // feature-specific content must first activate that tab (the Profile tab is the
 // default). Profile-tab tests don't need this helper.
-function gotoTab(label: 'Profile' | 'Account' | 'Marketplaces' | 'Local LLM' | 'Voice dictation') {
+function gotoTab(label: 'Profile' | 'Account' | 'Marketplaces' | 'Appearance' | 'Local LLM' | 'Voice dictation') {
   const nav = screen.getByRole('navigation', { name: /settings sections/i });
   fireEvent.click(within(nav).getByRole('button', { name: label }));
 }
@@ -492,6 +493,56 @@ describe('SettingsView', () => {
       expect(api.marketplace.setGenesisRegistryEnabled).toHaveBeenCalledWith('github:agency-microsoft/genesis-minds', false);
       expect(api.marketplace.refreshGenesisRegistry).toHaveBeenCalledWith('github:agency-microsoft/genesis-minds');
       expect(api.marketplace.removeGenesisRegistry).toHaveBeenCalledWith('github:agency-microsoft/genesis-minds');
+    });
+  });
+
+  describe('Appearance section', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      document.documentElement.className = '';
+      delete document.documentElement.dataset.theme;
+    });
+
+    it('renders theme, font size, and density controls', async () => {
+      render(<SettingsView />);
+      gotoTab('Appearance');
+
+      expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeTruthy();
+      expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeTruthy();
+      expect(screen.getByRole('radiogroup', { name: 'Font size' })).toBeTruthy();
+      expect(screen.getByRole('radiogroup', { name: 'Density' })).toBeTruthy();
+      // Dark is the default preference, so its radio reads as checked.
+      expect(screen.getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('applies and persists a theme change live', async () => {
+      render(<SettingsView />);
+      gotoTab('Appearance');
+
+      fireEvent.click(await screen.findByRole('radio', { name: 'Light' }));
+
+      expect(document.documentElement.classList.contains('dark')).toBe(false);
+      expect(localStorage.getItem(APPEARANCE_STORAGE_KEYS.theme)).toBe('light');
+    });
+
+    it('applies and persists a font-size change live', async () => {
+      render(<SettingsView />);
+      gotoTab('Appearance');
+
+      fireEvent.click(await screen.findByRole('radio', { name: 'Large' }));
+
+      expect(document.documentElement.classList.contains('font-scale-large')).toBe(true);
+      expect(localStorage.getItem(APPEARANCE_STORAGE_KEYS.fontScale)).toBe('large');
+    });
+
+    it('applies and persists a density change live', async () => {
+      render(<SettingsView />);
+      gotoTab('Appearance');
+
+      fireEvent.click(await screen.findByRole('radio', { name: 'Compact' }));
+
+      expect(document.documentElement.classList.contains('density-compact')).toBe(true);
+      expect(localStorage.getItem(APPEARANCE_STORAGE_KEYS.density)).toBe('compact');
     });
   });
 });

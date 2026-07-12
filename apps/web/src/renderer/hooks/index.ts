@@ -4,5 +4,7 @@ export { useChatStreaming } from './useChatStreaming';
 export { useResponsiveLayout } from './useResponsiveLayout';
 export type { ResponsiveLayout } from './useResponsiveLayout';
 export { useTheme } from './useTheme';
-export type { Theme } from './useTheme';
+export type { Theme, ThemePreference, ResolvedTheme, UseThemeResult } from './useTheme';
+export { useFontScale, useDensity } from './useAppearance';
+export type { FontScale, Density, UseFontScaleResult, UseDensityResult } from './useAppearance';
 export { useVoiceDictation, type UseVoiceDictationOptions, type UseVoiceDictationResult } from './useVoiceDictation';
