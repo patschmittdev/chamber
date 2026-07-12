@@ -2,6 +2,7 @@ export * from './types';
 export * from './mcp-types';
 export * from './model-selection';
 export * from './feature-flags';
+export * from './lens-visibility';
 export * from './voice-types';
 export * from './ledger';
 export { createIpcListener } from './createIpcListener';

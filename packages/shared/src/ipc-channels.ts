@@ -49,6 +49,9 @@ export const IPC = {
     REFRESH_VIEW: 'lens:refreshView',
     SEND_ACTION: 'lens:sendAction',
     GET_CANVAS_URL: 'lens:getCanvasUrl',
+    GET_DISABLED_VIEW_IDS: 'lens:getDisabledViewIds',
+    SET_VIEW_ENABLED: 'lens:setViewEnabled',
+    VISIBILITY_CHANGED: 'lens:visibilityChanged',
     VIEWS_CHANGED: 'lens:viewsChanged',
   },
   AUTH: {

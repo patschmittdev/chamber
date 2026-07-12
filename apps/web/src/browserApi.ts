@@ -196,7 +196,14 @@ export function installBrowserApi(): void {
       refreshView: async () => null,
       sendAction: async () => unavailable('Lens write actions'),
       getCanvasUrl: async () => null,
+      getDisabledViewIds: async () => [],
+      setViewEnabled: async (_viewId, enabled, mindId) => ({
+        mindId: mindId ?? '',
+        viewId: _viewId,
+        enabled,
+      }),
       onViewsChanged: () => noopUnsubscribe,
+      onVisibilityChanged: () => noopUnsubscribe,
     },
     auth: {
       getStatus: () => client.getAuthStatus(),

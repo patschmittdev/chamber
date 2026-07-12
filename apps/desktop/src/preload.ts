@@ -57,7 +57,10 @@ const electronAPI: ElectronAPI = {
     refreshView: (viewId, mindId?) => ipcRenderer.invoke(IPC.LENS.REFRESH_VIEW, viewId, mindId),
     sendAction: (viewId, action, mindId?) => ipcRenderer.invoke(IPC.LENS.SEND_ACTION, viewId, action, mindId),
     getCanvasUrl: (viewId, mindId?) => ipcRenderer.invoke(IPC.LENS.GET_CANVAS_URL, viewId, mindId),
+    getDisabledViewIds: (mindId?) => ipcRenderer.invoke(IPC.LENS.GET_DISABLED_VIEW_IDS, mindId),
+    setViewEnabled: (viewId, enabled, mindId?) => ipcRenderer.invoke(IPC.LENS.SET_VIEW_ENABLED, viewId, enabled, mindId),
     onViewsChanged: (callback) => createIpcListener(ipcRenderer, IPC.LENS.VIEWS_CHANGED, callback),
+    onVisibilityChanged: (callback) => createIpcListener(ipcRenderer, IPC.LENS.VISIBILITY_CHANGED, callback),
   },
   auth: {
     getStatus: () => ipcRenderer.invoke(IPC.AUTH.GET_STATUS),

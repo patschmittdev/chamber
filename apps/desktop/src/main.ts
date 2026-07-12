@@ -73,6 +73,7 @@ import {
   TurnQueue,
   UserProfileService,
   ViewDiscovery,
+  LensPreferencesService,
   VoiceDictationService,
   VoiceDictationStore,
   VoiceWorkerPool,
@@ -241,6 +242,7 @@ let marketplaceRegistryService: MarketplaceRegistryService;
 let managedSkillService: ManagedSkillService;
 let toolsService: ToolsService;
 let viewDiscovery: ViewDiscovery;
+let lensPreferencesService: LensPreferencesService;
 let a2aEventBus: EventEmitter;
 let agentCardRegistry: AgentCardRegistry;
 let taskManager: TaskManager;
@@ -388,6 +390,8 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     configService,
   );
   viewDiscovery = new ViewDiscovery();
+  lensPreferencesService = new LensPreferencesService(configService);
+  lensPreferencesService.cleanupMissingMinds(configService.load().minds.map((mind) => mind.id));
 
   a2aEventBus = new EventEmitter();
   agentCardRegistry = new AgentCardRegistry();
@@ -910,7 +914,7 @@ app.on('ready', async () => {
       }
     },
   });
-  setupLensIPC(viewDiscovery, mindManager, canvasService);
+  setupLensIPC(viewDiscovery, mindManager, canvasService, lensPreferencesService);
   setupGenesisIPC(
     mindManager,
     scaffold,

@@ -195,7 +195,12 @@ export function mockElectronAPI(): ElectronAPI {
       refreshView: vi.fn().mockResolvedValue(null),
       sendAction: vi.fn().mockResolvedValue(null),
       getCanvasUrl: vi.fn().mockResolvedValue(null),
+      getDisabledViewIds: vi.fn().mockResolvedValue([]),
+      setViewEnabled: vi.fn().mockImplementation((viewId: string, enabled: boolean, mindId = 'test-1234') =>
+        Promise.resolve({ mindId, viewId, enabled }),
+      ),
       onViewsChanged: vi.fn().mockReturnValue(vi.fn()),
+      onVisibilityChanged: vi.fn().mockReturnValue(vi.fn()),
     },
     auth: {
       getStatus: vi.fn().mockResolvedValue({ authenticated: true }),

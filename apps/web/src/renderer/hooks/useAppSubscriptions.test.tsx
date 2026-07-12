@@ -50,18 +50,25 @@ function wrapper(testInitialState: Partial<AppState>) {
 describe('useAppSubscriptions', () => {
   let api: ReturnType<typeof mockElectronAPI>;
   let onViewsChanged: ((views: LensViewManifest[], mindId?: string) => void) | undefined;
+  let onVisibilityChanged: ((visibility: { mindId: string; viewId: string; enabled: boolean }) => void) | undefined;
 
   beforeEach(() => {
     api = installElectronAPI();
     onViewsChanged = undefined;
+    onVisibilityChanged = undefined;
     (api.lens.onViewsChanged as ReturnType<typeof vi.fn>).mockImplementation((callback) => {
       onViewsChanged = callback;
+      return vi.fn();
+    });
+    (api.lens.onVisibilityChanged as ReturnType<typeof vi.fn>).mockImplementation((callback) => {
+      onVisibilityChanged = callback;
       return vi.fn();
     });
   });
 
   it('loads Lens views for the active mind', async () => {
     (api.lens.getViews as ReturnType<typeof vi.fn>).mockResolvedValue([activeView]);
+    (api.lens.getDisabledViewIds as ReturnType<typeof vi.fn>).mockResolvedValue(['briefing']);
 
     const { result } = renderHook(() => {
       useAppSubscriptions();
@@ -73,6 +80,28 @@ describe('useAppSubscriptions', () => {
     await waitFor(() => {
       expect(api.lens.getViews).toHaveBeenCalledWith(activeMind.mindId);
       expect(result.current.discoveredViews).toEqual([activeView]);
+      expect(result.current.disabledLensViewKeys).toEqual([`${activeMind.mindId}:briefing`]);
+    });
+  });
+
+  it('applies Lens visibility change events', async () => {
+    const { result } = renderHook(() => {
+      useAppSubscriptions();
+      return useAppState();
+    }, {
+      wrapper: wrapper({ minds: [activeMind], activeMindId: activeMind.mindId }),
+    });
+
+    await waitFor(() => {
+      expect(onVisibilityChanged).toBeDefined();
+    });
+
+    act(() => {
+      onVisibilityChanged?.({ mindId: activeMind.mindId, viewId: 'briefing', enabled: false });
+    });
+
+    await waitFor(() => {
+      expect(result.current.disabledLensViewKeys).toEqual([`${activeMind.mindId}:briefing`]);
     });
   });
 

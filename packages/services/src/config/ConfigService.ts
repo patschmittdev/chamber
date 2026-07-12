@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { generateMindId } from '../mind';
+import { parseLensViewVisibilityKey } from '@chamber/shared';
 import type { AppConfig, AppConfigV1, ChamberConversationRecord, InstalledTool, MarketplaceRegistry, MindRecord, UserProfile } from '@chamber/shared/types';
 
 const CONFIG_DIR = path.join(os.homedir(), '.chamber');
@@ -72,6 +73,7 @@ export class ConfigService {
       : [];
     const installedTools = normalizeInstalledTools(raw.installedTools);
     const userProfile = normalizeUserProfile(raw.userProfile);
+    const disabledLensViewKeys = normalizeLensViewVisibilityKeys(raw.disabledLensViewKeys);
     return this.deduplicateMinds({
       version: 2,
       minds,
@@ -81,6 +83,7 @@ export class ConfigService {
       ...(userProfile ? { userProfile } : {}),
       marketplaceRegistries: this.normalizeMarketplaceRegistries(raw.marketplaceRegistries),
       ...(installedTools.length > 0 ? { installedTools } : {}),
+      ...(disabledLensViewKeys.length > 0 ? { disabledLensViewKeys } : {}),
       ...(typeof raw.a2aRelayBaseUrl === 'string' && raw.a2aRelayBaseUrl.trim().length > 0
         ? { a2aRelayBaseUrl: raw.a2aRelayBaseUrl.trim() }
         : {}),
@@ -253,6 +256,20 @@ function normalizeInstalledTools(raw: unknown): InstalledTool[] {
     }
   }
   return tools;
+}
+
+function normalizeLensViewVisibilityKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string') continue;
+    const key = value.trim();
+    if (!parseLensViewVisibilityKey(key) || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
 }
 
 function hasBaseInstalledToolFields(record: Record<string, unknown>): record is Record<string, unknown> & {

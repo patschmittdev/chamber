@@ -146,6 +146,13 @@ export function useAppSubscriptions() {
     return () => { unsub(); };
   }, [activeMindId, dispatch]);
 
+  useEffect(() => {
+    const unsub = window.electronAPI.lens.onVisibilityChanged((visibility) => {
+      dispatch({ type: 'SET_LENS_VIEW_ENABLED', payload: visibility });
+    });
+    return () => { unsub(); };
+  }, [dispatch]);
+
   // Reload views when active mind changes
   useEffect(() => {
     viewsLoaded.current = false;
@@ -188,9 +195,13 @@ export function useAppSubscriptions() {
       let cancelled = false;
       const loadViews = async () => {
         try {
-          const views = await window.electronAPI.lens.getViews(activeMindId);
+          const [views, disabledViewIds] = await Promise.all([
+            window.electronAPI.lens.getViews(activeMindId),
+            window.electronAPI.lens.getDisabledViewIds(activeMindId),
+          ]);
           if (cancelled) return;
           dispatch({ type: 'SET_DISCOVERED_VIEWS', payload: views });
+          dispatch({ type: 'SET_DISABLED_LENS_VIEW_IDS', payload: { mindId: activeMindId, viewIds: disabledViewIds } });
           viewsLoaded.current = true;
         } catch (err) {
           log.error('Failed to load views:', err);

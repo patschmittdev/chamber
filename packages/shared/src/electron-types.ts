@@ -54,6 +54,7 @@ import type {
   LensViewManifest,
   MarketplaceRegistry,
   MarketplaceRegistryActionResult,
+  LensViewVisibility,
   MindContext,
   ModelInfo,
   StartupProgressEvent,
@@ -116,7 +117,10 @@ export interface ElectronAPI {
     refreshView: (viewId: string, mindId?: string) => Promise<Record<string, unknown> | null>;
     sendAction: (viewId: string, action: string, mindId?: string) => Promise<Record<string, unknown> | null>;
     getCanvasUrl: (viewId: string, mindId?: string) => Promise<string | null>;
+    getDisabledViewIds: (mindId?: string) => Promise<string[]>;
+    setViewEnabled: (viewId: string, enabled: boolean, mindId?: string) => Promise<LensViewVisibility>;
     onViewsChanged: (callback: (views: LensViewManifest[], mindId?: string) => void) => () => void;
+    onVisibilityChanged: (callback: (visibility: LensViewVisibility) => void) => () => void;
   };
   auth: {
     getStatus: () => Promise<{ authenticated: boolean; login?: string }>;

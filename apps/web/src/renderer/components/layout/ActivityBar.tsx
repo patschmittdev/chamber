@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { Separator } from '../ui/separator';
 import type { LensViewManifest } from '@chamber/shared/types';
 import { UpdateIndicator } from './UpdateIndicator';
+import { getVisibleLensViews } from '../../lib/lensVisibility';
 
 const iconMap: Record<string, LucideIcon> = {
   zap: Zap,
@@ -24,9 +25,10 @@ function getIcon(iconName: string, size = 20): React.ReactNode {
 }
 
 export function ActivityBar() {
-  const { activeView, discoveredViews, featureFlags, chatroomStreamingByMind } = useAppState();
+  const { activeMindId, activeView, discoveredViews, disabledLensViewKeys, featureFlags, chatroomStreamingByMind } = useAppState();
   const dispatch = useAppDispatch();
   const isChatroomRunning = Object.values(chatroomStreamingByMind).some(Boolean);
+  const visibleViews = getVisibleLensViews(discoveredViews, disabledLensViewKeys, activeMindId);
 
   return (
     <div className="w-12 bg-card border border-border rounded-xl flex flex-col items-center py-2 shrink-0">
@@ -76,10 +78,10 @@ export function ActivityBar() {
           </TooltipContent>
         </Tooltip>
 
-        {discoveredViews.length > 0 && <Separator className="my-1 w-8" />}
+        {visibleViews.length > 0 && <Separator className="my-1 w-8" />}
 
         {/* Discovered views */}
-        {discoveredViews.map((view: LensViewManifest, index) => {
+        {visibleViews.map((view: LensViewManifest, index) => {
           const description = view.description?.trim();
           const descriptionId = description ? `activity-bar-lens-${index}-description` : undefined;
 

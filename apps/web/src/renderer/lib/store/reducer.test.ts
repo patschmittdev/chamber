@@ -861,6 +861,45 @@ describe('appReducer', () => {
     expect(state.discoveredViews.map((view) => view.id)).toEqual(['v1']);
   });
 
+  it('SET_DISABLED_LENS_VIEW_IDS replaces disabled view ids for one mind only', () => {
+    const state = appReducer({
+      ...initialState,
+      disabledLensViewKeys: ['mind-a:old', 'mind-b:briefing'],
+    }, {
+      type: 'SET_DISABLED_LENS_VIEW_IDS',
+      payload: { mindId: 'mind-a', viewIds: ['briefing'] },
+    });
+
+    expect(state.disabledLensViewKeys).toEqual(['mind-a:briefing', 'mind-b:briefing']);
+  });
+
+  it('SET_LENS_VIEW_ENABLED updates disabled Lens keys', () => {
+    const disabled = appReducer(initialState, {
+      type: 'SET_LENS_VIEW_ENABLED',
+      payload: { mindId: 'mind-a', viewId: 'briefing', enabled: false },
+    });
+    expect(disabled.disabledLensViewKeys).toEqual(['mind-a:briefing']);
+
+    const enabled = appReducer(disabled, {
+      type: 'SET_LENS_VIEW_ENABLED',
+      payload: { mindId: 'mind-a', viewId: 'briefing', enabled: true },
+    });
+    expect(enabled.disabledLensViewKeys).toEqual([]);
+  });
+
+  it('SET_LENS_VIEW_ENABLED falls back to chat when the active Lens is disabled', () => {
+    const state = appReducer({
+      ...initialState,
+      activeMindId: 'mind-a',
+      activeView: 'briefing',
+    }, {
+      type: 'SET_LENS_VIEW_ENABLED',
+      payload: { mindId: 'mind-a', viewId: 'briefing', enabled: false },
+    });
+
+    expect(state.activeView).toBe('chat');
+  });
+
   it('SHOW_LANDING sets showLanding true', () => {
     const state = appReducer(initialState, { type: 'SHOW_LANDING' });
     expect(state.showLanding).toBe(true);

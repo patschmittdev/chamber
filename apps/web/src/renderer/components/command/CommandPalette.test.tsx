@@ -36,6 +36,7 @@ function makeDeps(overrides: Partial<CommandPaletteDeps> = {}): CommandPaletteDe
   return {
     minds: [],
     discoveredViews: [],
+    disabledLensViewKeys: [],
     activeMindId: null,
     isActiveMindBusy: false,
     creationGuard: { current: false },
@@ -168,7 +169,7 @@ describe('CommandPalette', () => {
   it('namespaces discovered Lens view commands so they cannot collide with reserved view ids', () => {
     const dispatch = vi.fn();
     const commands = buildCommandItems(
-      makeDeps({ dispatch, discoveredViews: [makeLensViewManifest({ id: 'chat', name: 'Custom Chat' })] }),
+      makeDeps({ dispatch, activeMindId: mind.mindId, discoveredViews: [makeLensViewManifest({ id: 'chat', name: 'Custom Chat' })] }),
     );
 
     const ids = commands.map((command) => command.id);
@@ -177,6 +178,18 @@ describe('CommandPalette', () => {
 
     commands.find((command) => command.id === 'lens:chat')?.perform();
     expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+  });
+
+  it('omits disabled Lens view commands from the palette', () => {
+    const commands = buildCommandItems(
+      makeDeps({
+        activeMindId: mind.mindId,
+        discoveredViews: [makeLensViewManifest({ id: 'briefing', name: 'Briefing' })],
+        disabledLensViewKeys: [`${mind.mindId}:briefing`],
+      }),
+    );
+
+    expect(commands.some((command) => command.id === 'lens:briefing')).toBe(false);
   });
 
   it('omits the new conversation command while the active mind is busy', () => {

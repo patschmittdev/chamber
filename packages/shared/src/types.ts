@@ -355,6 +355,7 @@ export interface AppConfig {
   userProfile?: UserProfile;
   marketplaceRegistries?: MarketplaceRegistry[];
   installedTools?: InstalledTool[];
+  disabledLensViewKeys?: string[];
   a2aRelayBaseUrl?: string;
   a2aRelayAuthMode?: 'static' | 'interactive';
 }
@@ -473,6 +474,12 @@ export interface CanvasLensAction {
   data?: unknown;
   intent?: string;
   correlationId?: string;
+}
+
+export interface LensViewVisibility {
+  mindId: string;
+  viewId: string;
+  enabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
