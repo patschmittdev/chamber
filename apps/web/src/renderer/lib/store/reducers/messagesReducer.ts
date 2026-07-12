@@ -1,6 +1,6 @@
 import type { ChatMessage, ContentBlock } from '@chamber/shared/types';
 import type { AppState, AppAction } from '../state';
-import { conversationViewFor, handleChatEvent, isMindChatStreaming, reconcileMessageEventIds, setConversationView } from './helpers';
+import { conversationViewFor, handleChatEvent, isMindChatStreaming, reconcileMessageEventIds, setConversationView, withoutKey } from './helpers';
 
 type Handler<T extends AppAction['type']> = (
   state: AppState,
@@ -123,6 +123,8 @@ function clearMessages(state: AppState): Partial<AppState> {
   if (!state.activeMindId) return state;
   return {
     messagesByMind: { ...state.messagesByMind, [state.activeMindId]: [] },
+    variantGroupsByMind: withoutKey(state.variantGroupsByMind, state.activeMindId),
+    variantSelectionByMind: withoutKey(state.variantSelectionByMind, state.activeMindId),
   };
 }
 
@@ -141,6 +143,12 @@ function newConversation(state: AppState, action: Extract<AppAction, { type: 'NE
     messagesByMind: conversationMindId
       ? { ...state.messagesByMind, [conversationMindId]: [] }
       : state.messagesByMind,
+    variantGroupsByMind: conversationMindId
+      ? withoutKey(state.variantGroupsByMind, conversationMindId)
+      : state.variantGroupsByMind,
+    variantSelectionByMind: conversationMindId
+      ? withoutKey(state.variantSelectionByMind, conversationMindId)
+      : state.variantSelectionByMind,
     composeDraftByMind,
     isStreaming: conversationMindId === state.activeMindId ? false : state.isStreaming,
     streamingByMind: conversationMindId

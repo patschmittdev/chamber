@@ -24,6 +24,8 @@ export const IPC = {
     EDIT_MESSAGE: 'chat:editMessage',
     REGENERATE: 'chat:regenerate',
     GET_CONVERSATION_EVENTS: 'chat:getConversationEvents',
+    GET_CONVERSATION_VARIANTS: 'chat:getConversationVariants',
+    SWITCH_ACTIVE_VARIANT: 'chat:switchActiveVariant',
     FORK_CONVERSATION: 'chat:forkConversation',
   },
   CONVERSATION_HISTORY: {

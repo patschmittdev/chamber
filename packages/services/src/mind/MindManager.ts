@@ -8,7 +8,7 @@ import * as path from 'path';
 import type { PermissionHandler, ResumeSessionConfig, SessionConfig } from '@github/copilot-sdk';
 import { parseModelSelectionKey } from '@chamber/shared/model-selection';
 import { isStaleSessionError } from '@chamber/shared/sessionErrors';
-import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationForkRef, ConversationResumeResult, ConversationSummary, MindContext, MindInstructionPrecedence, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
+import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationForkRef, ConversationResumeResult, ConversationSummary, MessageVariant, MessageVariantGroup, MindContext, MindInstructionPrecedence, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
 import { Logger } from '../logger';
 import type { InternalMindContext, CopilotClient, CopilotSession, Tool, UserInputHandler } from './types';
 import { generateMindId } from './generateMindId';
@@ -20,7 +20,9 @@ import type { IdentityLoader } from '../chat/IdentityLoader';
 import { getCurrentDateTimeContext, injectCurrentDateTimeContext } from '../chat/currentDateTimeContext';
 import { mapSessionEventsToChatMessages } from '../chat/sessionTranscript';
 import { ConversationForkSeedStore } from '../chat/ConversationForkSeedStore';
-import { buildConversationForkSeed, findConversationForkSourceMessage, type ConversationForkSeed } from '../chat/conversationForkContext';
+import { MessageVariantStore } from '../chat/MessageVariantStore';
+import { buildConversationForkSeed, buildConversationForkSeedFromMessages, findConversationForkSourceMessage, type ConversationForkSeed } from '../chat/conversationForkContext';
+import { deriveVariantTail } from '@chamber/shared/messageVariants';
 import type { ChamberToolProvider } from '../chamberTools';
 import type { ConfigService } from '../config/ConfigService';
 import type { ViewDiscovery } from '../lens/ViewDiscovery';
@@ -59,6 +61,12 @@ interface CreateMindSessionRequest {
 interface ConversationForkSeedStorePort {
   save(mindId: string, sessionId: string, seed: ConversationForkSeed): Promise<void>;
   read(mindId: string, sessionId: string): Promise<ConversationForkSeed | null>;
+  delete(mindId: string, sessionId: string): Promise<void>;
+}
+
+interface MessageVariantStorePort {
+  read(mindId: string, sessionId: string): Promise<MessageVariantGroup[]>;
+  save(mindId: string, sessionId: string, groups: MessageVariantGroup[]): Promise<void>;
   delete(mindId: string, sessionId: string): Promise<void>;
 }
 
@@ -118,6 +126,9 @@ export class MindManager extends EventEmitter {
   private providers: ChamberToolProvider[] = [];
   private modelUpdates = new Map<string, Promise<void>>();
   private readonly forkSeedStore: ConversationForkSeedStorePort;
+  private readonly variantStore: MessageVariantStorePort;
+  /** In-memory one-shot fork seeds pending injection after a promote-on-continue, keyed by mindId. */
+  private readonly pendingVariantSeeds = new Map<string, ConversationForkSeed>();
 
   constructor(
     private readonly clientFactory: CopilotClientFactory,
@@ -147,10 +158,14 @@ export class MindManager extends EventEmitter {
     private readonly byoDefaultModelProvider: () => string | undefined = () => undefined,
     private readonly managedSkillService?: Pick<ManagedSkillService, 'installIntoMind'>,
     forkSeedStore?: ConversationForkSeedStorePort,
+    variantStore?: MessageVariantStorePort,
   ) {
     super();
     this.forkSeedStore = forkSeedStore ?? new ConversationForkSeedStore({
       storageRoot: path.join(this.configService.getConfigDir(), 'conversation-fork-seeds'),
+    });
+    this.variantStore = variantStore ?? new MessageVariantStore({
+      storageRoot: path.join(this.configService.getConfigDir(), 'message-variants'),
     });
   }
 
@@ -671,6 +686,115 @@ export class MindManager extends EventEmitter {
     return this.forkSeedStore.read(mindId, context.activeSessionId);
   }
 
+  /**
+   * Freezes the about-to-be-discarded conversation tail as a retained variant
+   * before an edit or regenerate truncates it. The tail runs from the re-sent
+   * user turn (`userEventId`) to the end of the active conversation; the group is
+   * anchored at the turn immediately before it (null when it is the root turn).
+   * A no-op when the turn is absent (already truncated) or the same tail was
+   * already captured, so a stale-session retry cannot double-capture.
+   */
+  async captureActiveConversationVariant(mindId: string, userEventId: string): Promise<void> {
+    const context = this.minds.get(mindId);
+    if (!context?.session || !context.activeSessionId) return;
+    const sessionId = context.activeSessionId;
+    const messages = await this.getMessagesForSession(context.session);
+    const capture = deriveVariantTail(messages, userEventId);
+    if (!capture) return;
+    const groups = await this.variantStore.read(mindId, sessionId);
+    const group = this.findOrCreateVariantGroup(groups, capture.anchorEventId);
+    if (group.frozenVariants.some((variant) => variant.messages[0]?.eventId === capture.tail[0].eventId)) return;
+    group.frozenVariants.push(this.freezeVariant(capture.tail));
+    await this.variantStore.save(mindId, sessionId, groups);
+  }
+
+  /** Retained variant groups for the active conversation, for rendering the version pager. */
+  async getConversationVariants(mindId: string): Promise<MessageVariantGroup[]> {
+    const context = this.minds.get(mindId);
+    if (!context?.activeSessionId) return [];
+    return this.variantStore.read(mindId, context.activeSessionId);
+  }
+
+  /**
+   * Promotes a retained variant to the live branch before the next send. The
+   * current active tail is frozen as a sibling, the SDK session is truncated back
+   * to the anchor, and the selected variant is staged as a one-shot fork seed so
+   * the next send continues from it. Returns the post-truncate conversation.
+   */
+  async switchActiveConversationVariant(
+    mindId: string,
+    anchorEventId: string | null,
+    variantId: string,
+  ): Promise<ConversationResumeResult> {
+    const context = this.minds.get(mindId);
+    if (!context?.session || !context.activeSessionId) throw new Error(`Mind ${mindId} not found or has no session`);
+    const sessionId = context.activeSessionId;
+    const groups = await this.variantStore.read(mindId, sessionId);
+    const group = groups.find((candidate) => candidate.anchorEventId === anchorEventId);
+    if (!group) throw new Error(`Variant group for anchor ${anchorEventId ?? 'root'} not found`);
+    const target = group.frozenVariants.find((variant) => variant.variantId === variantId);
+    if (!target) throw new Error(`Variant ${variantId} not found`);
+
+    const messages = await this.getMessagesForSession(context.session);
+    const tailStart = anchorEventId === null ? 0 : messages.findIndex((message) => message.eventId === anchorEventId) + 1;
+    if (anchorEventId !== null && tailStart === 0) {
+      throw new Error(`Anchor ${anchorEventId} is no longer present in the active conversation`);
+    }
+    const activeTail = messages.slice(tailStart);
+    if (activeTail.length > 0) {
+      const firstTailEventId = activeTail[0].eventId;
+      if (!group.frozenVariants.some((variant) => variant.messages[0]?.eventId === firstTailEventId)) {
+        group.frozenVariants.push(this.freezeVariant(activeTail));
+      }
+      await this.variantStore.save(mindId, sessionId, groups);
+      if (firstTailEventId) await this.truncateAndRefreshHasMessages(mindId, context.session, firstTailEventId);
+    }
+
+    const seedFork: ConversationForkRef = {
+      sourceSessionId: sessionId,
+      sourceEventId: anchorEventId ?? '',
+      sourceMessageId: target.messages[0]?.id ?? '',
+      sourceTitle: this.getActiveConversationRecord(mindId)?.title ?? 'Prior version',
+      createdAt: new Date().toISOString(),
+    };
+    this.pendingVariantSeeds.set(mindId, buildConversationForkSeedFromMessages(target.messages, seedFork));
+
+    return {
+      sessionId,
+      messages: await this.getMessagesForConversation(mindId, sessionId, context.session),
+      conversations: this.listConversationHistory(mindId),
+    };
+  }
+
+  /** Returns and clears the one-shot fork seed staged by a variant promotion, if any. */
+  consumePendingVariantSeed(mindId: string): ConversationForkSeed | null {
+    const seed = this.pendingVariantSeeds.get(mindId);
+    this.pendingVariantSeeds.delete(mindId);
+    return seed ?? null;
+  }
+
+  private findOrCreateVariantGroup(groups: MessageVariantGroup[], anchorEventId: string | null): MessageVariantGroup {
+    const existing = groups.find((group) => group.anchorEventId === anchorEventId);
+    if (existing) return existing;
+    const created: MessageVariantGroup = { groupId: randomUUID(), anchorEventId, frozenVariants: [] };
+    groups.push(created);
+    return created;
+  }
+
+  private freezeVariant(messages: ChatMessage[]): MessageVariant {
+    return { variantId: randomUUID(), createdAt: new Date().toISOString(), messages };
+  }
+
+  private async truncateAndRefreshHasMessages(mindId: string, session: CopilotSession, eventId: string): Promise<void> {
+    await session.rpc.history.truncate({ eventId });
+    try {
+      const remaining = await this.getMessagesForSession(session);
+      this.updateActiveConversationHasMessages(mindId, remaining.length > 0);
+    } catch (error) {
+      log.warn(`Switched variant for mind ${mindId} but could not refresh message state`, error);
+    }
+  }
+
   async resumeConversation(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
     return this.withMindSessionLock(mindId, () => this.resumeConversationUnlocked(mindId, sessionId));
   }
@@ -1036,6 +1160,11 @@ export class MindManager extends EventEmitter {
       await this.forkSeedStore.delete(mindId, sessionId);
     } catch (error) {
       log.warn(`Failed to delete fork seed for conversation ${sessionId}; conversation metadata was already updated.`, error);
+    }
+    try {
+      await this.variantStore.delete(mindId, sessionId);
+    } catch (error) {
+      log.warn(`Failed to delete retained variants for conversation ${sessionId}; conversation metadata was already updated.`, error);
     }
   }
 

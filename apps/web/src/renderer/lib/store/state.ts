@@ -1,4 +1,5 @@
-import type { AttachmentBlock, ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, ModelInfo, LensViewManifest, LensViewVisibility, MindContext, ImageBlock } from '@chamber/shared/types';
+import type { AttachmentBlock, ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, MessageVariantGroup, ModelInfo, LensViewManifest, LensViewVisibility, MindContext, ImageBlock } from '@chamber/shared/types';
+import type { VariantSelectionByGroup } from '@chamber/shared/messageVariants';
 import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent } from '@chamber/shared/a2a-types';
 import type { ChatroomMessage, ChatroomStreamEvent, OrchestrationMode, GroupChatConfig, HandoffConfig, MagenticConfig, TaskLedgerItem } from '@chamber/shared/chatroom-types';
 import { DEFAULT_APP_FEATURE_FLAGS, type AppFeatureFlags } from '@chamber/shared/feature-flags';
@@ -32,6 +33,18 @@ export interface AppState {
   runtimePhase: 'ready' | 'switching-account';
   switchingAccountLogin: string | null;
   messagesByMind: Record<string, ChatMessage[]>;
+  /**
+   * Authoritative retained edit/regenerate variant groups per mind, mirrored
+   * from the service store after each turn/resume/switch. Drives the version
+   * pager together with `variantSelectionByMind`.
+   */
+  variantGroupsByMind: Record<string, MessageVariantGroup[]>;
+  /**
+   * Display-only selected branch index per group, per mind (groupId -> index).
+   * Absent groups default to the active (newest) branch. Toggling is local until
+   * the user continues the conversation, which promotes the selected branch.
+   */
+  variantSelectionByMind: Record<string, VariantSelectionByGroup>;
   conversationHistoryByMind: Record<string, ConversationSummary[]>;
   activeConversationByMind: Record<string, string | undefined>;
   conversationViewByMind: Record<string, ConversationViewState>;
@@ -75,6 +88,9 @@ export type AppAction =
   | { type: 'ADD_ASSISTANT_MESSAGE'; payload: { id: string; timestamp: number } }
   | { type: 'CHAT_EVENT'; payload: { mindId: string; messageId: string; event: ChatEvent } }
   | { type: 'TRUNCATE_AFTER'; payload: { mindId: string; messageId: string } }
+  | { type: 'CAPTURE_MESSAGE_VARIANT'; payload: { mindId: string; userEventId: string } }
+  | { type: 'SET_MESSAGE_VARIANTS'; payload: { mindId: string; groups: MessageVariantGroup[] } }
+  | { type: 'SELECT_MESSAGE_VARIANT'; payload: { mindId: string; groupId: string; index: number } }
   | { type: 'RECONCILE_EVENT_IDS'; payload: { mindId: string; events: ConversationEventRef[] } }
   | { type: 'HYDRATE_CHAT_STATE'; payload: { messagesByMind: Record<string, ChatMessage[]>; streamingByMind: Record<string, boolean>; conversationViewByMind?: Record<string, ConversationViewState> } }
   | { type: 'SET_CONVERSATION_HISTORY'; payload: { mindId: string; conversations: ConversationSummary[] } }
@@ -126,6 +142,8 @@ export const initialState: AppState = {
   runtimePhase: 'ready',
   switchingAccountLogin: null,
   messagesByMind: {},
+  variantGroupsByMind: {},
+  variantSelectionByMind: {},
   conversationHistoryByMind: {},
   activeConversationByMind: {},
   conversationViewByMind: {},

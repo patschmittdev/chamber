@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { ChatMessage } from '@chamber/shared/types';
 import type { ConversationForkSeed } from './conversationForkContext';
+import { isNodeError, isStoredChatMessage, safePathSegment } from './chatStorePersistence';
 
 const SEED_FILE = 'seed.json';
 
@@ -101,7 +101,7 @@ function normalizeStoredSeed(value: unknown, mindId: string, sessionId: string):
       sourceTitle: fork.sourceTitle,
       createdAt: fork.createdAt,
     },
-    messages: record.messages.filter(isChatMessage),
+    messages: record.messages.filter(isStoredChatMessage),
     limits: {
       maxMessages: limits.maxMessages,
       maxTextCharacters: limits.maxTextCharacters,
@@ -109,23 +109,4 @@ function normalizeStoredSeed(value: unknown, mindId: string, sessionId: string):
     },
     truncated: record.truncated,
   };
-}
-
-function isChatMessage(value: unknown): value is ChatMessage {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === 'string'
-    && (record.role === 'user' || record.role === 'assistant')
-    && Array.isArray(record.blocks)
-    && typeof record.timestamp === 'number'
-  );
-}
-
-function safePathSegment(value: string): string {
-  return Buffer.from(value, 'utf8').toString('base64url');
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
 }

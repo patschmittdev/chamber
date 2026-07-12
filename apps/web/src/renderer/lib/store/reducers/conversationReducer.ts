@@ -1,6 +1,6 @@
 import type { AppState, AppAction } from '../state';
 import type { ConversationSummary } from '@chamber/shared/types';
-import { conversationViewFor, isMindChatStreaming, mergeConversationSummaries, setConversationView } from './helpers';
+import { conversationViewFor, isMindChatStreaming, mergeConversationSummaries, setConversationView, withoutKey } from './helpers';
 
 type Handler<T extends AppAction['type']> = (
   state: AppState,
@@ -145,6 +145,8 @@ function resumeConversation(
       ...state.messagesByMind,
       [action.payload.mindId]: action.payload.messages,
     },
+    variantGroupsByMind: withoutKey(state.variantGroupsByMind, action.payload.mindId),
+    variantSelectionByMind: withoutKey(state.variantSelectionByMind, action.payload.mindId),
     conversationHistoryByMind: {
       ...state.conversationHistoryByMind,
       [action.payload.mindId]: action.payload.conversations,

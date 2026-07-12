@@ -7,6 +7,14 @@ export function nonEmptyString(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 }
 
+/** Returns a shallow copy of `record` without `key`, or the same reference when the key is absent. */
+export function withoutKey<T>(record: Record<string, T>, key: string | null | undefined): Record<string, T> {
+  if (!key || !(key in record)) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
 export function selectedModelForActiveMind(
   state: AppState,
   activeMindId: string | null,

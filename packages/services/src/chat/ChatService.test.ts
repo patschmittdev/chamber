@@ -3,7 +3,7 @@ import { ChatService } from './ChatService';
 import { TurnQueue } from './TurnQueue';
 import { Logger } from '../logger';
 import type { MindManager } from '../mind';
-import type { ChatMessage, ConversationEventRef, ConversationSummary, MindInstructionPrecedence } from '@chamber/shared/types';
+import type { ChatMessage, ConversationEventRef, ConversationResumeResult, ConversationSummary, MessageVariantGroup, MindInstructionPrecedence } from '@chamber/shared/types';
 import type { ConversationForkSeed } from './conversationForkContext';
 
 type AllEventsHandler = (event: unknown) => void;
@@ -123,6 +123,10 @@ const mockMindManager = {
   setMindGlobalCustomInstructionsEnabled: vi.fn(async (): Promise<MindInstructionPrecedence> => defaultInstructionPrecedence),
   getMindInstructionPrecedence: vi.fn((): MindInstructionPrecedence => defaultInstructionPrecedence),
   getActiveConversationForkSeed: vi.fn(async (): Promise<ConversationForkSeed | null> => null),
+  captureActiveConversationVariant: vi.fn(async (): Promise<void> => undefined),
+  getConversationVariants: vi.fn(async (): Promise<MessageVariantGroup[]> => []),
+  switchActiveConversationVariant: vi.fn(async (): Promise<ConversationResumeResult> => ({ sessionId: 'session-1', messages: [], conversations: [] })),
+  consumePendingVariantSeed: vi.fn((): ConversationForkSeed | null => null),
 };
 
 function createForkSeed(message = 'Prior context only'): ConversationForkSeed {
@@ -526,6 +530,69 @@ describe('ChatService', () => {
       expect(emit).toHaveBeenCalledWith({ type: 'reconnecting' });
       expect(freshSession.send).toHaveBeenCalledWith({ prompt: expect.stringContaining('edited prompt') });
       expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('editMessage captures the retained variant before truncating the turn', async () => {
+      idleOnSend();
+      const emit = vi.fn();
+      await svc.editMessage('valid-mind', 'evt-7', 'edited prompt', 'msg-9', emit);
+
+      expect(mockMindManager.captureActiveConversationVariant).toHaveBeenCalledWith('valid-mind', 'evt-7');
+      const captureOrder = mockMindManager.captureActiveConversationVariant.mock.invocationCallOrder[0];
+      const truncateOrder = mockMindManager.truncateActiveConversation.mock.invocationCallOrder[0];
+      expect(captureOrder).toBeLessThan(truncateOrder);
+    });
+
+    it('regenerate captures the retained variant before truncating the last user turn', async () => {
+      idleOnSend();
+      mockMindManager.getActiveConversationMessages.mockResolvedValueOnce([
+        { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'first question' }], timestamp: 1, eventId: 'evt-u1' },
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: 'answer' }], timestamp: 2, eventId: 'evt-a1' },
+      ]);
+      const emit = vi.fn();
+      await svc.regenerate('valid-mind', 'msg-regen', emit);
+
+      expect(mockMindManager.captureActiveConversationVariant).toHaveBeenCalledWith('valid-mind', 'evt-u1');
+      const captureOrder = mockMindManager.captureActiveConversationVariant.mock.invocationCallOrder[0];
+      const truncateOrder = mockMindManager.truncateActiveConversation.mock.invocationCallOrder[0];
+      expect(captureOrder).toBeLessThan(truncateOrder);
+    });
+
+    it('a plain send does not capture a retained variant', async () => {
+      idleOnSend();
+      const emit = vi.fn();
+      await svc.sendMessage('valid-mind', 'a new message', 'msg-send', emit);
+      expect(mockMindManager.captureActiveConversationVariant).not.toHaveBeenCalled();
+    });
+
+    it('injects the promoted variant seed into the next send prompt and consumes it once', async () => {
+      idleOnSend();
+      mockMindManager.consumePendingVariantSeed.mockReturnValueOnce(createForkSeed('Promoted version context'));
+      const emit = vi.fn();
+      await svc.sendMessage('valid-mind', 'continue please', 'msg-send', emit);
+
+      const sentPrompt = mockSession.send.mock.calls[0][0].prompt as string;
+      expect(sentPrompt).toContain('continue please');
+      expect(sentPrompt).toContain('<chamber_conversation_fork_context>');
+      expect(sentPrompt).toContain('Promoted version context');
+      expect(mockMindManager.consumePendingVariantSeed).toHaveBeenCalledWith('valid-mind');
+      expect(mockMindManager.getActiveConversationForkSeed).not.toHaveBeenCalled();
+    });
+
+    it('getConversationVariants delegates to the mind manager', async () => {
+      const groups: MessageVariantGroup[] = [{ groupId: 'g1', anchorEventId: null, frozenVariants: [] }];
+      mockMindManager.getConversationVariants.mockResolvedValueOnce(groups);
+      const result = await svc.getConversationVariants('valid-mind');
+      expect(mockMindManager.getConversationVariants).toHaveBeenCalledWith('valid-mind');
+      expect(result).toBe(groups);
+    });
+
+    it('switchActiveVariant delegates to the mind manager through the turn queue', async () => {
+      const resumed: ConversationResumeResult = { sessionId: 'session-1', messages: [], conversations: [] };
+      mockMindManager.switchActiveConversationVariant.mockResolvedValueOnce(resumed);
+      const result = await svc.switchActiveVariant('valid-mind', 'anchor-1', 'variant-1');
+      expect(mockMindManager.switchActiveConversationVariant).toHaveBeenCalledWith('valid-mind', 'anchor-1', 'variant-1');
+      expect(result).toBe(resumed);
     });
   });
 

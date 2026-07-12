@@ -60,12 +60,24 @@ export function buildConversationForkSeed(
   if (sourceIndex < 0) {
     throw new Error(`Conversation event ${sourceEventId} was not found in source conversation`);
   }
+  return buildConversationForkSeedFromMessages(messages.slice(0, sourceIndex + 1), fork, options);
+}
 
+/**
+ * Builds a bounded fork seed from an explicit message list, keeping the most
+ * recent `maxMessages` turns and clamping their content. Shared by conversation
+ * forks (which slice up to a source event) and retained-version promotion (which
+ * seeds from a frozen variant snapshot).
+ */
+export function buildConversationForkSeedFromMessages(
+  messages: readonly ChatMessage[],
+  fork: ConversationForkRef,
+  options: BuildConversationForkSeedOptions = {},
+): ConversationForkSeed {
   const maxMessages = positiveLimit(options.maxMessages, DEFAULT_FORK_SEED_MAX_MESSAGES);
   const maxTextCharacters = positiveLimit(options.maxTextCharacters, DEFAULT_FORK_SEED_MAX_TEXT_CHARACTERS);
   const maxToolCharacters = positiveLimit(options.maxToolCharacters, DEFAULT_FORK_SEED_MAX_TOOL_CHARACTERS);
-  const sliced = messages.slice(0, sourceIndex + 1);
-  const recent = sliced.slice(Math.max(0, sliced.length - maxMessages));
+  const recent = messages.slice(Math.max(0, messages.length - maxMessages));
   const bounded = boundSeedMessages(recent, fork, maxTextCharacters, maxToolCharacters);
 
   return {
@@ -73,7 +85,7 @@ export function buildConversationForkSeed(
     fork,
     messages: bounded.messages,
     limits: { maxMessages, maxTextCharacters, maxToolCharacters },
-    truncated: sliced.length > recent.length || bounded.truncated || bounded.messages.length < recent.length,
+    truncated: messages.length > recent.length || bounded.truncated || bounded.messages.length < recent.length,
   };
 }
 

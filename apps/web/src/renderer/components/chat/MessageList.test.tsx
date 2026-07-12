@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AppStateProvider, useAppDispatch } from '../../lib/store';
 import { MessageList } from './MessageList';
-import type { ChatMessage, MindContext } from '@chamber/shared/types';
+import type { ChatMessage, MindContext, MessageVariantGroup } from '@chamber/shared/types';
 import { installElectronAPI } from '../../../test/helpers';
 
 const Q: MindContext = {
@@ -613,6 +613,78 @@ describe('MessageList', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Edit message' }));
       expect(screen.queryByText(/Resubmitting removes/)).toBeNull();
+    });
+  });
+
+  describe('retained version pager', () => {
+    const regenLive: ChatMessage[] = [
+      { id: 'u2', role: 'user', eventId: 'e1', blocks: [{ type: 'text', content: 'question' }], timestamp: 1000 },
+      { id: 'a2', role: 'assistant', eventId: 'e2', blocks: [{ type: 'text', content: 'new answer' }], timestamp: 1001 },
+    ];
+    const regenGroup: MessageVariantGroup = {
+      groupId: 'g1',
+      anchorEventId: null,
+      frozenVariants: [{
+        variantId: 'v1',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        messages: [
+          { id: 'u1', role: 'user', eventId: 'e1s', blocks: [{ type: 'text', content: 'question' }], timestamp: 900 },
+          { id: 'a1', role: 'assistant', eventId: 'e2s', blocks: [{ type: 'text', content: 'old answer' }], timestamp: 901 },
+        ],
+      }],
+    };
+
+    function renderWithVariants(selection: Record<string, number>) {
+      return render(
+        <AppStateProvider
+          testInitialState={{
+            activeMindId: MONEYPENNY.mindId,
+            minds: [Q, MONEYPENNY],
+            messagesByMind: { [MONEYPENNY.mindId]: regenLive },
+            variantGroupsByMind: { [MONEYPENNY.mindId]: [regenGroup] },
+            variantSelectionByMind: { [MONEYPENNY.mindId]: selection },
+          }}
+        >
+          <MessageList />
+        </AppStateProvider>,
+      );
+    }
+
+    it('shows no pager for a single-version conversation', () => {
+      renderMessages([
+        { id: 'u2', role: 'user', eventId: 'e1', blocks: [{ type: 'text', content: 'question' }], timestamp: 1000 },
+        { id: 'a2', role: 'assistant', eventId: 'e2', blocks: [{ type: 'text', content: 'answer' }], timestamp: 1001 },
+      ]);
+      expect(screen.queryByRole('group', { name: 'Message versions' })).toBeNull();
+    });
+
+    it('shows a version pager on the assistant reply and defaults to the active version', () => {
+      renderWithVariants({});
+      expect(screen.getByRole('group', { name: 'Message versions' })).toBeTruthy();
+      expect(screen.getByText('2/2')).toBeTruthy();
+      expect(screen.getByText('new answer')).toBeTruthy();
+      expect(screen.queryByText('old answer')).toBeNull();
+    });
+
+    it('toggling to the previous version shows the retained snapshot and hides the live tail', () => {
+      renderWithVariants({ g1: 0 });
+      expect(screen.getByText('1/2')).toBeTruthy();
+      expect(screen.getByText('old answer')).toBeTruthy();
+      expect(screen.queryByText('new answer')).toBeNull();
+    });
+
+    it('clicking previous selects the retained version', () => {
+      renderWithVariants({});
+      fireEvent.click(screen.getByRole('button', { name: 'Previous version' }));
+      expect(screen.getByText('1/2')).toBeTruthy();
+      expect(screen.getByText('old answer')).toBeTruthy();
+    });
+
+    it('suppresses mutating actions while a retained version is viewed', () => {
+      renderWithVariants({ g1: 0 });
+      expect(screen.queryByRole('button', { name: 'Edit message' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Regenerate response' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Fork conversation from here' })).toBeNull();
     });
   });
 });

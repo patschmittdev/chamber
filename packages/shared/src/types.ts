@@ -164,6 +164,35 @@ export interface ChatMessage {
   eventId?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Retained message versions (edit/regenerate variants)
+// ---------------------------------------------------------------------------
+
+/**
+ * A frozen snapshot of a conversation tail that an edit or regenerate
+ * superseded. `messages` runs from the re-sent user turn to the end of the
+ * conversation at capture time. It is rendered read-only when the user toggles
+ * the version pager and is never re-sent verbatim.
+ */
+export interface MessageVariant {
+  variantId: string;
+  createdAt: string;
+  messages: ChatMessage[];
+}
+
+/**
+ * An ordered set of superseded tails that share a common parent turn. The group
+ * is anchored at `anchorEventId` — the eventId of the message immediately before
+ * the re-sent user turn, or null when that user turn is the conversation root.
+ * The live conversation tail is the implicit active branch; `frozenVariants`
+ * holds only the superseded branches.
+ */
+export interface MessageVariantGroup {
+  groupId: string;
+  anchorEventId: string | null;
+  frozenVariants: MessageVariant[];
+}
+
 /**
  * Lightweight reference to a persisted user/assistant turn, used to reconcile
  * a live conversation's messages with their backing SDK event ids after a turn
