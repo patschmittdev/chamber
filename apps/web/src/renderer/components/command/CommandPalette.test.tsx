@@ -141,6 +141,17 @@ describe('CommandPalette', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'settings' });
   });
 
+  it('dispatches SET_ACTIVE_VIEW when the Open Operator Activity command runs', () => {
+    const dispatch = vi.fn();
+    const commands = buildCommandItems(makeDeps({ dispatch }));
+
+    const activity = commands.find((command) => command.id === 'view:activity');
+    expect(activity).toBeDefined();
+    activity?.perform();
+
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'activity' });
+  });
+
   it('switches the active mind through electron and the store', () => {
     const dispatch = vi.fn();
     const electronAPI = mockElectronAPI();

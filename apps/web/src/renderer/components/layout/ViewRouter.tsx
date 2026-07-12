@@ -6,6 +6,7 @@ import { LensViewRenderer } from '../views/LensViewRenderer';
 import { SettingsView } from '../settings/SettingsView';
 import { A2ARelayView } from '../a2a/A2ARelayView';
 import { ExtensionsView } from '../extensions/ExtensionsView';
+import { OperatorActivityView } from '../activity/OperatorActivityView';
 
 export function ViewRouter() {
   const { activeView, discoveredViews, featureFlags } = useAppState();
@@ -16,6 +17,10 @@ export function ViewRouter() {
 
   if (activeView === 'chatroom') {
     return <ChatroomPanel />;
+  }
+
+  if (activeView === 'activity') {
+    return <OperatorActivityView />;
   }
 
   if (activeView === 'settings') {

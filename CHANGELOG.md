@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add conversation history search and export** — Search the active mind's conversations by title and message content, and export any conversation as Markdown or JSON via a save dialog. Resumed, exported, and searched transcripts now preserve tool, reasoning, and permission blocks consistent with live chat.
 - **Add Extensions hub** — New Extensions view (activity-bar icon) with four tabs: manage a mind's MCP servers (add/edit/remove written to .mcp.json, reusing the runtime schema so invalid entries are preserved and never normalized, with tools/type preserved across edits and renames), install/uninstall marketplace Tools, and read-only Skills and Lens view lists.
 - **Add operator activity contracts** - Adds shared operator activity and usage contracts, a minimal service seam, and validated desktop IPC/preload access for future activity, chatroom progress, and usage rollup slices. Refs ianphil/chamber#215. Refs ianphil/chamber#342.
+- **Add operator activity surface** - Adds a persistent renderer surface for per-mind and chatroom activity metadata outside the transcript, using the shared operator activity contracts without exposing prompts, outputs, raw tool payloads, credentials, or reasoning text. Refs ianphil/chamber#215
 
 ### Refactor
 
