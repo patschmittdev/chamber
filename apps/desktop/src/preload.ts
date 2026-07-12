@@ -176,6 +176,8 @@ const electronAPI: ElectronAPI = {
   },
   skills: {
     listForMind: (mindId: string) => ipcRenderer.invoke(IPC.SKILLS.LIST_FOR_MIND, mindId),
+    listForMindDetails: (mindId: string) => ipcRenderer.invoke(IPC.SKILLS.LIST_FOR_MIND_DETAILS, mindId),
+    browseMarketplace: () => ipcRenderer.invoke(IPC.SKILLS.BROWSE_MARKETPLACE),
   },
   mcp: {
     getServers: (mindId?) => ipcRenderer.invoke(IPC.MCP.GET_SERVERS, mindId),

@@ -181,6 +181,8 @@ export const IPC = {
   },
   SKILLS: {
     LIST_FOR_MIND: 'skills:listForMind',
+    LIST_FOR_MIND_DETAILS: 'skills:listForMindDetails',
+    BROWSE_MARKETPLACE: 'skills:browseMarketplace',
   },
   MCP: {
     GET_SERVERS: 'mcp:getServers',

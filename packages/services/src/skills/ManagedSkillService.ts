@@ -58,7 +58,16 @@ export class ManagedSkillService {
 
   private async doRefresh(): Promise<ManagedSkillSyncResult> {
     const result = await this.catalog.listSkills();
-    const errors: ManagedSkillSyncError[] = [...result.errors];
+    const errors: ManagedSkillSyncError[] = [
+      ...result.errors,
+      ...result.malformedEntries
+        .filter((entry) => entry.source.isDefault === true && CORE_SKILL_IDS.has(entry.rawId ?? ''))
+        .map((entry) => ({
+          marketplaceId: entry.source.marketplaceId,
+          skillId: entry.rawId,
+          message: entry.message,
+        })),
+    ];
     const assets: ManagedSkillAsset[] = [];
 
     for (const skill of result.skills.filter((entry) => entry.reserved && CORE_SKILL_IDS.has(entry.id))) {

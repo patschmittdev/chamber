@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add conversation history search and export** — Search the active mind's conversations by title and message content, and export any conversation as Markdown or JSON via a save dialog. Resumed, exported, and searched transcripts now preserve tool, reasoning, and permission blocks consistent with live chat.
 - **Add Extensions hub** — New Extensions view (activity-bar icon) with four tabs: manage a mind's MCP servers (add/edit/remove written to .mcp.json, reusing the runtime schema so invalid entries are preserved and never normalized, with tools/type preserved across edits and renames), install/uninstall marketplace Tools, and read-only Skills and Lens view lists.
 - **Add Lens visibility controls** - Lets users disable discovered Lens views per mind from Extensions while keeping catalog entries available for re-enable
+- **Add skill details and marketplace browse** - Extensions > Skills now shows bounded local and managed skill details plus read-only marketplace skills and templates with malformed-entry and source-error states
 
 ### Refactor
 

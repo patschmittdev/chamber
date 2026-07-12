@@ -58,6 +58,10 @@ describe('MarketplaceSkillCatalog', () => {
     const result = await catalog.listSkills();
 
     expect(result.skills).toEqual([]);
+    expect(result.malformedEntries).toEqual([]);
+    expect(result.sources).toEqual([
+      expect.objectContaining({ id: 'github:ianphil/genesis-minds', status: 'ok', skillCount: 0, malformedCount: 0 }),
+    ]);
     expect(result.errors).toEqual([]);
   });
 
@@ -66,6 +70,7 @@ describe('MarketplaceSkillCatalog', () => {
       id: 'automation',
       displayName: 'Chamber Automation',
       description: 'Create and schedule Chamber automation scripts.',
+      version: '1.0.0',
       root: 'skills/automation',
       requiredFiles: ['SKILL.md', 'examples/briefing-with-canvas.ts'],
       capabilities: ['chamber-automation', 'cron-scripts', 'ttasks-runtime'],
@@ -80,6 +85,7 @@ describe('MarketplaceSkillCatalog', () => {
         id: 'automation',
         displayName: 'Chamber Automation',
         description: 'Create and schedule Chamber automation scripts.',
+        version: '1.0.0',
         root: 'skills/automation',
         requiredFiles: ['SKILL.md', 'examples/briefing-with-canvas.ts'],
         capabilities: ['chamber-automation', 'cron-scripts', 'ttasks-runtime'],
@@ -112,8 +118,9 @@ describe('MarketplaceSkillCatalog', () => {
     const result = await catalog.listSkills();
 
     expect(result.skills).toEqual([]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain('root must be a safe relative path');
+    expect(result.malformedEntries).toHaveLength(1);
+    expect(result.malformedEntries[0].message).toContain('root must be a safe relative path');
+    expect(result.errors).toEqual([]);
   });
 
   it('requires declared skill files to exist in the marketplace tree', async () => {
@@ -130,8 +137,9 @@ describe('MarketplaceSkillCatalog', () => {
     const result = await catalog.listSkills();
 
     expect(result.skills).toEqual([]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain('missing required file: missing.md');
+    expect(result.malformedEntries).toHaveLength(1);
+    expect(result.malformedEntries[0].message).toContain('missing required file: missing.md');
+    expect(result.errors).toEqual([]);
   });
 
   it('skips disabled marketplaces', async () => {
@@ -139,6 +147,53 @@ describe('MarketplaceSkillCatalog', () => {
     const result = await catalog.listSkills();
 
     expect(result.skills).toEqual([]);
+    expect(result.sources).toEqual([
+      expect.objectContaining({ id: 'github:ianphil/genesis-minds', status: 'disabled', skillCount: 0, malformedCount: 0 }),
+    ]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('keeps valid skills and reports malformed entries from the same marketplace', async () => {
+    seedTree(client, DEFAULT_SOURCE, 'team-helper', ['SKILL.md']);
+    seedPlugin(client, [
+      {
+        id: 'team-helper',
+        displayName: 'Team Helper',
+        description: 'Team guidance.',
+        root: 'skills/team-helper',
+        requiredFiles: ['SKILL.md'],
+        capabilities: ['team-guidance'],
+      },
+      {
+        id: 'broken-helper',
+        displayName: 'Broken Helper',
+        description: 'Unsafe root.',
+        root: '../outside',
+        requiredFiles: ['SKILL.md'],
+        capabilities: [],
+      },
+    ]);
+
+    const catalog = new MarketplaceSkillCatalog(client, [DEFAULT_SOURCE]);
+    const result = await catalog.listSkills();
+
+    expect(result.skills.map((skill) => skill.id)).toEqual(['team-helper']);
+    expect(result.malformedEntries).toEqual([
+      expect.objectContaining({
+        index: 1,
+        rawId: 'broken-helper',
+        rawDisplayName: 'Broken Helper',
+        message: expect.stringContaining('root must be a safe relative path'),
+      }),
+    ]);
+    expect(result.sources).toEqual([
+      expect.objectContaining({
+        id: 'github:ianphil/genesis-minds',
+        status: 'ok',
+        skillCount: 1,
+        malformedCount: 1,
+      }),
+    ]);
     expect(result.errors).toEqual([]);
   });
 
@@ -170,6 +225,21 @@ describe('MarketplaceSkillCatalog', () => {
         message: expect.stringContaining('non-array skills field'),
       }),
     ]);
+    expect(result.sources).toEqual([
+      expect.objectContaining({
+        id: 'github:ianphil/genesis-minds',
+        status: 'error',
+        skillCount: 0,
+        malformedCount: 0,
+        message: expect.stringContaining('non-array skills field'),
+      }),
+      expect.objectContaining({
+        id: 'github:contoso/genesis-minds',
+        status: 'ok',
+        skillCount: 1,
+        malformedCount: 0,
+      }),
+    ]);
   });
 
   it('does not allow non-default marketplaces to provide reserved core skills', async () => {
@@ -189,8 +259,9 @@ describe('MarketplaceSkillCatalog', () => {
     const result = await catalog.listSkills();
 
     expect(result.skills).toEqual([]);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0].message).toContain('reserved core skill');
+    expect(result.malformedEntries).toHaveLength(1);
+    expect(result.malformedEntries[0].message).toContain('reserved core skill');
+    expect(result.errors).toEqual([]);
   });
 });
 
@@ -207,11 +278,12 @@ function seedTree(
   skillId: string,
   files: string[],
 ): void {
-  client.trees.set(repoKey(source.owner, source.repo), files.map((file) => ({
+  const existing = client.trees.get(repoKey(source.owner, source.repo)) ?? [];
+  client.trees.set(repoKey(source.owner, source.repo), [...existing, ...files.map((file) => ({
     path: `plugins/${source.plugin}/skills/${skillId}/${file}`,
     type: 'blob',
     sha: `${skillId}-${file}`,
-  })));
+  }))]);
 }
 
 function repoKey(owner: string, repo: string): string {

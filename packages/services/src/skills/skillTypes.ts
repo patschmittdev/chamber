@@ -1,3 +1,9 @@
+import type {
+  MarketplaceSkillEntry as SharedMarketplaceSkillEntry,
+  MarketplaceSkillMalformedEntry as SharedMarketplaceSkillMalformedEntry,
+  MarketplaceSkillSourceStatus as SharedMarketplaceSkillSourceStatus,
+} from '@chamber/shared/skill-types';
+
 export interface SkillMarketplaceSource {
   id?: string;
   label?: string;
@@ -10,25 +16,9 @@ export interface SkillMarketplaceSource {
   isDefault?: boolean;
 }
 
-export interface MarketplaceSkillEntry {
-  id: string;
-  displayName: string;
-  description: string;
-  root: string;
-  requiredFiles: string[];
-  capabilities: string[];
-  reserved: boolean;
-  source: {
-    owner: string;
-    repo: string;
-    ref: string;
-    plugin: string;
-    marketplaceId: string;
-    marketplaceLabel: string;
-    marketplaceUrl: string;
-    isDefault: boolean;
-  };
-}
+export type MarketplaceSkillEntry = SharedMarketplaceSkillEntry;
+export type MarketplaceSkillMalformedEntry = SharedMarketplaceSkillMalformedEntry;
+export type MarketplaceSkillSourceStatus = SharedMarketplaceSkillSourceStatus;
 
 export interface ManagedSkillManifest {
   name: string;

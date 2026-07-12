@@ -411,6 +411,14 @@ export function installBrowserApi(): void {
     skills: {
       // Web host has no on-disk mind directory to scan.
       listForMind: async () => [],
+      listForMindDetails: async () => [],
+      browseMarketplace: async () => ({
+        skills: [],
+        malformedSkills: [],
+        skillSources: [],
+        templates: [],
+        templateSources: [],
+      }),
     },
     mcp: {
       // Web host has no on-disk mind directory to read or write .mcp.json.
