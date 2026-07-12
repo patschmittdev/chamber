@@ -8,7 +8,7 @@ import { ActivityBar } from './ActivityBar';
 import { AppStateProvider } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
 import { TooltipProvider } from '../ui/tooltip';
-import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
+import { installElectronAPI, makeLensViewManifest, mockElectronAPI } from '../../../test/helpers';
 
 function renderActivityBar(testInitialState?: Partial<AppState>) {
   return render(
@@ -58,6 +58,40 @@ describe('ActivityBar', () => {
     renderActivityBar();
     expect(screen.getByLabelText('Chat')).toBeTruthy();
     expect(screen.getByLabelText('Chatroom')).toBeTruthy();
+  });
+
+  it('surfaces Lens descriptions as accessible ActivityBar text', () => {
+    const description = 'Summarizes open work items.';
+    renderActivityBar({
+      discoveredViews: [
+        makeLensViewManifest({
+          id: 'work-summary',
+          name: 'Work Summary',
+          icon: 'newspaper',
+          description,
+        }),
+      ],
+    });
+
+    const viewButton = screen.getByLabelText('Work Summary');
+    const descriptionId = viewButton.getAttribute('aria-describedby');
+
+    expect(descriptionId).toBeTruthy();
+    expect(document.getElementById(descriptionId!)?.textContent).toBe(description);
+  });
+
+  it('does not expose empty Lens descriptions in the ActivityBar', () => {
+    renderActivityBar({
+      discoveredViews: [
+        makeLensViewManifest({
+          id: 'work-summary',
+          name: 'Work Summary',
+          description: '   ',
+        }),
+      ],
+    });
+
+    expect(screen.getByLabelText('Work Summary').getAttribute('aria-describedby')).toBeNull();
   });
 
   it('renders an Extensions button in the footer', () => {
