@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { AgentDangerZone } from './AgentDangerZone';
 import { AppStateProvider } from '../../lib/store';
@@ -52,5 +52,17 @@ describe('AgentDangerZone', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });
     expect(api.mind.remove).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a removal failure inside the dialog and keeps it open', async () => {
+    (api.mind.remove as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('disk is busy'));
+    renderDangerZone();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove agent' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove agent' }));
+    await waitFor(() => {
+      expect(within(dialog).getByText('disk is busy')).toBeTruthy();
+    });
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });

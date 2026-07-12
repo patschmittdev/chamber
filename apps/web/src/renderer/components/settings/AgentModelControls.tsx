@@ -66,8 +66,12 @@ export function AgentModelControls({ mind }: AgentModelControlsProps) {
   const handleSelect = async (model: ModelInfo) => {
     if (applying || modelSelectionEqualsModel(currentSelection, model)) return;
     const key = modelSelectionKeyFromModel(model);
+    const isActiveMind = mind.mindId === activeMindId;
     setApplying(true);
     setError(null);
+    if (isActiveMind) {
+      dispatch({ type: 'SET_MODEL_SWITCHING', payload: { mindId: mind.mindId, switching: true } });
+    }
     try {
       const updated = await window.electronAPI.mind.setModel(mind.mindId, key);
       if (updated) {
@@ -76,13 +80,16 @@ export function AgentModelControls({ mind }: AgentModelControlsProps) {
           payload: minds.map((entry) => (entry.mindId === updated.mindId ? updated : entry)),
         });
       }
-      if (mind.mindId === activeMindId) {
+      if (isActiveMind) {
         dispatch({ type: 'SET_SELECTED_MODEL', payload: key });
       }
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setApplying(false);
+      if (isActiveMind) {
+        dispatch({ type: 'SET_MODEL_SWITCHING', payload: { mindId: mind.mindId, switching: false } });
+      }
     }
   };
 

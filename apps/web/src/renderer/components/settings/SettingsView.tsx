@@ -254,7 +254,7 @@ export function SettingsView() {
       showLocalLlm={Boolean(featureFlags.byoLlm)}
       showVoiceDictation={Boolean(featureFlags.voiceDictation)}
     >
-      {(activeSection, agentsMindId) => (
+      {(activeSection, agentsMindId, agentsSelectionToken) => (
         <>
           {activeSection === 'profile' && (
             <section className="space-y-3">
@@ -421,6 +421,7 @@ export function SettingsView() {
             <AgentsSettingsSection
               minds={sortedMinds}
               initialSelectedMindId={agentsMindId}
+              selectionToken={agentsSelectionToken}
               precedenceByMindId={instructionPrecedenceByMindId}
               savingMindId={instructionPreferenceSavingMindId}
               onToggleInheritance={handleToggleMindCustomInstructions}
@@ -610,7 +611,7 @@ interface SettingsRailItem {
 interface SettingsLayoutProps {
   showLocalLlm: boolean;
   showVoiceDictation: boolean;
-  children: (activeSection: SettingsSectionId, agentsMindId?: string) => React.ReactNode;
+  children: (activeSection: SettingsSectionId, agentsMindId?: string, agentsSelectionToken?: number) => React.ReactNode;
 }
 
 function resolveInitialSection(
@@ -644,6 +645,9 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
   const [deepLinkMindId, setDeepLinkMindId] = useState<string | undefined>(
     () => pendingSettingsIntent?.mindId,
   );
+  // Distinguishes one deep-link from the next so a repeated intent to the same
+  // agent is not collapsed into an unchanged prop (see AgentsSettingsSection).
+  const [deepLinkToken, setDeepLinkToken] = useState(0);
 
   // A caller (e.g. the agent sidebar "Manage agent" action) can deep-link into a
   // specific settings section and agent. Apply the one-shot intent, then clear it
@@ -653,6 +657,7 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
     const target = railItems.find((item) => item.id === pendingSettingsIntent.section);
     if (target) setActiveSection(target.id);
     setDeepLinkMindId(pendingSettingsIntent.mindId);
+    setDeepLinkToken((token) => token + 1);
     dispatch({ type: 'SET_PENDING_SETTINGS_INTENT', payload: null });
   }, [pendingSettingsIntent, railItems, dispatch]);
 
@@ -697,7 +702,7 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
          * (defined in index.css) every time the user picks a new tab,
          * matching the activity-bar transitions. */}
         <div key={activeSection} className="view-enter p-6 max-w-3xl space-y-6">
-          {children(activeSection, deepLinkMindId)}
+          {children(activeSection, deepLinkMindId, deepLinkToken)}
         </div>
       </div>
     </div>

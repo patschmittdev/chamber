@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import { AgentsSettingsSection } from './AgentsSettingsSection';
 import { AppStateProvider } from '../../lib/store';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
@@ -174,5 +174,60 @@ describe('AgentsSettingsSection', () => {
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Model' }));
     expect(await screen.findByRole('radio', { name: /Claude Sonnet/ })).toBeTruthy();
     expect(api.chat.listModels).toHaveBeenCalledWith('ada-1');
+  });
+
+  it('re-applies a deep-link to the same agent after the operator browsed away in-section', () => {
+    const providerState = {
+      minds,
+      agentProfileByMindId: {
+        'ada-1': { mindId: 'ada-1', displayName: 'Ada', avatarDataUrl: null },
+        'boru-2': { mindId: 'boru-2', displayName: 'Boru', avatarDataUrl: null },
+      },
+    };
+    const ui = (token: number) => (
+      <AppStateProvider testInitialState={providerState}>
+        <AgentsSettingsSection
+          minds={minds}
+          initialSelectedMindId="ada-1"
+          selectionToken={token}
+          precedenceByMindId={precedenceByMindId}
+          savingMindId={null}
+          onToggleInheritance={vi.fn().mockResolvedValue(undefined)}
+        />
+      </AppStateProvider>
+    );
+    const { rerender } = render(ui(1));
+    expect(screen.getByRole('heading', { name: 'Ada' })).toBeTruthy();
+
+    const list = screen.getByRole('list', { name: /agents/i });
+    fireEvent.click(within(list).getByText('Boru'));
+    expect(screen.getByRole('heading', { name: 'Boru' })).toBeTruthy();
+
+    rerender(ui(2));
+    expect(screen.getByRole('heading', { name: 'Ada' })).toBeTruthy();
+  });
+
+  it('scopes restart feedback to the agent that initiated it', async () => {
+    let resolveRestart: () => void = () => {};
+    (api.mindProfile.restart as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveRestart = () => resolve();
+      }),
+    );
+    renderSection();
+    fireEvent.click(screen.getByRole('button', { name: 'Restart agent' }));
+    await waitFor(() => {
+      expect(api.mindProfile.restart).toHaveBeenCalledWith('ada-1');
+    });
+
+    const list = screen.getByRole('list', { name: /agents/i });
+    fireEvent.click(within(list).getByText('Boru'));
+    expect(screen.getByRole('heading', { name: 'Boru' })).toBeTruthy();
+
+    await act(async () => {
+      resolveRestart();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/Restart requested/i)).toBeNull();
   });
 });

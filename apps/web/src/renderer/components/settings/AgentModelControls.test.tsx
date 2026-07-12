@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { AgentModelControls } from './AgentModelControls';
-import { AppStateProvider } from '../../lib/store';
+import { AppStateProvider, useAppState } from '../../lib/store';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
 import type { MindContext, ModelInfo } from '@chamber/shared/types';
 
@@ -61,5 +61,39 @@ describe('AgentModelControls', () => {
     (api.chat.listModels as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     renderControls();
     expect(await screen.findByText(/No models are available/i)).toBeTruthy();
+  });
+
+  it('signals model switching for the active mind while the change is in flight', async () => {
+    let resolveSetModel: (value: MindContext | null) => void = () => {};
+    (api.mind.setModel as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<MindContext | null>((resolve) => {
+        resolveSetModel = resolve;
+      }),
+    );
+
+    function SwitchingProbe() {
+      const { conversationViewByMind } = useAppState();
+      return <span data-testid="switching">{String(conversationViewByMind['ada-1']?.modelSwitching ?? false)}</span>;
+    }
+
+    render(
+      <AppStateProvider testInitialState={{ minds: [mind], activeMindId: 'ada-1' }}>
+        <AgentModelControls mind={mind} />
+        <SwitchingProbe />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('radio', { name: /GPT-5/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('switching').textContent).toBe('true');
+    });
+
+    await act(async () => {
+      resolveSetModel(null);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('switching').textContent).toBe('false');
+    });
   });
 });

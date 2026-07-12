@@ -30,6 +30,11 @@ export function AgentDangerZone({ mind, displayName }: AgentDangerZoneProps) {
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const closeConfirm = () => {
+    setConfirmOpen(false);
+    setError(null);
+  };
+
   const handleRemove = async () => {
     setRemoving(true);
     setError(null);
@@ -59,9 +64,8 @@ export function AgentDangerZone({ mind, displayName }: AgentDangerZoneProps) {
           Remove agent
         </button>
       </div>
-      {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog open={confirmOpen} onOpenChange={(open) => (open ? setConfirmOpen(true) : closeConfirm())}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Remove {displayName}?</DialogTitle>
@@ -69,8 +73,9 @@ export function AgentDangerZone({ mind, displayName }: AgentDangerZoneProps) {
               This removes the agent from Chamber. Its folder on disk is not deleted, so you can add it again later.
             </DialogDescription>
           </DialogHeader>
+          {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
           <DialogFooter>
-            <button type="button" onClick={() => setConfirmOpen(false)} disabled={removing} className={cancelButtonClass}>
+            <button type="button" onClick={closeConfirm} disabled={removing} className={cancelButtonClass}>
               Cancel
             </button>
             <button

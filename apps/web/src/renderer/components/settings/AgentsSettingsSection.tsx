@@ -17,6 +17,12 @@ const AVATAR_FALLBACK_CLASS = 'flex items-center justify-center bg-muted font-se
 interface AgentsSettingsSectionProps {
   minds: MindContext[];
   initialSelectedMindId?: string;
+  /**
+   * Bumped every time a deep-link is consumed. It lets a repeated deep-link to
+   * the same agent re-apply the selection even after the operator navigated to a
+   * different agent inside this section.
+   */
+  selectionToken?: number;
   precedenceByMindId: Record<string, MindInstructionPrecedence>;
   savingMindId: string | null;
   onToggleInheritance: (mind: MindContext, enabled: boolean) => Promise<void>;
@@ -37,6 +43,7 @@ const STATUS_META: Record<MindContext['status'], { label: string; dotClass: stri
 export function AgentsSettingsSection({
   minds,
   initialSelectedMindId,
+  selectionToken,
   precedenceByMindId,
   savingMindId,
   onToggleInheritance,
@@ -45,7 +52,7 @@ export function AgentsSettingsSection({
   const [query, setQuery] = useState('');
   const [selectedMindId, setSelectedMindId] = useState<string | null>(() => initialSelectedMindId ?? null);
   const [restartingMindId, setRestartingMindId] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ mindId: string; text: string } | null>(null);
 
   const sortedMinds = useMemo(
     () => [...minds].sort((a, b) => a.identity.name.localeCompare(b.identity.name)),
@@ -79,10 +86,12 @@ export function AgentsSettingsSection({
   }, [selectedMind, selectedMindId]);
 
   // A deep-link (the sidebar "Manage agent" action) can target a specific mind;
-  // honor it even when the section is already mounted on a different agent.
+  // honor it even when the section is already mounted on a different agent. The
+  // selectionToken changes on every deep-link, so re-selecting the same agent
+  // still re-applies after the operator browsed to another agent in-section.
   useEffect(() => {
     if (initialSelectedMindId) setSelectedMindId(initialSelectedMindId);
-  }, [initialSelectedMindId]);
+  }, [initialSelectedMindId, selectionToken]);
 
   // Restart feedback belongs to one agent; clear it when the operator moves on.
   useEffect(() => {
@@ -94,9 +103,9 @@ export function AgentsSettingsSection({
     setActionMessage(null);
     try {
       await window.electronAPI.mindProfile.restart(mindId);
-      setActionMessage('Restart requested. The agent will reload with its latest configuration.');
+      setActionMessage({ mindId, text: 'Restart requested. The agent will reload with its latest configuration.' });
     } catch (error) {
-      setActionMessage(getErrorMessage(error));
+      setActionMessage({ mindId, text: getErrorMessage(error) });
     } finally {
       setRestartingMindId(null);
     }
@@ -171,7 +180,7 @@ export function AgentsSettingsSection({
                 onToggleInheritance={onToggleInheritance}
                 restarting={restartingMindId === selectedMind.mindId}
                 onRestart={() => { void handleRestart(selectedMind.mindId); }}
-                actionMessage={actionMessage}
+                actionMessage={actionMessage && actionMessage.mindId === selectedMind.mindId ? actionMessage.text : null}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Select an agent to view its settings.</p>
