@@ -27,6 +27,10 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(IPC.CHAT.REGENERATE, mindId, messageId, model),
     getConversationEvents: (mindId) =>
       ipcRenderer.invoke(IPC.CHAT.GET_CONVERSATION_EVENTS, mindId),
+    getConversationVariants: (mindId) =>
+      ipcRenderer.invoke(IPC.CHAT.GET_CONVERSATION_VARIANTS, mindId),
+    switchActiveVariant: (mindId, anchorEventId, variantId) =>
+      ipcRenderer.invoke(IPC.CHAT.SWITCH_ACTIVE_VARIANT, mindId, anchorEventId, variantId),
     forkConversation: (mindId, sourceSessionId, sourceEventId) =>
       ipcRenderer.invoke(IPC.CHAT.FORK_CONVERSATION, mindId, sourceSessionId, sourceEventId),
   },

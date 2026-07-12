@@ -87,6 +87,14 @@ export function setupChatIPC(chatService: ChatService, mindManager: MindManager)
     return chatService.getConversationEvents(mindId);
   });
 
+  ipcMain.handle(IPC.CHAT.GET_CONVERSATION_VARIANTS, async (_event, mindId: string) => {
+    return chatService.getConversationVariants(mindId);
+  });
+
+  ipcMain.handle(IPC.CHAT.SWITCH_ACTIVE_VARIANT, async (_event, mindId: string, anchorEventId: string | null, variantId: string) => {
+    return chatService.switchActiveVariant(mindId, anchorEventId, variantId);
+  });
+
   ipcMain.handle(IPC.CHAT.FORK_CONVERSATION, async (_event, mindId: string, sourceSessionId: string, sourceEventId: string) => {
     return chatService.forkConversation(mindId, sourceSessionId, sourceEventId);
   });

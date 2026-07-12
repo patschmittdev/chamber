@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useAppState, useAppDispatch, getPlainContent } from '../lib/store';
 import { generateId } from '../lib/utils';
 import type { AttachmentBlock, ChatAttachment, ChatMessage, ImageBlock } from '@chamber/shared/types';
+import { resolvePendingPromotion } from '@chamber/shared/messageVariants';
 import { hasAttachmentBlocks } from '../components/chat/messageContent';
 import { Logger } from '../lib/logger';
 import { useActiveMindBusy } from './useActiveMindBusy';
@@ -15,7 +16,7 @@ const log = Logger.create('useChatStreaming');
 const currentMessageIdByMind: Record<string, string> = {};
 
 export function useChatStreaming() {
-  const { activeMindId, selectedModel, streamingByMind, messagesByMind } = useAppState();
+  const { activeMindId, selectedModel, streamingByMind, messagesByMind, variantGroupsByMind, variantSelectionByMind } = useAppState();
   const { isBusy, isStreaming } = useActiveMindBusy();
   const dispatch = useAppDispatch();
 
@@ -43,6 +44,29 @@ export function useChatStreaming() {
     const hasAttachments = !!attachments && attachments.length > 0;
     if (isBusy || (!hasText && !hasAttachments) || !activeMindId) return;
 
+    const mindId = activeMindId;
+
+    // Continuing while viewing a non-active version promotes that version to the
+    // live branch first (freeze the current tail, truncate to the anchor, seed
+    // the selected branch), so the new turn extends the version the user sees.
+    const promotion = resolvePendingPromotion(
+      messagesByMind[mindId] ?? [],
+      variantGroupsByMind[mindId] ?? [],
+      variantSelectionByMind[mindId] ?? {},
+    );
+    if (promotion) {
+      try {
+        const result = await window.electronAPI.chat.switchActiveVariant(mindId, promotion.anchorEventId, promotion.variantId);
+        dispatch({
+          type: 'RESUME_CONVERSATION',
+          payload: { mindId, sessionId: result.sessionId, messages: result.messages, conversations: result.conversations },
+        });
+      } catch (error) {
+        log.error('Failed to promote the selected version before sending:', error);
+        return;
+      }
+    }
+
     const images: ImageBlock[] | undefined = attachments
       ?.filter((attachment) => attachment.kind === 'image')
       .map((attachment) => ({
@@ -68,11 +92,10 @@ export function useChatStreaming() {
       payload: { id: generateId(), content: content.trim(), timestamp: Date.now(), images, documents },
     });
 
-    const mindId = activeMindId;
     const assistantId = beginAssistantTurn(mindId);
     await window.electronAPI.chat.send(mindId, content.trim(), assistantId, selectedModel ?? undefined, attachments);
     await refreshConversationHistory(mindId);
-  }, [activeMindId, isBusy, selectedModel, dispatch, beginAssistantTurn, refreshConversationHistory]);
+  }, [activeMindId, isBusy, selectedModel, dispatch, beginAssistantTurn, refreshConversationHistory, messagesByMind, variantGroupsByMind, variantSelectionByMind]);
 
   // Re-run the most recent user turn. The main process resolves and truncates
   // the last user turn from persisted history, so the renderer only replaces
@@ -89,6 +112,7 @@ export function useChatStreaming() {
 
     const mindId = activeMindId;
     const prompt = getPlainContent(lastUser);
+    dispatch({ type: 'CAPTURE_MESSAGE_VARIANT', payload: { mindId, userEventId: lastUser.eventId } });
     dispatch({ type: 'TRUNCATE_AFTER', payload: { mindId, messageId: lastUser.id } });
     dispatch({ type: 'ADD_USER_MESSAGE', payload: { id: generateId(), content: prompt, timestamp: Date.now() } });
     const assistantId = beginAssistantTurn(mindId);
@@ -109,6 +133,7 @@ export function useChatStreaming() {
 
     const mindId = activeMindId;
     const eventId = message.eventId;
+    dispatch({ type: 'CAPTURE_MESSAGE_VARIANT', payload: { mindId, userEventId: eventId } });
     dispatch({ type: 'TRUNCATE_AFTER', payload: { mindId, messageId: message.id } });
     dispatch({ type: 'ADD_USER_MESSAGE', payload: { id: generateId(), content: text, timestamp: Date.now() } });
     const assistantId = beginAssistantTurn(mindId);

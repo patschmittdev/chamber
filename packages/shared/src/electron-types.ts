@@ -57,6 +57,7 @@ import type {
   MarketplaceRegistry,
   MarketplaceRegistryActionResult,
   LensViewVisibility,
+  MessageVariantGroup,
   MindInstructionPrecedence,
   MindContext,
   ModelInfo,
@@ -87,6 +88,10 @@ export interface ElectronAPI {
     regenerate: (mindId: string, messageId: string, model?: string) => Promise<void>;
     /** Ordered references to persisted user/assistant turns, for reconciling live messages with their event ids. */
     getConversationEvents: (mindId: string) => Promise<ConversationEventRef[]>;
+    /** Retained edit/regenerate variant groups for the active conversation, for rendering the version pager. */
+    getConversationVariants: (mindId: string) => Promise<MessageVariantGroup[]>;
+    /** Promotes a retained variant to the live branch before the next send, returning the refreshed conversation. */
+    switchActiveVariant: (mindId: string, anchorEventId: string | null, variantId: string) => Promise<ConversationResumeResult>;
     /** Forks a new active conversation from a persisted turn in another conversation. */
     forkConversation: (mindId: string, sourceSessionId: string, sourceEventId: string) => Promise<ConversationResumeResult>;
   };

@@ -1,5 +1,6 @@
 import type { AppState, AppAction } from '../state';
 import { messagesHandlers } from './messagesReducer';
+import { variantsHandlers } from './variantsReducer';
 import { conversationHandlers } from './conversationReducer';
 import { mindsHandlers } from './mindsReducer';
 import { lifecycleHandlers } from './lifecycleReducer';
@@ -13,6 +14,7 @@ type AnyHandler = (state: AppState, action: AppAction) => Partial<AppState> | Ap
 // because the union of slice keys no longer covers every action type.
 type HandlerKeys =
   | keyof typeof messagesHandlers
+  | keyof typeof variantsHandlers
   | keyof typeof conversationHandlers
   | keyof typeof mindsHandlers
   | keyof typeof lifecycleHandlers
@@ -29,6 +31,7 @@ void _exhaustivenessCheck;
 // above catches missing handlers; this cast satisfies the variance.
 const HANDLERS: Record<AppAction['type'], AnyHandler> = {
   ...(messagesHandlers as unknown as Record<string, AnyHandler>),
+  ...(variantsHandlers as unknown as Record<string, AnyHandler>),
   ...(conversationHandlers as unknown as Record<string, AnyHandler>),
   ...(mindsHandlers as unknown as Record<string, AnyHandler>),
   ...(lifecycleHandlers as unknown as Record<string, AnyHandler>),

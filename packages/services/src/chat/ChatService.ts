@@ -3,7 +3,7 @@
 
 import type { MindManager } from '../mind';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { ChatAttachment, ChatAttachmentManifest, ChatDocumentAttachment, ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, MindInstructionPrecedence, ModelInfo } from '@chamber/shared/types';
+import type { ChatAttachment, ChatAttachmentManifest, ChatDocumentAttachment, ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, MessageVariantGroup, MindInstructionPrecedence, ModelInfo } from '@chamber/shared/types';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import type { CopilotSession } from '../mind/types';
 import { isStaleSessionError, SEND_TIMEOUT_MS, sendTimeoutError } from '@chamber/shared/sessionErrors';
@@ -102,6 +102,7 @@ export class ChatService {
     model?: string,
   ): Promise<void> {
     return this.runTurn(mindId, messageId, emit, async () => {
+      await this.mindManager.captureActiveConversationVariant(mindId, eventId);
       await this.mindManager.truncateActiveConversation(mindId, eventId);
       return { prompt: await this.appendActiveForkSeedContext(mindId, prompt), titlePrompt: prompt };
     }, { model });
@@ -129,6 +130,7 @@ export class ChatService {
         emit({ type: 'error', message: 'Regenerating messages with attachments is not available yet.' });
         return null;
       }
+      await this.mindManager.captureActiveConversationVariant(mindId, lastUser.eventId);
       await this.mindManager.truncateActiveConversation(mindId, lastUser.eventId);
       const prompt = plainTextOf(lastUser);
       return { prompt: await this.appendActiveForkSeedContext(mindId, prompt), titlePrompt: prompt };
@@ -138,6 +140,21 @@ export class ChatService {
   /** Ordered references to persisted user/assistant turns, for reconciling live messages with event ids. */
   async getConversationEvents(mindId: string): Promise<ConversationEventRef[]> {
     return this.mindManager.getConversationEventRefs(mindId);
+  }
+
+  /** Retained edit/regenerate variant groups for the active conversation. */
+  async getConversationVariants(mindId: string): Promise<MessageVariantGroup[]> {
+    return this.mindManager.getConversationVariants(mindId);
+  }
+
+  /**
+   * Promotes a retained variant to the live branch so the next send continues
+   * from it. Serialized through the turn queue so it never races an in-flight
+   * stream, mirroring deleteMessage.
+   */
+  async switchActiveVariant(mindId: string, anchorEventId: string | null, variantId: string): Promise<ConversationResumeResult> {
+    this.assertCanMutateConversation(mindId);
+    return this.turnQueue.enqueue(mindId, () => this.mindManager.switchActiveConversationVariant(mindId, anchorEventId, variantId));
   }
 
   async setMindGlobalCustomInstructionsEnabled(mindId: string, enabled: boolean): Promise<MindInstructionPrecedence> {
@@ -194,7 +211,7 @@ export class ChatService {
   }
 
   private async appendActiveForkSeedContext(mindId: string, prompt: string): Promise<string> {
-    const seed = await this.mindManager.getActiveConversationForkSeed(mindId);
+    const seed = this.mindManager.consumePendingVariantSeed(mindId) ?? await this.mindManager.getActiveConversationForkSeed(mindId);
     return seed ? appendConversationForkContext(prompt, seed) : prompt;
   }
 

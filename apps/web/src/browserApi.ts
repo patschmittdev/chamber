@@ -171,6 +171,8 @@ export function installBrowserApi(): void {
       editMessage: async () => unavailable('editing messages'),
       regenerate: async () => unavailable('regenerating messages'),
       getConversationEvents: async () => [],
+      getConversationVariants: async () => [],
+      switchActiveVariant: async () => unavailable('switching message versions'),
       forkConversation: async () => unavailable('forking conversations'),
     },
     conversationHistory: {

@@ -9,11 +9,27 @@ const log = Logger.create('AppSubscriptions');
  * Mount once in AppShell — never in a view component.
  */
 export function useAppSubscriptions() {
-  const { minds, activeMindId } = useAppState();
+  const { minds, activeMindId, activeConversationByMind } = useAppState();
   const dispatch = useAppDispatch();
   const viewsLoaded = useRef(false);
   const lastChatEventSequence = useRef(0);
   const seenChatEventSequences = useRef(new Set<number>());
+
+  // Hydrate retained-variant groups whenever the active conversation changes
+  // (mind switch, resume, new, fork). Runs on mount too, so pagers survive an
+  // app reload the same way persisted conversations do. Turn-driven refreshes
+  // are handled separately by onTurnSettled.
+  const activeSessionId = activeMindId ? activeConversationByMind[activeMindId] : undefined;
+  useEffect(() => {
+    if (!activeMindId) return;
+    let cancelled = false;
+    window.electronAPI.chat.getConversationVariants(activeMindId)
+      .then((groups) => {
+        if (!cancelled) dispatch({ type: 'SET_MESSAGE_VARIANTS', payload: { mindId: activeMindId, groups } });
+      })
+      .catch((err) => log.warn('Failed to load message variants:', err));
+    return () => { cancelled = true; };
+  }, [activeMindId, activeSessionId, dispatch]);
 
   // Feature flags are app-owned, not user-configurable renderer state.
   useEffect(() => {
@@ -96,9 +112,24 @@ export function useAppSubscriptions() {
       }
     };
 
+    // After a turn settles, refresh the authoritative retained-variant groups so
+    // the version pager reflects the freshly captured edit/regenerate branch and
+    // replaces the renderer's optimistic capture.
+    const reconcileVariants = async (mindId: string) => {
+      try {
+        const groups = await window.electronAPI.chat.getConversationVariants(mindId);
+        if (!cancelled) {
+          dispatch({ type: 'SET_MESSAGE_VARIANTS', payload: { mindId, groups } });
+        }
+      } catch (err) {
+        log.warn('Failed to reconcile message variants after chat event:', err);
+      }
+    };
+
     const onTurnSettled = (mindId: string) => {
       void refreshConversationHistory(mindId);
       void reconcileEventIds(mindId);
+      void reconcileVariants(mindId);
     };
 
     void window.electronAPI.chat.getEventSequence()

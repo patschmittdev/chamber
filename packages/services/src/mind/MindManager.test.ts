@@ -7,7 +7,7 @@ import type { IdentityLoader } from '../chat/IdentityLoader';
 import type { ChamberToolProvider } from '../chamberTools';
 import type { ConfigService } from '../config/ConfigService';
 import type { ViewDiscovery } from '../lens/ViewDiscovery';
-import type { AppConfig, LensViewManifest } from '@chamber/shared/types';
+import type { AppConfig, LensViewManifest, MessageVariant, MessageVariantGroup } from '@chamber/shared/types';
 import { MindScaffold } from '../genesis/MindScaffold';
 import type { ManagedSkillSyncResult } from '../skills';
 import type { ConversationForkSeed } from '../chat/conversationForkContext';
@@ -937,6 +937,194 @@ describe('MindManager', () => {
       await expect(manager.truncateActiveConversation(mind.mindId, 'evt-9')).resolves.toBeDefined();
       expect(session.rpc.history.truncate).toHaveBeenCalledTimes(1);
       expect(session.rpc.history.truncate).toHaveBeenCalledWith({ eventId: 'evt-9' });
+    });
+  });
+
+  describe('retained message variants', () => {
+    const liveSessionFor = (mindId: string) =>
+      manager.getMind(mindId)?.session as unknown as ReturnType<typeof createSessionStub>;
+
+    function makeVariantStore() {
+      const groupsByKey = new Map<string, MessageVariantGroup[]>();
+      return {
+        groupsByKey,
+        read: vi.fn(async (mindId: string, sessionId: string): Promise<MessageVariantGroup[]> => {
+          const stored = groupsByKey.get(`${mindId}:${sessionId}`);
+          return stored ? structuredClone(stored) : [];
+        }),
+        save: vi.fn(async (mindId: string, sessionId: string, groups: MessageVariantGroup[]) => {
+          groupsByKey.set(`${mindId}:${sessionId}`, structuredClone(groups));
+        }),
+        delete: vi.fn(async (mindId: string, sessionId: string) => {
+          groupsByKey.delete(`${mindId}:${sessionId}`);
+        }),
+      };
+    }
+
+    function rebuildWithVariantStore(store: ReturnType<typeof makeVariantStore>) {
+      const forkSeedStore = {
+        save: vi.fn(async () => undefined),
+        read: vi.fn(async () => null),
+        delete: vi.fn(async () => undefined),
+      };
+      manager = new MindManager(
+        mockClientFactory as unknown as CopilotClientFactory,
+        mockIdentityLoader as unknown as IdentityLoader,
+        mockConfigService as unknown as ConfigService,
+        mockViewDiscovery as unknown as ViewDiscovery,
+        undefined,
+        undefined,
+        undefined,
+        forkSeedStore,
+        store,
+      );
+      manager.setProviders([mockProvider as unknown as ChamberToolProvider]);
+    }
+
+    it('captures the discarded tail of a regenerate anchored at the conversation root', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Question' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Answer one' } },
+      ]);
+
+      await manager.captureActiveConversationVariant(mind.mindId, 'evt-1');
+
+      const groups = await manager.getConversationVariants(mind.mindId);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].anchorEventId).toBeNull();
+      expect(groups[0].frozenVariants).toHaveLength(1);
+      expect(groups[0].frozenVariants[0].messages.map((message) => message.eventId)).toEqual(['evt-1', 'evt-2']);
+    });
+
+    it('anchors an edit variant at the parent turn before the edited user message', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'First' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Reply one' } },
+        { id: 'evt-3', type: 'user.message', timestamp: 3, data: { messageId: 'u2', content: 'Second' } },
+        { id: 'evt-4', type: 'assistant.message', timestamp: 4, data: { messageId: 'a2', content: 'Reply two' } },
+      ]);
+
+      await manager.captureActiveConversationVariant(mind.mindId, 'evt-3');
+
+      const groups = await manager.getConversationVariants(mind.mindId);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].anchorEventId).toBe('evt-2');
+      expect(groups[0].frozenVariants[0].messages.map((message) => message.eventId)).toEqual(['evt-3', 'evt-4']);
+    });
+
+    it('does not double-capture the same tail on a stale-session retry', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Question' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Answer one' } },
+      ]);
+
+      await manager.captureActiveConversationVariant(mind.mindId, 'evt-1');
+      await manager.captureActiveConversationVariant(mind.mindId, 'evt-1');
+
+      const groups = await manager.getConversationVariants(mind.mindId);
+      expect(groups[0].frozenVariants).toHaveLength(1);
+    });
+
+    it('is a no-op when the target user turn is already gone', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Question' } },
+      ]);
+
+      await manager.captureActiveConversationVariant(mind.mindId, 'evt-99');
+
+      expect(store.save).not.toHaveBeenCalled();
+      expect(await manager.getConversationVariants(mind.mindId)).toEqual([]);
+    });
+
+    it('returns persisted variant groups for the active conversation', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = mind.activeSessionId;
+      if (!sessionId) throw new Error('Expected active session id');
+      const seeded: MessageVariantGroup[] = [{
+        groupId: 'g1',
+        anchorEventId: null,
+        frozenVariants: [{
+          variantId: 'v1',
+          createdAt: '2026-05-05T00:00:00.000Z',
+          messages: [{ id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'Prior' }], timestamp: 1, eventId: 'evt-1' }],
+        }],
+      }];
+      store.groupsByKey.set(`${mind.mindId}:${sessionId}`, seeded);
+
+      expect(await manager.getConversationVariants(mind.mindId)).toEqual(seeded);
+    });
+
+    it('promotes a variant by freezing the active tail, truncating to the anchor, and staging a seed', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = mind.activeSessionId;
+      if (!sessionId) throw new Error('Expected active session id');
+      const session = liveSessionFor(mind.mindId);
+      session.getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Root' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Root reply' } },
+        { id: 'evt-3', type: 'user.message', timestamp: 3, data: { messageId: 'u2', content: 'Active question' } },
+        { id: 'evt-4', type: 'assistant.message', timestamp: 4, data: { messageId: 'a2', content: 'Active answer' } },
+      ]);
+      const target: MessageVariant = {
+        variantId: 'v-prior',
+        createdAt: '2026-05-05T00:00:00.000Z',
+        messages: [
+          { id: 'u2a', role: 'user', blocks: [{ type: 'text', content: 'prior question' }], timestamp: 3, eventId: 'evt-3a' },
+          { id: 'a2a', role: 'assistant', blocks: [{ type: 'text', content: 'prior answer' }], timestamp: 4, eventId: 'evt-4a' },
+        ],
+      };
+      store.groupsByKey.set(`${mind.mindId}:${sessionId}`, [{ groupId: 'g1', anchorEventId: 'evt-2', frozenVariants: [target] }]);
+
+      const result = await manager.switchActiveConversationVariant(mind.mindId, 'evt-2', 'v-prior');
+
+      expect(session.rpc.history.truncate).toHaveBeenCalledWith({ eventId: 'evt-3' });
+      const groupsAfter = await manager.getConversationVariants(mind.mindId);
+      expect(groupsAfter[0].frozenVariants).toHaveLength(2);
+      expect(groupsAfter[0].frozenVariants[1].messages.map((message) => message.eventId)).toEqual(['evt-3', 'evt-4']);
+      const seed = manager.consumePendingVariantSeed(mind.mindId);
+      expect(seed).not.toBeNull();
+      expect(JSON.stringify(seed)).toContain('prior question');
+      expect(result.sessionId).toBe(sessionId);
+    });
+
+    it('clears the staged variant seed after it is consumed once', async () => {
+      const store = makeVariantStore();
+      rebuildWithVariantStore(store);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = mind.activeSessionId;
+      if (!sessionId) throw new Error('Expected active session id');
+      liveSessionFor(mind.mindId).getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Root' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Root reply' } },
+        { id: 'evt-3', type: 'user.message', timestamp: 3, data: { messageId: 'u2', content: 'Active question' } },
+      ]);
+      const target: MessageVariant = {
+        variantId: 'v-prior',
+        createdAt: '2026-05-05T00:00:00.000Z',
+        messages: [{ id: 'u2a', role: 'user', blocks: [{ type: 'text', content: 'prior' }], timestamp: 3, eventId: 'evt-3a' }],
+      };
+      store.groupsByKey.set(`${mind.mindId}:${sessionId}`, [{ groupId: 'g1', anchorEventId: 'evt-2', frozenVariants: [target] }]);
+
+      await manager.switchActiveConversationVariant(mind.mindId, 'evt-2', 'v-prior');
+
+      expect(manager.consumePendingVariantSeed(mind.mindId)).not.toBeNull();
+      expect(manager.consumePendingVariantSeed(mind.mindId)).toBeNull();
     });
   });
 

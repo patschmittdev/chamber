@@ -1,13 +1,15 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
 import { MessageActions, type RowAction } from './MessageActions';
-import { useAppState, getPlainContent } from '../../lib/store';
+import { MessageVariantPager } from './MessageVariantPager';
+import { useAppState, useAppDispatch, getPlainContent } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useConversationActions } from '../../hooks/useConversationActions';
 import { StreamingMessage } from './StreamingMessage';
 import { hasAttachmentBlocks } from './messageContent';
 import { cn, formatTime, parseSkillContextInjection } from '../../lib/utils';
 import type { ChatMessage, MindContext } from '@chamber/shared/types';
+import { buildMessageVariantView, resolvePendingPromotion } from '@chamber/shared/messageVariants';
 import { formatAttachmentSize } from '@chamber/shared';
 import type { AgentProfileSummary } from '../../lib/store/state';
 import { AgentAvatar } from '../profile/AgentAvatar';
@@ -66,17 +68,44 @@ function messagePresenter(
 }
 
 export function MessageList() {
-  const { messagesByMind, activeMindId, minds } = useAppState();
+  const { messagesByMind, activeMindId, minds, variantGroupsByMind, variantSelectionByMind } = useAppState();
+  const dispatch = useAppDispatch();
   const profileByMindId = useMindProfiles(minds);
   const userProfile = useUserProfile();
   const messages = activeMindId ? (messagesByMind[activeMindId] ?? []) : [];
+  const variantGroups = activeMindId ? (variantGroupsByMind[activeMindId] ?? []) : [];
+  const variantSelection = activeMindId ? (variantSelectionByMind[activeMindId] ?? {}) : {};
   const { regenerate, editAndResubmit, isBusy } = useChatStreaming();
   const { deleteMessage, forkMessage } = useConversationActions();
+
+  // Fold the retained variant groups over the live transcript: `view.messages`
+  // is what to render (a selected frozen version swaps in its snapshot), and
+  // `pagerByMessageId` says which message carries the version pager.
+  const view = useMemo(
+    () => buildMessageVariantView(messages, variantGroups, variantSelection),
+    [messages, variantGroups, variantSelection],
+  );
+  const displayMessages = view.messages;
+
+  // While a non-active version is selected the visible tail is a frozen snapshot
+  // whose event ids no longer exist in the live session, so mutating actions
+  // (edit/regenerate/delete/fork) are suppressed. Continuing the conversation
+  // promotes the selected version first (handled in useChatStreaming.sendMessage).
+  const viewingFrozenVersion = useMemo(
+    () => resolvePendingPromotion(messages, variantGroups, variantSelection) !== null,
+    [messages, variantGroups, variantSelection],
+  );
+
+  const selectVariant = useCallback((groupId: string, index: number) => {
+    if (!activeMindId) return;
+    dispatch({ type: 'SELECT_MESSAGE_VARIANT', payload: { mindId: activeMindId, groupId, index } });
+  }, [dispatch, activeMindId]);
+
   // Regenerate re-runs the most recent user turn, so its availability depends on
   // that turn: it must be persisted and must not contain attachments, which
   // cannot be replayed yet.
   const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
-  const regenerateSupported = Boolean(lastUserMessage?.eventId);
+  const regenerateSupported = Boolean(lastUserMessage?.eventId) && !viewingFrozenVersion;
   const regenerateDisabledReason = lastUserMessage && hasAttachmentBlocks(lastUserMessage)
     ? REGENERATE_ATTACHMENT_REASON
     : undefined;
@@ -102,9 +131,9 @@ export function MessageList() {
     // User-just-sent: when the newest message is a user message and the id has
     // changed since last render, override auto-scroll and snap to bottom. User
     // intent is unambiguous on Send -- they want to see what they wrote land.
-    const latest = messages[messages.length - 1];
+    const latest = displayMessages[displayMessages.length - 1];
     const isNewUserMessage = latest?.role === 'user' && latest.id !== lastMessageIdRef.current;
-    const grewByOne = messages.length > lastMessageCountRef.current;
+    const grewByOne = displayMessages.length > lastMessageCountRef.current;
 
     if (isNewUserMessage) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -120,8 +149,8 @@ export function MessageList() {
     }
 
     lastMessageIdRef.current = latest?.id ?? null;
-    lastMessageCountRef.current = messages.length;
-  }, [messages]);
+    lastMessageCountRef.current = displayMessages.length;
+  }, [displayMessages]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
@@ -140,14 +169,15 @@ export function MessageList() {
         className="flex-1 overflow-y-auto px-4 py-4"
       >
         <div className="max-w-3xl mx-auto space-y-6">
-          {messages.map((message, index) => {
+          {displayMessages.map((message, index) => {
             const presenter = messagePresenter(message, agentName, minds, profileByMindId);
             const avatarDataUrl = message.role === 'assistant'
               ? activeProfile?.avatarDataUrl
               : presenter.isAgentSender
                 ? presenter.avatarDataUrl
                 : userProfile?.avatarDataUrl;
-            const isLastMessage = index === messages.length - 1;
+            const isLastMessage = index === displayMessages.length - 1;
+            const pager = view.pagerByMessageId.get(message.id);
 
             return (
               <MessageRow
@@ -158,13 +188,18 @@ export function MessageList() {
                 animate={isLastMessage}
                 launch={isLastMessage && message.role === 'user'}
                 isBusy={isBusy}
+                mutationsDisabled={viewingFrozenVersion}
                 onRegenerate={regenerate}
                 onDelete={deleteMessage}
                 onFork={forkMessage}
                 onEditSubmit={editAndResubmit}
                 regenerateSupported={isLastMessage && message.role === 'assistant' && regenerateSupported}
                 regenerateDisabledReason={regenerateDisabledReason}
-                followingTurnCount={messages.length - 1 - index}
+                followingTurnCount={displayMessages.length - 1 - index}
+                pagerGroupId={pager?.groupId}
+                pagerIndex={pager?.index}
+                pagerCount={pager?.count}
+                onSelectVariant={selectVariant}
               />
             );
           })}
@@ -217,6 +252,17 @@ interface MessageRowProps {
   // Number of turns after this one. Editing a user turn resubmits it and drops
   // everything after, so the editor warns when this is non-zero.
   followingTurnCount: number;
+  // A non-active retained version is currently selected, so the visible tail is
+  // a frozen snapshot. Mutating actions are suppressed until the user continues
+  // the conversation, which promotes the selection to the live branch.
+  mutationsDisabled: boolean;
+  // Version pager metadata for this row, present only on the message that
+  // carries the pager (assistant for regenerate, user for edit) when a group has
+  // more than one branch. onSelectVariant is stable so the memoized row holds.
+  pagerGroupId: string | undefined;
+  pagerIndex: number | undefined;
+  pagerCount: number | undefined;
+  onSelectVariant: (groupId: string, index: number) => void;
 }
 
 // Memoized so an inbound message at the end of a long transcript doesn't force
@@ -237,13 +283,19 @@ const MessageRow = memo(function MessageRow({
   regenerateSupported,
   regenerateDisabledReason,
   followingTurnCount,
+  mutationsDisabled,
+  pagerGroupId,
+  pagerIndex,
+  pagerCount,
+  onSelectVariant,
 }: MessageRowProps) {
   const [isEditing, setIsEditing] = useState(false);
 
   // A turn can be mutated only once it is persisted (has a backing event id).
   // Browser mode never reconciles ids, so these actions stay hidden there; on
-  // desktop they appear a moment after the turn settles.
-  const canMutate = Boolean(message.eventId);
+  // desktop they appear a moment after the turn settles. While a frozen version
+  // is shown the ids belong to a snapshot, so mutations are suppressed too.
+  const canMutate = Boolean(message.eventId) && !mutationsDisabled;
   const handleDelete = useCallback(() => onDelete(message), [onDelete, message]);
   const handleFork = useCallback(() => onFork(message), [onFork, message]);
   const deleteAction = canMutate ? handleDelete : undefined;
@@ -263,6 +315,20 @@ const MessageRow = memo(function MessageRow({
       : undefined,
     [canMutate, message],
   );
+
+  const handleSelectVariant = useCallback((index: number) => {
+    if (pagerGroupId) onSelectVariant(pagerGroupId, index);
+  }, [pagerGroupId, onSelectVariant]);
+
+  const pager = pagerGroupId && typeof pagerCount === 'number' && pagerCount > 1
+    ? (
+      <MessageVariantPager
+        index={pagerIndex ?? pagerCount - 1}
+        count={pagerCount}
+        onSelect={handleSelectVariant}
+      />
+    )
+    : null;
 
   return (
     <div
@@ -304,6 +370,7 @@ const MessageRow = memo(function MessageRow({
               isStreaming={message.isStreaming}
               contextOnly={message.forkSeed}
             />
+            {pager}
             {!message.isStreaming && getPlainContent(message).trim() && (
               <MessageActions
                 message={message}
@@ -363,6 +430,7 @@ const MessageRow = memo(function MessageRow({
                 </p>
               );
             })()}
+            {pager}
             {!message.isStreaming && (
               <MessageActions
                 message={message}

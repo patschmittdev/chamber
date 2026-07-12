@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Retain edit and regenerate versions with a toggle pager** - Editing a user turn or regenerating an assistant reply now keeps the prior turn as a retained version instead of discarding it, with a compact prev/next version pager (shown as n/m) on the affected message. Toggling between versions is display only; continuing the conversation from a selected version promotes it to the live branch first, then sends. Versions persist across resume and reload through a Chamber-owned variant store that mirrors how conversation forks persist, and a message with a single version looks exactly as before. Because the Copilot SDK session history supports only tail truncation, promotion re-injects the selected version as bounded fork-style context rather than replaying it verbatim.
 - **Add chamber:a2a ttasks runtime support** — Adds a chamber:a2a custom task type, production A2A bridge wiring, durable ttasks persistence, and invariants for the runtime contract.
 - **Add theme-aware update chrome** — Adds a dismissible ready-to-install banner and update-status indicator with accessible light and dark theme colors.
 - **Expose bounded per-mind skill discovery** — Adds renderer-safe on-disk skill metadata IPC with asynchronous bounded reads, deterministic limits, and path/link safeguards without conflating managed provenance or integrity.
