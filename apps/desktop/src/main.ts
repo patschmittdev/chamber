@@ -912,7 +912,7 @@ app.on('ready', async () => {
   setupUserProfileIPC(userProfileService, microsoftGraphProfileImporter, {
     onProfileSaved: async () => {
       try {
-        await mindManager.refreshLoadedMindIdentities();
+        await chatService.refreshLoadedMindIdentities();
       } catch (err) {
         log.warn('Failed to refresh minds after profile save (change applies on next mind load):', err);
       }

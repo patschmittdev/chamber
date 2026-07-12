@@ -172,6 +172,7 @@ describe('ConfigService', () => {
             updatedAt: '2026-05-05T22:15:00.000Z',
             kind: 'chat',
             hasMessages: true,
+            systemMessage: 'Original system prompt snapshot',
             messages: [{ role: 'user', content: 'do not persist me here' }],
           }],
         }],
@@ -193,8 +194,42 @@ describe('ConfigService', () => {
           updatedAt: '2026-05-05T22:15:00.000Z',
           kind: 'chat',
           hasMessages: true,
+          systemMessage: 'Original system prompt snapshot',
         }],
       });
+    });
+
+    it('preserves only the disabled global custom instructions override on mind records', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [
+          {
+            id: 'q-a1b2',
+            path: '/tmp/agents/q',
+            globalCustomInstructionsDisabled: true,
+          },
+          {
+            id: 'm-c3d4',
+            path: '/tmp/agents/m',
+            globalCustomInstructionsDisabled: false,
+          },
+        ],
+        activeMindId: 'q-a1b2',
+        activeLogin: null,
+        theme: 'dark',
+      }));
+
+      expect(svc.load().minds).toEqual([
+        {
+          id: 'q-a1b2',
+          path: '/tmp/agents/q',
+          globalCustomInstructionsDisabled: true,
+        },
+        {
+          id: 'm-c3d4',
+          path: '/tmp/agents/m',
+        },
+      ]);
     });
 
     it('preserves a saved disabled state for the default public marketplace', () => {

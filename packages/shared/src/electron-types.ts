@@ -55,6 +55,7 @@ import type {
   LensViewManifest,
   MarketplaceRegistry,
   MarketplaceRegistryActionResult,
+  MindInstructionPrecedence,
   MindContext,
   ModelInfo,
   StartupProgressEvent,
@@ -99,6 +100,8 @@ export interface ElectronAPI {
     list: () => Promise<MindContext[]>;
     setActive: (mindId: string) => Promise<void>;
     setModel: (mindId: string, model: string | null) => Promise<MindContext | null>;
+    setGlobalCustomInstructionsEnabled: (mindId: string, enabled: boolean) => Promise<MindInstructionPrecedence>;
+    getInstructionPrecedence: (mindId: string) => Promise<MindInstructionPrecedence>;
     selectDirectory: () => Promise<string | null>;
     openWindow: (mindId: string) => Promise<void>;
     onMindChanged: (callback: (minds: MindContext[]) => void) => () => void;

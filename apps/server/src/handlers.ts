@@ -1,5 +1,6 @@
 import type { ChamberCtx, ChamberRequest, ChamberResponse } from './types';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
+import type { AppConfig, ChamberConversationRecord, MindRecord } from '@chamber/shared/types';
 import type { ChatAttachmentDto, CommandResponse, ListModelsResponse, SendChatRequest } from '@chamber/wire-contracts';
 
 export async function healthHandler(): Promise<ChamberResponse> {
@@ -25,7 +26,7 @@ export async function addMindHandler(request: ChamberRequest, ctx: ChamberCtx): 
 }
 
 export async function getConfigHandler(_request: ChamberRequest, ctx: ChamberCtx): Promise<ChamberResponse> {
-  return { status: 200, body: await ctx.getConfig() };
+  return { status: 200, body: redactConfigForApi(await ctx.getConfig()) };
 }
 
 export async function listLensViewsHandler(_request: ChamberRequest, ctx: ChamberCtx): Promise<ChamberResponse> {
@@ -153,4 +154,35 @@ function isChatAttachment(value: unknown): value is ChatAttachmentDto {
     typeof attachment.mimeType === 'string' &&
     typeof attachment.data === 'string'
   );
+}
+
+function redactConfigForApi(config: unknown): unknown {
+  if (!isAppConfig(config)) return config;
+  return {
+    ...config,
+    minds: config.minds.map(redactMindRecordForApi),
+  };
+}
+
+function redactMindRecordForApi(record: MindRecord): MindRecord {
+  if (!record.conversations) return { ...record };
+  return {
+    ...record,
+    conversations: record.conversations.map(redactConversationRecordForApi),
+  };
+}
+
+function redactConversationRecordForApi(record: ChamberConversationRecord): ChamberConversationRecord {
+  if (!record.systemMessage) return { ...record };
+  const { systemMessage: _systemMessage, ...redacted } = record;
+  void _systemMessage;
+  return redacted;
+}
+
+function isAppConfig(value: unknown): value is AppConfig {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && (value as Record<string, unknown>).version === 2
+    && Array.isArray((value as Record<string, unknown>).minds);
 }

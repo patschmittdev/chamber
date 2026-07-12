@@ -202,6 +202,9 @@ function normalizeMindRecord(value: unknown): MindRecord | null {
     ...(Array.isArray(record.conversations)
       ? { conversations: record.conversations.map(normalizeConversationRecord).filter((conversation): conversation is ChamberConversationRecord => conversation !== null) }
       : {}),
+    ...(record.globalCustomInstructionsDisabled === true
+      ? { globalCustomInstructionsDisabled: true }
+      : {}),
   };
 }
 
@@ -225,6 +228,9 @@ function normalizeConversationRecord(value: unknown): ChamberConversationRecord 
     updatedAt: record.updatedAt,
     kind,
     ...(typeof record.hasMessages === 'boolean' ? { hasMessages: record.hasMessages } : {}),
+    ...(typeof record.systemMessage === 'string' && record.systemMessage.trim().length > 0
+      ? { systemMessage: record.systemMessage }
+      : {}),
   };
 }
 

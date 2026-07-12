@@ -170,6 +170,32 @@ export interface MindContext {
   readonly windowed?: boolean;
 }
 
+export type MindInstructionLayerId =
+  | 'mind-identity'
+  | 'working-memory'
+  | 'global-custom-instructions'
+  | 'chamber-guidance'
+  | 'tools';
+
+export interface MindInstructionLayer {
+  id: MindInstructionLayerId;
+  label: string;
+  source: string;
+  description: string;
+  included: boolean;
+  present: boolean;
+  enabled: boolean;
+  contentExposed: false;
+}
+
+export interface MindInstructionPrecedence {
+  mindId: string;
+  mindName: string;
+  globalCustomInstructionsEnabled: boolean;
+  hasGlobalCustomInstructions: boolean;
+  layers: MindInstructionLayer[];
+}
+
 /** Persisted mind record in config */
 export interface MindRecord {
   id: string;
@@ -178,6 +204,7 @@ export interface MindRecord {
   selectedModelProvider?: ModelProvider;
   activeSessionId?: string;
   conversations?: ChamberConversationRecord[];
+  globalCustomInstructionsDisabled?: true;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,6 +312,7 @@ export interface ChamberConversationRecord {
   updatedAt: string;
   kind: ChamberConversationKind;
   hasMessages?: boolean;
+  systemMessage?: string;
 }
 
 export interface ConversationSummary {

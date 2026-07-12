@@ -1,9 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { InstalledTool, MindIdentity } from '@chamber/shared/types';
-import { buildToolsSection } from '../tools/toolsSystemMessage';
-import { buildChamberSection } from './chamberSystemMessage';
-import { buildCustomInstructionsSection } from './customInstructionsSystemMessage';
+import type { InstalledTool, MindIdentity, MindInstructionPrecedence } from '@chamber/shared/types';
+import { composeMindSystemPrompt } from './composeMindSystemPrompt';
 
 const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 const H1_RE = /^#\s+(.+)$/m;
@@ -11,6 +9,10 @@ const WORKING_MEMORY_FILES = ['memory.md', 'rules.md', 'log.md'];
 
 export type InstalledToolsProvider = () => InstalledTool[];
 export type CustomInstructionsProvider = () => string;
+export type IdentityLoadOptions = {
+  includeGlobalCustomInstructions?: boolean;
+};
+export type IdentityInstructionPrecedence = Omit<MindInstructionPrecedence, 'mindId'>;
 
 export class IdentityLoader {
   constructor(
@@ -18,7 +20,44 @@ export class IdentityLoader {
     private readonly getCustomInstructions: CustomInstructionsProvider = () => '',
   ) {}
 
-  load(mindPath: string | null): MindIdentity | null {
+  load(mindPath: string | null, options: IdentityLoadOptions = {}): MindIdentity | null {
+    const source = this.loadPromptSource(mindPath);
+    if (!source) return null;
+
+    const composition = composeMindSystemPrompt({
+      identityParts: source.identityParts,
+      workingMemoryParts: source.memoryParts,
+      installedTools: this.getInstalledTools(),
+      customInstructions: this.getCustomInstructions(),
+      includeGlobalCustomInstructions: options.includeGlobalCustomInstructions,
+    });
+    const name = this.extractName(source.identityParts.join('\n\n---\n\n'), source.mindPath);
+
+    return { name, systemMessage: composition.systemMessage };
+  }
+
+  getInstructionPrecedence(mindPath: string | null, options: IdentityLoadOptions = {}): IdentityInstructionPrecedence | null {
+    const source = this.loadPromptSource(mindPath);
+    if (!source) return null;
+
+    const composition = composeMindSystemPrompt({
+      identityParts: source.identityParts,
+      workingMemoryParts: source.memoryParts,
+      installedTools: this.getInstalledTools(),
+      customInstructions: this.getCustomInstructions(),
+      includeGlobalCustomInstructions: options.includeGlobalCustomInstructions,
+    });
+    const mindName = this.extractName(source.identityParts.join('\n\n---\n\n'), source.mindPath);
+
+    return {
+      mindName,
+      globalCustomInstructionsEnabled: composition.globalCustomInstructionsEnabled,
+      hasGlobalCustomInstructions: composition.hasGlobalCustomInstructions,
+      layers: composition.layers,
+    };
+  }
+
+  private loadPromptSource(mindPath: string | null): { mindPath: string; identityParts: string[]; memoryParts: string[] } | null {
     if (!mindPath) return null;
     const identityParts: string[] = [];
     const memoryParts: string[] = [];
@@ -60,21 +99,7 @@ export class IdentityLoader {
     const parts = [...identityParts, ...memoryParts];
     if (parts.length === 0) return null;
 
-    // Custom instructions are user-authored preferences. Emit them before the
-    // Chamber operating/safety guidance so that guidance keeps the final word
-    // and user text cannot override Chamber or A2A safety rules.
-    const customInstructionsSection = buildCustomInstructionsSection(this.getCustomInstructions());
-    if (customInstructionsSection) parts.push(customInstructionsSection);
-
-    parts.push(buildChamberSection());
-
-    const toolsSection = buildToolsSection(this.getInstalledTools());
-    if (toolsSection) parts.push(toolsSection);
-
-    const systemMessage = parts.join('\n\n---\n\n');
-    const name = this.extractName(identityParts.join('\n\n---\n\n'), mindPath);
-
-    return { name, systemMessage };
+    return { mindPath, identityParts, memoryParts };
   }
 
   private extractName(content: string, mindPath: string): string {

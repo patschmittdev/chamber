@@ -60,6 +60,14 @@ export function setupMindIPC(mindManager: MindManager, chatService: ChatService,
     return chatService.setMindModel(mindId, model);
   });
 
+  ipcMain.handle(IPC.MIND.SET_GLOBAL_CUSTOM_INSTRUCTIONS_ENABLED, async (_event, mindId: string, enabled: boolean) => {
+    return chatService.setMindGlobalCustomInstructionsEnabled(mindId, enabled);
+  });
+
+  ipcMain.handle(IPC.MIND.GET_INSTRUCTION_PRECEDENCE, async (_event, mindId: string) => {
+    return chatService.getMindInstructionPrecedence(mindId);
+  });
+
   ipcMain.handle(IPC.MIND.SELECT_DIRECTORY, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return null;

@@ -77,11 +77,30 @@ const mockClientFactory = {
   destroyClient: vi.fn(),
 };
 
+const defaultMindIdentity = (mindPath: string) => ({
+  name: mindPath.split('/').pop() ?? 'unknown',
+  systemMessage: `Identity for ${mindPath}`,
+});
+
+const defaultMindInstructionPrecedence = (mindPath: string, options?: { includeGlobalCustomInstructions?: boolean }) => ({
+  mindName: mindPath.split('/').pop() ?? 'unknown',
+  globalCustomInstructionsEnabled: options?.includeGlobalCustomInstructions !== false,
+  hasGlobalCustomInstructions: true,
+  layers: [{
+    id: 'global-custom-instructions' as const,
+    label: 'Global custom instructions',
+    source: 'Settings > Custom instructions',
+    description: 'Operator preferences shared across minds when this mind inherits them.',
+    included: options?.includeGlobalCustomInstructions !== false,
+    present: true,
+    enabled: options?.includeGlobalCustomInstructions !== false,
+    contentExposed: false as const,
+  }],
+});
+
 const mockIdentityLoader = {
-  load: vi.fn((mindPath: string) => ({
-    name: mindPath.split('/').pop() ?? 'unknown',
-    systemMessage: `Identity for ${mindPath}`,
-  })),
+  load: vi.fn(defaultMindIdentity),
+  getInstructionPrecedence: vi.fn(defaultMindInstructionPrecedence),
 };
 
 const mockProvider = {
@@ -146,6 +165,10 @@ describe('MindManager', () => {
     mockConfigService.load.mockReset();
     mockConfigService.save.mockReset();
     mockConfigService.getConfigDir.mockReset();
+    mockIdentityLoader.load.mockReset();
+    mockIdentityLoader.getInstructionPrecedence.mockReset();
+    mockIdentityLoader.load.mockImplementation(defaultMindIdentity);
+    mockIdentityLoader.getInstructionPrecedence.mockImplementation(defaultMindInstructionPrecedence);
     mockConfigService.getConfigDir.mockReturnValue('C:\\tmp\\chamber-config');
     mockConfigService.load.mockImplementation(() => currentConfig);
     mockConfigService.save.mockImplementation((config) => {
@@ -1805,6 +1828,210 @@ describe('MindManager', () => {
 
       expect(result.refreshedCount).toBe(0);
       expect(mockCreateSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('global custom instructions preference', () => {
+    const identityWithPreference = (mindPath: string, options?: { includeGlobalCustomInstructions?: boolean }) => ({
+      name: mindPath.split('/').pop() ?? 'unknown',
+      systemMessage: options?.includeGlobalCustomInstructions === false
+        ? `Identity for ${mindPath}`
+        : `Identity for ${mindPath}\n\n## Custom Instructions\nBe concise.`,
+    });
+
+    it('persists only the disabled override and returns disabled precedence metadata', async () => {
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      mockCreateSession.mockClear();
+
+      const precedence = await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, false);
+
+      expect(lastSavedConfig().minds[0]).toMatchObject({
+        id: mind.mindId,
+        globalCustomInstructionsDisabled: true,
+      });
+      expect(mockIdentityLoader.load).toHaveBeenLastCalledWith('/tmp/agents/q', {
+        includeGlobalCustomInstructions: false,
+      });
+      expect(mockIdentityLoader.getInstructionPrecedence).toHaveBeenLastCalledWith('/tmp/agents/q', {
+        includeGlobalCustomInstructions: false,
+      });
+      expect(precedence.globalCustomInstructionsEnabled).toBe(false);
+    });
+
+    it('removes the disabled override when inheritance is re-enabled', async () => {
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      const mind = await manager.loadMind('/tmp/agents/q');
+
+      await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, false);
+      await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, true);
+
+      expect(lastSavedConfig().minds[0].globalCustomInstructionsDisabled).toBeUndefined();
+      expect(mockIdentityLoader.getInstructionPrecedence).toHaveBeenLastCalledWith('/tmp/agents/q', {
+        includeGlobalCustomInstructions: true,
+      });
+    });
+
+    it('recreates an empty active chat session after the loaded identity changes', async () => {
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const originalSessionId = manager.getMind(mind.mindId)?.activeSessionId;
+      mockCreateSession.mockClear();
+
+      await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, false);
+
+      expect(mockCreateSession).toHaveBeenCalledTimes(1);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).not.toBe(originalSessionId);
+      expect(lastSavedConfig().minds[0].conversations).toHaveLength(1);
+    });
+
+    it('does not recreate an active chat session that already has messages', async () => {
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const originalSessionId = manager.getMind(mind.mindId)?.activeSessionId;
+      manager.markActiveConversationHasMessages(mind.mindId, 'hello there');
+      mockCreateSession.mockClear();
+
+      await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, false);
+
+      expect(mockCreateSession).not.toHaveBeenCalled();
+      expect(manager.getMind(mind.mindId)?.activeSessionId).toBe(originalSessionId);
+      expect(lastSavedConfig().minds[0].globalCustomInstructionsDisabled).toBe(true);
+    });
+
+    it('recovers a messageful active conversation with its original system prompt after preference changes', async () => {
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const originalSessionId = manager.getMind(mind.mindId)?.activeSessionId;
+      manager.markActiveConversationHasMessages(mind.mindId, 'hello there');
+
+      await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, false);
+      mockResumeSession.mockClear();
+
+      await manager.recoverActiveConversationSession(mind.mindId);
+
+      expect(mockResumeSession).toHaveBeenCalledWith(
+        originalSessionId,
+        expect.objectContaining({
+          systemMessage: expect.objectContaining({
+            sections: expect.objectContaining({
+              identity: { action: 'replace', content: expect.stringContaining('Be concise.') },
+            }),
+          }),
+        }),
+      );
+      expect(mockResumeSession.mock.calls[0]?.[1]).not.toEqual(expect.objectContaining({
+        systemMessage: expect.objectContaining({
+          sections: expect.objectContaining({
+            identity: { action: 'replace', content: 'Identity for /tmp/agents/q' },
+          }),
+        }),
+      }));
+    });
+
+    it('restores a messageful active conversation with its saved system prompt snapshot', async () => {
+      const originalSystemMessage = 'Identity for /tmp/agents/q\n\n## Custom Instructions\nBe concise.';
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      currentConfig = {
+        version: 2,
+        minds: [{
+          id: 'q-a1b2',
+          path: '/tmp/agents/q',
+          globalCustomInstructionsDisabled: true,
+          activeSessionId: 'chamber-q-a1b2-existing',
+          conversations: [{
+            sessionId: 'chamber-q-a1b2-existing',
+            title: 'Existing chat',
+            createdAt: '2026-05-05T22:00:00.000Z',
+            updatedAt: '2026-05-05T22:15:00.000Z',
+            kind: 'chat',
+            hasMessages: true,
+            systemMessage: originalSystemMessage,
+          }],
+        }],
+        activeMindId: 'q-a1b2',
+        activeLogin: null,
+        theme: 'dark',
+      };
+
+      await manager.restoreFromConfig();
+
+      expect(mockResumeSession).toHaveBeenCalledWith(
+        'chamber-q-a1b2-existing',
+        expect.objectContaining({
+          systemMessage: expect.objectContaining({
+            sections: expect.objectContaining({
+              identity: { action: 'replace', content: originalSystemMessage },
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('restores an empty active draft with the current system prompt', async () => {
+      const staleDraftSystemMessage = 'Identity for /tmp/agents/q\n\n## Custom Instructions\nBe concise.';
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      currentConfig = {
+        version: 2,
+        minds: [{
+          id: 'q-a1b2',
+          path: '/tmp/agents/q',
+          globalCustomInstructionsDisabled: true,
+          activeSessionId: 'chamber-q-a1b2-draft',
+          conversations: [{
+            sessionId: 'chamber-q-a1b2-draft',
+            title: 'Draft',
+            createdAt: '2026-05-05T22:00:00.000Z',
+            updatedAt: '2026-05-05T22:15:00.000Z',
+            kind: 'chat',
+            hasMessages: false,
+            systemMessage: staleDraftSystemMessage,
+          }],
+        }],
+        activeMindId: 'q-a1b2',
+        activeLogin: null,
+        theme: 'dark',
+      };
+
+      await manager.restoreFromConfig();
+
+      expect(mockResumeSession).toHaveBeenCalledWith(
+        'chamber-q-a1b2-draft',
+        expect.objectContaining({
+          systemMessage: expect.objectContaining({
+            sections: expect.objectContaining({
+              identity: { action: 'replace', content: 'Identity for /tmp/agents/q' },
+            }),
+          }),
+        }),
+      );
+      expect(lastSavedConfig().minds[0].conversations?.[0]?.systemMessage).toBe('Identity for /tmp/agents/q');
+    });
+
+    it('resumes an inactive conversation with its saved system prompt snapshot after preference changes', async () => {
+      mockIdentityLoader.load.mockImplementation(identityWithPreference);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const firstSessionId = manager.getMind(mind.mindId)?.activeSessionId;
+      const firstSystemMessage = lastSavedConfig().minds[0].conversations?.[0]?.systemMessage;
+      expect(firstSessionId).toBeTruthy();
+      expect(firstSystemMessage).toContain('Be concise.');
+      manager.markActiveConversationHasMessages(mind.mindId, 'hello there');
+      await manager.startNewConversation(mind.mindId);
+      await manager.setMindGlobalCustomInstructionsEnabled(mind.mindId, false);
+      mockResumeSession.mockClear();
+
+      await manager.resumeConversation(mind.mindId, firstSessionId ?? '');
+
+      expect(mockResumeSession).toHaveBeenCalledWith(
+        firstSessionId,
+        expect.objectContaining({
+          systemMessage: expect.objectContaining({
+            sections: expect.objectContaining({
+              identity: { action: 'replace', content: firstSystemMessage },
+            }),
+          }),
+        }),
+      );
     });
   });
 
