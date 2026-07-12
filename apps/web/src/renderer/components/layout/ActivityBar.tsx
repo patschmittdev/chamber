@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { isMac } from '../../lib/platform';
-import { MessageSquare, Zap, Newspaper, Users, Clock, Settings, Layout, RadioTower, type LucideIcon } from 'lucide-react';
+import { MessageSquare, Zap, Newspaper, Users, Clock, Settings, Layout, RadioTower, Blocks, type LucideIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { Separator } from '../ui/separator';
 import type { LensViewManifest } from '@chamber/shared/types';
@@ -103,6 +103,23 @@ export function ActivityBar() {
       {/* Bottom-pinned settings */}
       <div data-testid="activity-bar-footer" className="flex flex-col items-center gap-1">
         <UpdateIndicator />
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="Extensions"
+              onClick={() => dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' })}
+              className={cn(
+                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                activeView === 'extensions'
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              )}
+            >
+              <Blocks size={20} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>Extensions</TooltipContent>
+        </Tooltip>
         {featureFlags.switchboardRelay && (
           <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>

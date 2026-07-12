@@ -369,6 +369,10 @@ export function mockElectronAPI(): ElectronAPI {
     skills: {
       listForMind: vi.fn().mockResolvedValue([]),
     },
+    mcp: {
+      getServers: vi.fn().mockResolvedValue([]),
+      setServers: vi.fn().mockResolvedValue([]),
+    },
   };
 }
 

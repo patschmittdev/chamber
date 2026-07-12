@@ -393,6 +393,11 @@ export function installBrowserApi(): void {
       // Web host has no on-disk mind directory to scan.
       listForMind: async () => [],
     },
+    mcp: {
+      // Web host has no on-disk mind directory to read or write .mcp.json.
+      getServers: async () => [],
+      setServers: async (servers) => servers,
+    },
   };
   window.electronAPI = api;
   if (!window.desktop) {

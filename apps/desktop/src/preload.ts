@@ -164,6 +164,10 @@ const electronAPI: ElectronAPI = {
   skills: {
     listForMind: (mindId: string) => ipcRenderer.invoke(IPC.SKILLS.LIST_FOR_MIND, mindId),
   },
+  mcp: {
+    getServers: (mindId?) => ipcRenderer.invoke(IPC.MCP.GET_SERVERS, mindId),
+    setServers: (servers, mindId?) => ipcRenderer.invoke(IPC.MCP.SET_SERVERS, servers, mindId),
+  },
 };
 
 if (ipcRenderer.sendSync(IPC.E2E.IS_ENABLED) === true) {

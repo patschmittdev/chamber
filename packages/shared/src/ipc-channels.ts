@@ -172,6 +172,10 @@ export const IPC = {
   SKILLS: {
     LIST_FOR_MIND: 'skills:listForMind',
   },
+  MCP: {
+    GET_SERVERS: 'mcp:getServers',
+    SET_SERVERS: 'mcp:setServers',
+  },
 } as const;
 
 type IpcNamespace = typeof IPC;
