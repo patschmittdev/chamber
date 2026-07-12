@@ -28,6 +28,7 @@ import { getCurrentDateTimeContext, injectCurrentDateTimeContext, type DateTimeC
 import { buildConversationExport, conversationExportFilename } from './conversationExport';
 import { TurnLifecycleTrace } from './turnLifecycleTrace';
 import { appendAttachmentManifestContext } from './attachmentContext';
+import { appendConversationForkContext } from './conversationForkContext';
 
 const log = Logger.create('ChatService');
 
@@ -47,6 +48,8 @@ interface DocumentAttachmentStore {
 
 export class ChatService {
   private abortControllers = new Map<string, { messageId: string; controller: AbortController }>();
+  private modelSwitchingMinds = new Set<string>();
+  private conversationSwitchingMinds = new Set<string>();
 
   constructor(
     private readonly mindManager: MindManager,
@@ -81,6 +84,7 @@ export class ChatService {
    * Serialized through the turn queue so it never races an in-flight stream.
    */
   async deleteMessage(mindId: string, eventId: string): Promise<ConversationSummary[]> {
+    this.assertCanMutateConversation(mindId);
     return this.turnQueue.enqueue(mindId, () => this.mindManager.truncateActiveConversation(mindId, eventId));
   }
 
@@ -99,7 +103,7 @@ export class ChatService {
   ): Promise<void> {
     return this.runTurn(mindId, messageId, emit, async () => {
       await this.mindManager.truncateActiveConversation(mindId, eventId);
-      return { prompt, titlePrompt: prompt };
+      return { prompt: await this.appendActiveForkSeedContext(mindId, prompt), titlePrompt: prompt };
     }, { model });
   }
 
@@ -127,7 +131,7 @@ export class ChatService {
       }
       await this.mindManager.truncateActiveConversation(mindId, lastUser.eventId);
       const prompt = plainTextOf(lastUser);
-      return { prompt, titlePrompt: prompt };
+      return { prompt: await this.appendActiveForkSeedContext(mindId, prompt), titlePrompt: prompt };
     }, { model });
   }
 
@@ -146,7 +150,7 @@ export class ChatService {
     const documents = attachments?.filter((attachment): attachment is ChatDocumentAttachment => attachment.kind === 'document') ?? [];
     if (documents.length === 0) {
       return {
-        prompt,
+        prompt: await this.appendActiveForkSeedContext(mindId, prompt),
         titlePrompt: prompt,
         sdkAttachments: images.length > 0 ? images : undefined,
       };
@@ -164,10 +168,15 @@ export class ChatService {
       },
     })));
     return {
-      prompt: appendAttachmentManifestContext(prompt, manifests),
+      prompt: await this.appendActiveForkSeedContext(mindId, appendAttachmentManifestContext(prompt, manifests)),
       titlePrompt: prompt,
       sdkAttachments: images.length > 0 ? images : undefined,
     };
+  }
+
+  private async appendActiveForkSeedContext(mindId: string, prompt: string): Promise<string> {
+    const seed = await this.mindManager.getActiveConversationForkSeed(mindId);
+    return seed ? appendConversationForkContext(prompt, seed) : prompt;
   }
 
   /**
@@ -184,7 +193,19 @@ export class ChatService {
     resolveTurn: (session: CopilotSession) => Promise<PreparedTurn | null>,
     options: { model?: string } = {},
   ): Promise<void> {
+    const initialBusyMessage = this.turnBusyMessage(mindId);
+    if (initialBusyMessage) {
+      emit({ type: 'error', message: initialBusyMessage });
+      emit({ type: 'done' });
+      return;
+    }
     return this.turnQueue.enqueue(mindId, async () => {
+      const busyMessage = this.turnBusyMessage(mindId);
+      if (busyMessage) {
+        emit({ type: 'error', message: busyMessage });
+        emit({ type: 'done' });
+        return;
+      }
       const abortController = new AbortController();
       this.abortControllers.set(mindId, { messageId, controller: abortController });
 
@@ -528,17 +549,26 @@ export class ChatService {
   }
 
   async setMindModel(mindId: string, model: string | null): Promise<Awaited<ReturnType<MindManager['setMindModel']>>> {
-    return this.turnQueue.enqueue(mindId, () => this.mindManager.setMindModel(mindId, model));
+    if (this.conversationSwitchingMinds.has(mindId)) {
+      throw new Error('Cannot switch models while changing conversations.');
+    }
+    this.modelSwitchingMinds.add(mindId);
+    try {
+      return await this.turnQueue.enqueue(mindId, () => this.mindManager.setMindModel(mindId, model));
+    } finally {
+      this.modelSwitchingMinds.delete(mindId);
+    }
   }
 
   async newConversation(mindId: string): Promise<ConversationResumeResult> {
-    this.assertCanSwitchConversation(mindId);
-    await this.mindManager.startNewConversation(mindId);
-    return {
-      sessionId: this.mindManager.getMind(mindId)?.activeSessionId ?? '',
-      messages: [],
-      conversations: this.mindManager.listConversationHistory(mindId),
-    };
+    return this.runConversationSwitch(mindId, async () => {
+      await this.mindManager.startNewConversation(mindId);
+      return {
+        sessionId: this.mindManager.getMind(mindId)?.activeSessionId ?? '',
+        messages: [],
+        conversations: this.mindManager.listConversationHistory(mindId),
+      };
+    });
   }
 
   listConversationHistory(mindId: string): ConversationSummary[] {
@@ -546,13 +576,15 @@ export class ChatService {
   }
 
   async resumeConversation(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
-    this.assertCanSwitchConversation(mindId);
-    return this.mindManager.resumeConversation(mindId, sessionId);
+    return this.runConversationSwitch(mindId, () => this.mindManager.resumeConversation(mindId, sessionId));
+  }
+
+  async forkConversation(mindId: string, sourceSessionId: string, sourceEventId: string): Promise<ConversationResumeResult> {
+    return this.runConversationSwitch(mindId, () => this.mindManager.forkConversation(mindId, sourceSessionId, sourceEventId));
   }
 
   async deleteConversation(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
-    this.assertCanSwitchConversation(mindId);
-    return this.mindManager.deleteConversation(mindId, sessionId);
+    return this.runConversationSwitch(mindId, () => this.mindManager.deleteConversation(mindId, sessionId));
   }
 
   renameConversation(mindId: string, sessionId: string, title: string): ConversationSummary[] {
@@ -647,6 +679,41 @@ export class ChatService {
   private assertCanSwitchConversation(mindId: string): void {
     if (this.abortControllers.has(mindId)) {
       throw new Error('Cannot switch conversations while a message is still streaming.');
+    }
+    if (this.modelSwitchingMinds.has(mindId)) {
+      throw new Error('Cannot switch conversations while a model switch is in progress.');
+    }
+    if (this.conversationSwitchingMinds.has(mindId)) {
+      throw new Error('Cannot switch conversations while another conversation switch is in progress.');
+    }
+  }
+
+  private assertCanMutateConversation(mindId: string): void {
+    if (this.modelSwitchingMinds.has(mindId)) {
+      throw new Error('Cannot change messages while changing models.');
+    }
+    if (this.conversationSwitchingMinds.has(mindId)) {
+      throw new Error('Cannot change messages while changing conversations.');
+    }
+  }
+
+  private turnBusyMessage(mindId: string): string | null {
+    if (this.modelSwitchingMinds.has(mindId)) {
+      return 'Cannot send messages while changing models.';
+    }
+    if (this.conversationSwitchingMinds.has(mindId)) {
+      return 'Cannot send messages while changing conversations.';
+    }
+    return null;
+  }
+
+  private async runConversationSwitch<T>(mindId: string, operation: () => Promise<T>): Promise<T> {
+    this.assertCanSwitchConversation(mindId);
+    this.conversationSwitchingMinds.add(mindId);
+    try {
+      return await operation();
+    } finally {
+      this.conversationSwitchingMinds.delete(mindId);
     }
   }
 }

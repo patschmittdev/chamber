@@ -1,17 +1,19 @@
 import { useCallback, useState } from 'react';
-import { Check, Copy, FileCode, Pencil, RefreshCw, Trash2, X, type LucideIcon } from 'lucide-react';
+import { Check, Copy, FileCode, GitFork, Pencil, RefreshCw, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { ChatMessage } from '@chamber/shared/types';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { toMarkdown, toPlainText } from './messageContent';
 
 interface MessageActionsProps {
   message: ChatMessage;
-  /** True while a turn is streaming somewhere; mutating actions wait until it settles. */
-  isStreaming: boolean;
+  /** True while the active conversation cannot be safely mutated. */
+  isBusy: boolean;
   /** Regenerate the assistant response. Omit to hide (not the newest turn, or unsupported). */
   regenerate?: RowAction;
   /** Edit a user turn in place. Omit to hide (assistant turn, unsaved turn, or unsupported). */
   edit?: RowAction;
+  /** Forks a new conversation from this persisted turn. */
+  fork?: RowAction;
   /** Delete this turn and every turn after it. Omit to hide (unsaved turn or unsupported). */
   onDelete?: () => void;
 }
@@ -36,7 +38,7 @@ export interface RowAction {
  * in by the parent only when the host and persisted history support them, so
  * this component never has to know about capabilities itself.
  */
-export function MessageActions({ message, isStreaming, regenerate, edit, onDelete }: MessageActionsProps) {
+export function MessageActions({ message, isBusy, regenerate, edit, fork, onDelete }: MessageActionsProps) {
   const plain = useCopyToClipboard();
   const markdown = useCopyToClipboard();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -69,7 +71,7 @@ export function MessageActions({ message, isStreaming, regenerate, edit, onDelet
           icon={RefreshCw}
           label="Regenerate"
           ariaLabel="Regenerate response"
-          disabled={isStreaming || Boolean(regenerate.disabledReason)}
+          disabled={isBusy || Boolean(regenerate.disabledReason)}
           title={regenerate.disabledReason}
         />
       )}
@@ -80,8 +82,19 @@ export function MessageActions({ message, isStreaming, regenerate, edit, onDelet
           icon={Pencil}
           label="Edit"
           ariaLabel="Edit message"
-          disabled={isStreaming || Boolean(edit.disabledReason)}
+          disabled={isBusy || Boolean(edit.disabledReason)}
           title={edit.disabledReason}
+        />
+      )}
+
+      {fork && (
+        <ActionButton
+          onClick={fork.onRun}
+          icon={GitFork}
+          label="Fork from here"
+          ariaLabel="Fork conversation from here"
+          disabled={isBusy || Boolean(fork.disabledReason)}
+          title={fork.disabledReason}
         />
       )}
 
@@ -94,7 +107,7 @@ export function MessageActions({ message, isStreaming, regenerate, edit, onDelet
               icon={Trash2}
               label="Delete"
               ariaLabel="Confirm delete from here"
-              disabled={isStreaming}
+              disabled={isBusy}
               variant="danger"
             />
             <ActionButton
@@ -111,7 +124,7 @@ export function MessageActions({ message, isStreaming, regenerate, edit, onDelet
             label="Delete from here"
             ariaLabel="Delete this message and all following messages"
             title="Removes this message and every turn after it"
-            disabled={isStreaming}
+            disabled={isBusy}
           />
         )
       )}
@@ -155,4 +168,3 @@ function ActionButton({
     </button>
   );
 }
-

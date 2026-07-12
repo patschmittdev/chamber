@@ -64,6 +64,7 @@ export function serializeConversationToJson(
     kind: conversation.kind,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
+    forkOf: conversation.forkOf,
     exportedAt: options.exportedAt ?? new Date().toISOString(),
     messages,
   };
@@ -82,6 +83,7 @@ export function serializeConversationToMarkdown(
     `- Session: ${conversation.sessionId}`,
     `- Created: ${conversation.createdAt}`,
     `- Updated: ${conversation.updatedAt}`,
+    ...(conversation.forkOf ? [`- Fork of: ${conversation.forkOf.sourceTitle}`] : []),
     `- Exported: ${exportedAt}`,
     `- Messages: ${messages.length}`,
     '',

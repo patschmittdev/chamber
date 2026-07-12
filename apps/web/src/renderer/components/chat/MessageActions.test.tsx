@@ -25,7 +25,7 @@ describe('MessageActions', () => {
   });
 
   it('copies plain text and raw markdown from distinct buttons', () => {
-    render(<MessageActions message={assistantMsg()} isStreaming={false} />);
+    render(<MessageActions message={assistantMsg()} isBusy={false} />);
 
     fireEvent.click(button('Copy message'));
     expect(writeText).toHaveBeenCalledWith('Title\n\nBody');
@@ -35,10 +35,11 @@ describe('MessageActions', () => {
   });
 
   it('hides mutating actions when the parent supplies none (e.g. browser mode)', () => {
-    render(<MessageActions message={assistantMsg()} isStreaming={false} />);
+    render(<MessageActions message={assistantMsg()} isBusy={false} />);
 
     expect(queryButton('Regenerate response')).toBeNull();
     expect(queryButton('Edit message')).toBeNull();
+    expect(queryButton('Fork conversation from here')).toBeNull();
     expect(queryButton('Delete this message and all following messages')).toBeNull();
     expect(button('Copy message')).toBeTruthy();
   });
@@ -46,14 +47,14 @@ describe('MessageActions', () => {
   it('runs Regenerate when enabled and disables it with a tooltip when a reason is given', () => {
     const onRun = vi.fn();
     const { rerender } = render(
-      <MessageActions message={assistantMsg()} isStreaming={false} regenerate={{ onRun }} />,
+      <MessageActions message={assistantMsg()} isBusy={false} regenerate={{ onRun }} />,
     );
 
     fireEvent.click(button('Regenerate response'));
     expect(onRun).toHaveBeenCalledTimes(1);
 
     rerender(
-      <MessageActions message={assistantMsg()} isStreaming={false} regenerate={{ onRun, disabledReason: 'no images yet' }} />,
+      <MessageActions message={assistantMsg()} isBusy={false} regenerate={{ onRun, disabledReason: 'no images yet' }} />,
     );
     const regen = button('Regenerate response');
     expect(regen.disabled).toBe(true);
@@ -65,23 +66,50 @@ describe('MessageActions', () => {
   it('runs Edit when enabled and disables it with a tooltip when a reason is given', () => {
     const onRun = vi.fn();
     const { rerender } = render(
-      <MessageActions message={assistantMsg()} isStreaming={false} edit={{ onRun }} />,
+      <MessageActions message={assistantMsg()} isBusy={false} edit={{ onRun }} />,
     );
 
     fireEvent.click(button('Edit message'));
     expect(onRun).toHaveBeenCalledTimes(1);
 
     rerender(
-      <MessageActions message={assistantMsg()} isStreaming={false} edit={{ onRun, disabledReason: 'has images' }} />,
+      <MessageActions message={assistantMsg()} isBusy={false} edit={{ onRun, disabledReason: 'has images' }} />,
     );
     const edit = button('Edit message');
     expect(edit.disabled).toBe(true);
     expect(edit.title).toBe('has images');
   });
 
+  it('runs Fork from here when enabled and disables it while streaming', () => {
+    const onRun = vi.fn();
+    const { rerender } = render(
+      <MessageActions message={assistantMsg()} isBusy={false} fork={{ onRun }} />,
+    );
+
+    fireEvent.click(button('Fork conversation from here'));
+    expect(onRun).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <MessageActions message={assistantMsg()} isBusy fork={{ onRun }} />,
+    );
+    const fork = button('Fork conversation from here');
+    expect(fork.disabled).toBe(true);
+  });
+
+  it('disables Fork from here with a tooltip when a reason is given', () => {
+    const onRun = vi.fn();
+    render(
+      <MessageActions message={assistantMsg()} isBusy={false} fork={{ onRun, disabledReason: 'waiting for sync' }} />,
+    );
+
+    const fork = button('Fork conversation from here');
+    expect(fork.disabled).toBe(true);
+    expect(fork.title).toBe('waiting for sync');
+  });
+
   it('requires a confirmation before deleting and clarifies the range', () => {
     const onDelete = vi.fn();
-    render(<MessageActions message={assistantMsg()} isStreaming={false} onDelete={onDelete} />);
+    render(<MessageActions message={assistantMsg()} isBusy={false} onDelete={onDelete} />);
 
     fireEvent.click(button('Delete this message and all following messages'));
     expect(onDelete).not.toHaveBeenCalled();
@@ -93,7 +121,7 @@ describe('MessageActions', () => {
 
   it('cancels a pending delete without invoking the handler', () => {
     const onDelete = vi.fn();
-    render(<MessageActions message={assistantMsg()} isStreaming={false} onDelete={onDelete} />);
+    render(<MessageActions message={assistantMsg()} isBusy={false} onDelete={onDelete} />);
 
     fireEvent.click(button('Delete this message and all following messages'));
     fireEvent.click(button('Cancel delete'));
@@ -105,15 +133,17 @@ describe('MessageActions', () => {
     render(
       <MessageActions
         message={assistantMsg()}
-        isStreaming
+        isBusy
         regenerate={{ onRun: vi.fn() }}
         edit={{ onRun: vi.fn() }}
+        fork={{ onRun: vi.fn() }}
         onDelete={vi.fn()}
       />,
     );
 
     expect(button('Regenerate response').disabled).toBe(true);
     expect(button('Edit message').disabled).toBe(true);
+    expect(button('Fork conversation from here').disabled).toBe(true);
     expect(button('Delete this message and all following messages').disabled).toBe(true);
     expect(button('Copy message').disabled).toBe(false);
   });

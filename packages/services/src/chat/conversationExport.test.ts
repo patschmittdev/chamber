@@ -82,6 +82,48 @@ describe('serializeConversationToMarkdown', () => {
     expect(md).toContain('Start by ranking initiatives.');
   });
 
+  it('renders fork source metadata and keeps fork seed messages before new turns', () => {
+    const forked: ConversationSummary = {
+      ...conversation,
+      title: 'Fork of Source chat',
+      forkOf: {
+        sourceSessionId: 'source-session',
+        sourceEventId: 'evt-2',
+        sourceMessageId: 'a1',
+        sourceTitle: 'Source chat',
+        createdAt: '2026-05-05T22:10:00.000Z',
+      },
+    };
+    const ordered: ChatMessage[] = [
+      {
+        id: 'fork-seed:source-session:u1',
+        role: 'user',
+        timestamp: 1,
+        forkSeed: true,
+        blocks: [{ type: 'text', content: 'seed question' }],
+      },
+      {
+        id: 'fork-seed:source-session:a1',
+        role: 'assistant',
+        timestamp: 2,
+        forkSeed: true,
+        blocks: [{ type: 'tool_call', toolCallId: 't1', toolName: 'search', status: 'done', output: 'seed result' }],
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        timestamp: 3,
+        blocks: [{ type: 'text', content: 'new fork question' }],
+      },
+    ];
+
+    const md = serializeConversationToMarkdown(forked, ordered, options);
+
+    expect(md).toContain('- Fork of: Source chat');
+    expect(md.indexOf('seed question')).toBeLessThan(md.indexOf('seed result'));
+    expect(md.indexOf('seed result')).toBeLessThan(md.indexOf('new fork question'));
+  });
+
   it('renders reasoning as a blockquote and tool calls with fenced arguments and output', () => {
     const md = serializeConversationToMarkdown(conversation, messages, options);
 
@@ -185,6 +227,27 @@ describe('serializeConversationToJson', () => {
     expect(parsed.exportedAt).toBe('2026-06-01T00:00:00.000Z');
     expect(parsed.messages).toHaveLength(2);
     expect(parsed.messages[1].blocks[2].toolName).toBe('list_issues');
+  });
+
+  it('includes fork metadata in JSON exports', () => {
+    const json = serializeConversationToJson({
+      ...conversation,
+      forkOf: {
+        sourceSessionId: 'source-session',
+        sourceEventId: 'evt-2',
+        sourceMessageId: 'a1',
+        sourceTitle: 'Source chat',
+        createdAt: '2026-05-05T22:10:00.000Z',
+      },
+    }, messages, options);
+
+    expect(JSON.parse(json).forkOf).toEqual({
+      sourceSessionId: 'source-session',
+      sourceEventId: 'evt-2',
+      sourceMessageId: 'a1',
+      sourceTitle: 'Source chat',
+      createdAt: '2026-05-05T22:10:00.000Z',
+    });
   });
 });
 

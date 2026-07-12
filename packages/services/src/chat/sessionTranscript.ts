@@ -10,6 +10,7 @@ import { applyChatEventToMessage } from '@chamber/shared';
 import { Logger } from '../logger';
 import { stripInjectedCurrentDateTimeContext } from './currentDateTimeContext';
 import { attachmentBlockFromManifest, parseAttachmentManifestContext } from './attachmentContext';
+import { stripConversationForkContext } from './conversationForkContext';
 import {
   mapSdkPermissionCompleted,
   mapSdkPermissionRequested,
@@ -79,7 +80,7 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         flushAssistant();
         const content = extractTextContent(data);
         if (!content) return;
-        const parsed = parseAttachmentManifestContext(stripInjectedCurrentDateTimeContext(content));
+        const parsed = parseAttachmentManifestContext(stripConversationForkContext(stripInjectedCurrentDateTimeContext(content)));
         const blocks = [
           ...parsed.attachments.map(attachmentBlockFromManifest),
           ...(parsed.text ? [{ type: 'text' as const, content: parsed.text }] : []),

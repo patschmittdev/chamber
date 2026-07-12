@@ -4,6 +4,7 @@ import { TurnQueue } from './TurnQueue';
 import { Logger } from '../logger';
 import type { MindManager } from '../mind';
 import type { ChatMessage, ConversationEventRef, ConversationSummary } from '@chamber/shared/types';
+import type { ConversationForkSeed } from './conversationForkContext';
 
 type AllEventsHandler = (event: unknown) => void;
 type TypedHandler = (event: unknown) => void;
@@ -95,6 +96,7 @@ const mockMindManager = {
   markActiveConversationHasMessages: vi.fn(),
   listConversationHistory: vi.fn<() => ConversationSummary[]>(() => []),
   resumeConversation: vi.fn(async () => ({ sessionId: 'session-1', messages: [], conversations: [] })),
+  forkConversation: vi.fn(async () => ({ sessionId: 'fork-session', messages: [], conversations: [] })),
   deleteConversation: vi.fn(async () => ({ sessionId: 'session-1', messages: [], conversations: [] })),
   renameConversation: vi.fn(() => []),
   getConversationMessages: vi.fn<(mindId: string, sessionId: string) => Promise<ChatMessage[]>>(async () => []),
@@ -102,7 +104,30 @@ const mockMindManager = {
   truncateActiveConversation: vi.fn(async (): Promise<ConversationSummary[]> => [{ sessionId: 'session-1', title: 'Chat', createdAt: '', updatedAt: '', kind: 'chat', active: true, hasMessages: true }]),
   getActiveConversationMessages: vi.fn(async (): Promise<ChatMessage[]> => []),
   getConversationEventRefs: vi.fn(async (): Promise<ConversationEventRef[]> => []),
+  getActiveConversationForkSeed: vi.fn(async (): Promise<ConversationForkSeed | null> => null),
 };
+
+function createForkSeed(message = 'Prior context only'): ConversationForkSeed {
+  return {
+    version: 1,
+    fork: {
+      sourceSessionId: 'source-session',
+      sourceEventId: 'evt-2',
+      sourceMessageId: 'a1',
+      sourceTitle: 'Source chat',
+      createdAt: '2026-05-05T15:00:00.000Z',
+    },
+    messages: [{
+      id: 'fork-seed:source-session:u1',
+      role: 'user',
+      blocks: [{ type: 'text', content: message }],
+      timestamp: 1,
+      forkSeed: true,
+    }],
+    limits: { maxMessages: 20, maxTextCharacters: 16_000, maxToolCharacters: 4_000 },
+    truncated: false,
+  };
+}
 
 describe('ChatService', () => {
   let svc: ChatService;
@@ -113,6 +138,7 @@ describe('ChatService', () => {
     allEventsHandlers.length = 0;
     typedHandlers.clear();
     validModelClient.modelsCache = {};
+    mockMindManager.getActiveConversationForkSeed.mockResolvedValue(null);
     turnQueue = new TurnQueue();
     svc = new ChatService(mockMindManager as unknown as MindManager, turnQueue, () => ({
       currentDateTime: '2026-05-05T15:37:12.065Z',
@@ -139,6 +165,24 @@ describe('ChatService', () => {
       });
       expect(mockMindManager.markActiveConversationHasMessages).toHaveBeenCalledWith('valid-mind', 'hello');
       expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('injects bounded fork seed context into the first fork turn without changing the visible title prompt', async () => {
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        if (eventOrCb === 'session.idle' && cb) {
+          setTimeout(() => cb(), 0);
+        }
+        return vi.fn();
+      });
+      mockMindManager.getActiveConversationForkSeed.mockResolvedValueOnce(createForkSeed());
+
+      await svc.sendMessage('valid-mind', 'continue', 'msg-1', vi.fn());
+
+      expect(mockSession.send).toHaveBeenCalledWith({
+        prompt: expect.stringContaining('<chamber_conversation_fork_context>'),
+      });
+      expect(mockSession.send.mock.calls[0][0].prompt).toContain('Prior context only');
+      expect(mockMindManager.markActiveConversationHasMessages).toHaveBeenCalledWith('valid-mind', 'continue');
     });
 
     it('persists document attachments and sends a manifest instead of folded file text', async () => {
@@ -346,6 +390,20 @@ describe('ChatService', () => {
       expect(emit).toHaveBeenCalledWith({ type: 'done' });
     });
 
+    it('editMessage preserves fork context after truncating the first fork turn', async () => {
+      idleOnSend();
+      mockMindManager.getActiveConversationForkSeed.mockResolvedValueOnce(createForkSeed('Earlier fork context'));
+      const emit = vi.fn();
+
+      await svc.editMessage('valid-mind', 'evt-7', 'edited prompt', 'msg-9', emit);
+
+      const sentPrompt = mockSession.send.mock.calls[0][0].prompt as string;
+      expect(sentPrompt).toContain('edited prompt');
+      expect(sentPrompt).toContain('<chamber_conversation_fork_context>');
+      expect(sentPrompt).toContain('Earlier fork context');
+      expect(mockMindManager.markActiveConversationHasMessages).toHaveBeenCalledWith('valid-mind', 'edited prompt');
+    });
+
     it('regenerate re-runs the most recent user turn from persisted history', async () => {
       idleOnSend();
       mockMindManager.getActiveConversationMessages.mockResolvedValueOnce([
@@ -360,6 +418,23 @@ describe('ChatService', () => {
         prompt: expect.stringContaining('first question'),
       });
       expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('regenerate preserves fork context after truncating the first fork turn', async () => {
+      idleOnSend();
+      mockMindManager.getActiveConversationMessages.mockResolvedValueOnce([
+        { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'first question' }], timestamp: 1, eventId: 'evt-u1' },
+      ]);
+      mockMindManager.getActiveConversationForkSeed.mockResolvedValueOnce(createForkSeed('Earlier fork context'));
+      const emit = vi.fn();
+
+      await svc.regenerate('valid-mind', 'msg-regen', emit);
+
+      const sentPrompt = mockSession.send.mock.calls[0][0].prompt as string;
+      expect(sentPrompt).toContain('first question');
+      expect(sentPrompt).toContain('<chamber_conversation_fork_context>');
+      expect(sentPrompt).toContain('Earlier fork context');
+      expect(mockMindManager.markActiveConversationHasMessages).toHaveBeenCalledWith('valid-mind', 'first question');
     });
 
     it('regenerate emits an error when there is no user turn to re-run', async () => {
@@ -533,6 +608,104 @@ describe('ChatService', () => {
     });
   });
 
+  describe('conversation lifecycle guards', () => {
+    it('rejects forks while a model switch is in progress', async () => {
+      let resolveModel: (() => void) | undefined;
+      mockMindManager.setMindModel.mockImplementationOnce(async () => new Promise<null>((resolve) => {
+        resolveModel = () => resolve(null);
+      }));
+
+      const switching = svc.setMindModel('valid-mind', 'gpt-5.4');
+      await vi.waitFor(() => {
+        expect(mockMindManager.setMindModel).toHaveBeenCalledWith('valid-mind', 'gpt-5.4');
+      });
+
+      await expect(svc.forkConversation('valid-mind', 'source-session', 'evt-2')).rejects.toThrow('Cannot switch conversations');
+
+      resolveModel?.();
+      await switching;
+    });
+
+    it('rejects model switches while a conversation switch is in progress', async () => {
+      let resolveResume: (() => void) | undefined;
+      mockMindManager.resumeConversation.mockImplementationOnce(async () => new Promise((resolve) => {
+        resolveResume = () => resolve({ sessionId: 'session-1', messages: [], conversations: [] });
+      }));
+
+      const resuming = svc.resumeConversation('valid-mind', 'session-1');
+      await vi.waitFor(() => {
+        expect(mockMindManager.resumeConversation).toHaveBeenCalledWith('valid-mind', 'session-1');
+      });
+
+      await expect(svc.setMindModel('valid-mind', 'gpt-5.4')).rejects.toThrow('Cannot switch models while changing conversations.');
+
+      resolveResume?.();
+      await resuming;
+    });
+
+    it('rejects new turns while a conversation switch is in progress', async () => {
+      let resolveResume: (() => void) | undefined;
+      mockMindManager.resumeConversation.mockImplementationOnce(async () => new Promise((resolve) => {
+        resolveResume = () => resolve({ sessionId: 'session-1', messages: [], conversations: [] });
+      }));
+
+      const resuming = svc.resumeConversation('valid-mind', 'session-1');
+      await vi.waitFor(() => {
+        expect(mockMindManager.resumeConversation).toHaveBeenCalledWith('valid-mind', 'session-1');
+      });
+
+      const emit = vi.fn();
+      await svc.sendMessage('valid-mind', 'hello during switch', 'msg-1', emit);
+
+      expect(mockSession.send).not.toHaveBeenCalled();
+      expect(emit).toHaveBeenCalledWith({ type: 'error', message: 'Cannot send messages while changing conversations.' });
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
+
+      resolveResume?.();
+      await resuming;
+    });
+
+    it('rejects new turns while a model switch is in progress', async () => {
+      let resolveModel: (() => void) | undefined;
+      mockMindManager.setMindModel.mockImplementationOnce(async () => new Promise<null>((resolve) => {
+        resolveModel = () => resolve(null);
+      }));
+
+      const switching = svc.setMindModel('valid-mind', 'gpt-5.4');
+      await vi.waitFor(() => {
+        expect(mockMindManager.setMindModel).toHaveBeenCalledWith('valid-mind', 'gpt-5.4');
+      });
+
+      const emit = vi.fn();
+      await svc.sendMessage('valid-mind', 'hello during switch', 'msg-1', emit);
+
+      expect(mockSession.send).not.toHaveBeenCalled();
+      expect(emit).toHaveBeenCalledWith({ type: 'error', message: 'Cannot send messages while changing models.' });
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
+
+      resolveModel?.();
+      await switching;
+    });
+
+    it('rejects message deletion while a model switch is in progress', async () => {
+      let resolveModel: (() => void) | undefined;
+      mockMindManager.setMindModel.mockImplementationOnce(async () => new Promise<null>((resolve) => {
+        resolveModel = () => resolve(null);
+      }));
+
+      const switching = svc.setMindModel('valid-mind', 'gpt-5.4');
+      await vi.waitFor(() => {
+        expect(mockMindManager.setMindModel).toHaveBeenCalledWith('valid-mind', 'gpt-5.4');
+      });
+
+      await expect(svc.deleteMessage('valid-mind', 'evt-7')).rejects.toThrow('Cannot change messages while changing models.');
+      expect(mockMindManager.truncateActiveConversation).not.toHaveBeenCalled();
+
+      resolveModel?.();
+      await switching;
+    });
+  });
+
   describe('deleteConversation', () => {
     it('delegates to mindManager.deleteConversation', async () => {
       const result = await svc.deleteConversation('valid-mind', 'session-1');
@@ -551,6 +724,30 @@ describe('ChatService', () => {
       await Promise.resolve();
 
       await expect(svc.deleteConversation('valid-mind', 'session-1')).rejects.toThrow('Cannot switch conversations');
+
+      await svc.cancelMessage('valid-mind', 'msg-1');
+      await send;
+    });
+  });
+
+  describe('forkConversation', () => {
+    it('delegates to mindManager.forkConversation', async () => {
+      const result = await svc.forkConversation('valid-mind', 'source-session', 'evt-2');
+
+      expect(mockMindManager.forkConversation).toHaveBeenCalledWith('valid-mind', 'source-session', 'evt-2');
+      expect(result).toEqual({ sessionId: 'fork-session', messages: [], conversations: [] });
+    });
+
+    it('rejects forks while a message is streaming', async () => {
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        void eventOrCb;
+        void cb;
+        return vi.fn();
+      });
+      const send = svc.sendMessage('valid-mind', 'hello', 'msg-1', vi.fn());
+      await Promise.resolve();
+
+      await expect(svc.forkConversation('valid-mind', 'source-session', 'evt-2')).rejects.toThrow('Cannot switch conversations');
 
       await svc.cancelMessage('valid-mind', 'msg-1');
       await send;

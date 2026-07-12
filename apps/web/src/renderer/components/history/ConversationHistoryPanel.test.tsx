@@ -130,6 +130,29 @@ describe('ConversationHistoryPanel', () => {
     expect(screen.getByText(/just now/).className).toContain('text-xs');
   });
 
+  it('shows source metadata for forked conversations', () => {
+    const conversation = makeConversation({
+      title: 'Follow-up idea',
+      forkOf: {
+        sourceSessionId: 'source-session',
+        sourceEventId: 'evt-2',
+        sourceMessageId: 'a1',
+        sourceTitle: 'Planning thread',
+        createdAt: '2026-05-05T22:10:00.000Z',
+      },
+    });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+      activeConversationByMind: { [mind.mindId]: conversation.sessionId },
+      conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
+    });
+
+    expect(screen.getByText('Follow-up idea')).toBeTruthy();
+    expect(screen.getByText('Fork of Planning thread', { selector: '.truncate.text-xs' })).toBeTruthy();
+  });
+
   it('confirms before deleting conversations with messages', async () => {
     const conversation = makeConversation({ title: 'Keep me honest', hasMessages: true });
     (api.conversationHistory.list as ReturnType<typeof vi.fn>).mockResolvedValue([conversation]);

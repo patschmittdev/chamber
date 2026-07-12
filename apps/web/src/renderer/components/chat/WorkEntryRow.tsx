@@ -12,9 +12,10 @@ interface Props {
    * its output grow. Overridden by local user toggles.
    */
   autoExpand?: boolean;
+  contextOnly?: boolean;
 }
 
-export function WorkEntryRow({ entry, autoExpand = false }: Props) {
+export function WorkEntryRow({ entry, autoExpand = false, contextOnly = false }: Props) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const wasAutoExpanded = useRef(false);
 
@@ -28,7 +29,7 @@ export function WorkEntryRow({ entry, autoExpand = false }: Props) {
   const canToggle = hasDetail(entry);
   const toggle = () => setUserOpen((prev) => !(prev ?? open));
 
-  const { Icon, iconClass } = iconAndTone(entry);
+  const { Icon, iconClass } = iconAndTone(entry, contextOnly);
   const heading = headingFor(entry);
   const preview = entry.preview;
   const isReasoning = entry.kind === 'reasoning';
@@ -72,8 +73,8 @@ export function WorkEntryRow({ entry, autoExpand = false }: Props) {
             {preview}
           </span>
         )}
-        {entry.kind === 'tool' && <StatusGlyph status={entry.status} />}
-        {entry.kind === 'permission' && <PermissionGlyph outcome={entry.block.outcome} />}
+        {entry.kind === 'tool' && <StatusGlyph status={entry.status} contextOnly={contextOnly} />}
+        {entry.kind === 'permission' && <PermissionGlyph outcome={entry.block.outcome} contextOnly={contextOnly} />}
       </button>
       {open && canToggle && (
         <div className="mt-0.5 ml-6 mb-1">
@@ -110,14 +111,14 @@ function permissionHeading(kind: PermissionRequestKind): string {
   }
 }
 
-function iconAndTone(entry: WorkEntry): { Icon: ReturnType<typeof iconForToolName>; iconClass: string } {
+function iconAndTone(entry: WorkEntry, contextOnly: boolean): { Icon: ReturnType<typeof iconForToolName>; iconClass: string } {
   if (entry.kind === 'reasoning') {
     return { Icon: iconForReasoning(), iconClass: 'text-muted-foreground/60' };
   }
   if (entry.kind === 'permission') {
     const iconClass = isDeniedOutcome(entry.block.outcome)
       ? 'text-destructive'
-      : entry.block.outcome === 'pending'
+      : entry.block.outcome === 'pending' && !contextOnly
         ? 'text-genesis'
         : 'text-foreground/80';
     return { Icon: iconForPermissionKind(entry.block.kind), iconClass };
@@ -126,14 +127,14 @@ function iconAndTone(entry: WorkEntry): { Icon: ReturnType<typeof iconForToolNam
   const iconClass =
     entry.status === 'error'
       ? 'text-destructive'
-      : entry.status === 'running'
+      : entry.status === 'running' && !contextOnly
         ? 'text-genesis'
         : 'text-foreground/80';
   return { Icon, iconClass };
 }
 
-function StatusGlyph({ status }: { status: 'running' | 'done' | 'error' }) {
-  if (status === 'running') {
+function StatusGlyph({ status, contextOnly }: { status: 'running' | 'done' | 'error'; contextOnly: boolean }) {
+  if (status === 'running' && !contextOnly) {
     return <Loader2 className="h-3 w-3 shrink-0 animate-spin text-genesis" aria-label="running" />;
   }
   if (status === 'error') {
@@ -148,8 +149,8 @@ function isDeniedOutcome(outcome: PermissionOutcome): boolean {
   return outcome.startsWith('denied-');
 }
 
-function PermissionGlyph({ outcome }: { outcome: PermissionOutcome }) {
-  if (outcome === 'pending') {
+function PermissionGlyph({ outcome, contextOnly }: { outcome: PermissionOutcome; contextOnly: boolean }) {
+  if (outcome === 'pending' && !contextOnly) {
     return <Loader2 className="h-3 w-3 shrink-0 animate-spin text-genesis" aria-label="awaiting permission" />;
   }
   if (isDeniedOutcome(outcome)) {

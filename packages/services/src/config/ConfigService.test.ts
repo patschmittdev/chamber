@@ -132,6 +132,13 @@ describe('ConfigService', () => {
             updatedAt: '2026-05-05T22:15:00.000Z',
             kind: 'chat',
             hasMessages: true,
+            forkOf: {
+              sourceSessionId: 'source-session',
+              sourceEventId: 'evt-2',
+              sourceMessageId: 'a1',
+              sourceTitle: 'Source chat',
+              createdAt: '2026-05-05T22:10:00.000Z',
+            },
             messages: [{ role: 'user', content: 'do not persist me here' }],
           }],
         }],
@@ -153,6 +160,13 @@ describe('ConfigService', () => {
           updatedAt: '2026-05-05T22:15:00.000Z',
           kind: 'chat',
           hasMessages: true,
+          forkOf: {
+            sourceSessionId: 'source-session',
+            sourceEventId: 'evt-2',
+            sourceMessageId: 'a1',
+            sourceTitle: 'Source chat',
+            createdAt: '2026-05-05T22:10:00.000Z',
+          },
         }],
       });
     });

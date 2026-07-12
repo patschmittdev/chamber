@@ -8,7 +8,7 @@ import * as path from 'path';
 import type { PermissionHandler, ResumeSessionConfig, SessionConfig } from '@github/copilot-sdk';
 import { parseModelSelectionKey } from '@chamber/shared/model-selection';
 import { isStaleSessionError } from '@chamber/shared/sessionErrors';
-import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationResumeResult, ConversationSummary, MindContext, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
+import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationForkRef, ConversationResumeResult, ConversationSummary, MindContext, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
 import { Logger } from '../logger';
 import type { InternalMindContext, CopilotClient, CopilotSession, Tool, UserInputHandler } from './types';
 import { generateMindId } from './generateMindId';
@@ -19,6 +19,8 @@ import { approveForSessionCompat } from '../sdk/approveForSessionCompat';
 import type { IdentityLoader } from '../chat/IdentityLoader';
 import { getCurrentDateTimeContext, injectCurrentDateTimeContext } from '../chat/currentDateTimeContext';
 import { mapSessionEventsToChatMessages } from '../chat/sessionTranscript';
+import { ConversationForkSeedStore } from '../chat/ConversationForkSeedStore';
+import { buildConversationForkSeed, findConversationForkSourceMessage, type ConversationForkSeed } from '../chat/conversationForkContext';
 import type { ChamberToolProvider } from '../chamberTools';
 import type { ConfigService } from '../config/ConfigService';
 import type { ViewDiscovery } from '../lens/ViewDiscovery';
@@ -52,6 +54,12 @@ interface CreateMindSessionRequest {
   model?: string;
   modelProvider?: ModelProvider;
   sessionId?: string;
+}
+
+interface ConversationForkSeedStorePort {
+  save(mindId: string, sessionId: string, seed: ConversationForkSeed): Promise<void>;
+  read(mindId: string, sessionId: string): Promise<ConversationForkSeed | null>;
+  delete(mindId: string, sessionId: string): Promise<void>;
 }
 
 const MIND_SESSION_POLICIES: Record<MindSessionKind, MindSessionPolicy> = {
@@ -109,6 +117,7 @@ export class MindManager extends EventEmitter {
   private reloading = false;
   private providers: ChamberToolProvider[] = [];
   private modelUpdates = new Map<string, Promise<void>>();
+  private readonly forkSeedStore: ConversationForkSeedStorePort;
 
   constructor(
     private readonly clientFactory: CopilotClientFactory,
@@ -137,8 +146,12 @@ export class MindManager extends EventEmitter {
      */
     private readonly byoDefaultModelProvider: () => string | undefined = () => undefined,
     private readonly managedSkillService?: Pick<ManagedSkillService, 'installIntoMind'>,
+    forkSeedStore?: ConversationForkSeedStorePort,
   ) {
     super();
+    this.forkSeedStore = forkSeedStore ?? new ConversationForkSeedStore({
+      storageRoot: path.join(this.configService.getConfigDir(), 'conversation-fork-seeds'),
+    });
   }
 
   setProviders(providers: ChamberToolProvider[]): void {
@@ -503,11 +516,12 @@ export class MindManager extends EventEmitter {
       context.identity = refreshedIdentity;
     }
     const activeConversation = this.getActiveConversationRecord(mindId);
-    if (activeConversation?.hasMessages === false && context.session && !identityChanged) {
+    const canReuseActiveEmptyConversation = activeConversation?.hasMessages === false && !activeConversation.forkOf;
+    if (canReuseActiveEmptyConversation && context.session && !identityChanged) {
       return context.session;
     }
 
-    if (activeConversation?.hasMessages === false && context.session && identityChanged) {
+    if (canReuseActiveEmptyConversation && context.session && identityChanged) {
       // Recreate the SDK session so the model picks up the refreshed system message
       // (e.g. newly installed marketplace tools advertised in ## Tools).
       return this.createNewConversationSession(mindId, context, activeConversation.sessionId);
@@ -544,12 +558,14 @@ export class MindManager extends EventEmitter {
     mindId: string,
     context: InternalMindContext,
     replaceSessionId?: string,
+    conversationOverride?: ChamberConversationRecord,
+    beforeActivate?: (sessionId: string) => Promise<void>,
   ): Promise<CopilotSession> {
     const refreshedIdentity = this.identityLoader.load(context.mindPath);
     if (refreshedIdentity) {
       context.identity = refreshedIdentity;
     }
-    const conversation = this.createConversationRecord(mindId);
+    const conversation = conversationOverride ?? this.createConversationRecord(mindId);
     const previousSession = context.session;
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
     const nextSession = await this.createSessionForMind({
@@ -562,12 +578,76 @@ export class MindManager extends EventEmitter {
       modelProvider: context.selectedModelProvider,
       sessionId: conversation.sessionId,
     });
+    try {
+      await beforeActivate?.(conversation.sessionId);
+    } catch (error) {
+      await nextSession.disconnect().catch(() => { /* session already disconnected */ });
+      throw error;
+    }
     context.session = nextSession;
     context.activeSessionId = conversation.sessionId;
     this.upsertConversationRecord(mindId, conversation, replaceSessionId);
     this.persistConfig();
     await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
     return context.session;
+  }
+
+  async forkConversation(mindId: string, sourceSessionId: string, sourceEventId: string): Promise<ConversationResumeResult> {
+    return this.withMindSessionLock(mindId, () => this.forkConversationUnlocked(mindId, sourceSessionId, sourceEventId));
+  }
+
+  private async forkConversationUnlocked(
+    mindId: string,
+    sourceSessionId: string,
+    sourceEventId: string,
+  ): Promise<ConversationResumeResult> {
+    const context = this.minds.get(mindId);
+    if (!context) throw new Error(`Mind ${mindId} not found`);
+    const record = this.knownMindRecords.get(mindId);
+    if (!record) throw new Error(`Mind ${mindId} not found`);
+    const sourceConversation = record.conversations?.find((conversation) => conversation.sessionId === sourceSessionId);
+    if (!sourceConversation) {
+      throw new Error(`Conversation ${sourceSessionId} not found for mind ${mindId}`);
+    }
+
+    const sourceMessages = await this.getMessagesForConversationUnlocked(mindId, sourceSessionId, context);
+    const sourceMessage = findConversationForkSourceMessage(sourceMessages, sourceEventId);
+    const sourceTitle = sourceConversation.title ?? this.defaultConversationTitle(sourceConversation);
+    const createdAt = new Date().toISOString();
+    const forkOf: ConversationForkRef = {
+      sourceSessionId,
+      sourceEventId,
+      sourceMessageId: sourceMessage.id,
+      sourceTitle,
+      createdAt,
+    };
+    const seed = buildConversationForkSeed(sourceMessages, sourceEventId, forkOf);
+    const forkConversation = this.createConversationRecord(mindId, {
+      title: `Fork of ${sourceTitle}`,
+      forkOf,
+      now: createdAt,
+    });
+    const nextSession = await this.createNewConversationSession(
+      mindId,
+      context,
+      undefined,
+      forkConversation,
+      (sessionId) => this.forkSeedStore.save(mindId, sessionId, seed),
+    );
+
+    return {
+      sessionId: forkConversation.sessionId,
+      messages: await this.getMessagesForConversation(mindId, forkConversation.sessionId, nextSession),
+      conversations: this.listConversationHistory(mindId),
+    };
+  }
+
+  async getActiveConversationForkSeed(mindId: string): Promise<ConversationForkSeed | null> {
+    const context = this.minds.get(mindId);
+    if (!context?.activeSessionId) return null;
+    const conversation = this.getActiveConversationRecord(mindId);
+    if (!conversation?.forkOf || conversation.hasMessages !== false) return null;
+    return this.forkSeedStore.read(mindId, context.activeSessionId);
   }
 
   async resumeConversation(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
@@ -587,7 +667,7 @@ export class MindManager extends EventEmitter {
       this.persistConfig();
       return {
         sessionId,
-        messages: await this.getMessagesForSession(context.session),
+        messages: await this.getMessagesForConversation(mindId, sessionId, context.session),
         conversations: this.listConversationHistory(mindId),
       };
     }
@@ -614,7 +694,7 @@ export class MindManager extends EventEmitter {
 
     return {
       sessionId,
-      messages: await this.getMessagesForSession(nextSession),
+      messages: await this.getMessagesForConversation(mindId, sessionId, nextSession),
       conversations: this.listConversationHistory(mindId),
     };
   }
@@ -648,7 +728,7 @@ export class MindManager extends EventEmitter {
     }
 
     if (context.activeSessionId === sessionId && context.session) {
-      return this.getMessagesForSession(context.session);
+      return this.getMessagesForConversation(mindId, sessionId, context.session);
     }
 
     const key = `${mindId}:${sessionId}`;
@@ -659,6 +739,18 @@ export class MindManager extends EventEmitter {
       .finally(() => this.inFlightConversationReads.delete(key));
     this.inFlightConversationReads.set(key, load);
     return load;
+  }
+
+  private async getMessagesForConversationUnlocked(
+    mindId: string,
+    sessionId: string,
+    context: InternalMindContext,
+  ): Promise<ChatMessage[]> {
+    const current = this.minds.get(mindId);
+    if (current?.activeSessionId === sessionId && current.session) {
+      return this.getMessagesForConversation(mindId, sessionId, current.session);
+    }
+    return this.readConversationMessagesReadOnly(mindId, sessionId, context);
   }
 
   /**
@@ -695,7 +787,7 @@ export class MindManager extends EventEmitter {
     // rather than resuming a rival throwaway for the same id.
     const beforeLoad = this.minds.get(mindId);
     if (beforeLoad?.activeSessionId === sessionId && beforeLoad.session) {
-      return this.getMessagesForSession(beforeLoad.session);
+      return this.getMessagesForConversation(mindId, sessionId, beforeLoad.session);
     }
 
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
@@ -710,7 +802,7 @@ export class MindManager extends EventEmitter {
       context.selectedModelProvider,
     );
     try {
-      return await this.getMessagesForSession(readOnlySession);
+      return await this.getMessagesForConversation(mindId, sessionId, readOnlySession);
     } finally {
       // The lock guarantees no live session adopted this id while we read, so
       // disconnecting our throwaway cannot tear down an active conversation.
@@ -738,6 +830,7 @@ export class MindManager extends EventEmitter {
         kind: conversation.kind,
         active: conversation.sessionId === activeSessionId,
         hasMessages: conversation.hasMessages,
+        ...(conversation.forkOf ? { forkOf: conversation.forkOf } : {}),
       }));
   }
 
@@ -781,10 +874,13 @@ export class MindManager extends EventEmitter {
         conversations: remainingConversations,
       });
       this.persistConfig();
+      await this.deleteForkSeed(mindId, deletingConversation.sessionId);
       await this.deleteSdkSession(context, deletingConversation.sessionId);
       return {
         sessionId: context.activeSessionId ?? '',
-        messages: context.session ? await this.getMessagesForSession(context.session) : [],
+        messages: context.session && context.activeSessionId
+          ? await this.getMessagesForConversation(mindId, context.activeSessionId, context.session)
+          : [],
         conversations: this.listConversationHistory(mindId),
       };
     }
@@ -798,6 +894,7 @@ export class MindManager extends EventEmitter {
 
     if (remainingConversations.length === 0) {
       await this.createNewConversationSession(mindId, context);
+      await this.deleteForkSeed(mindId, deletingConversation.sessionId);
       await this.deleteSdkSession(context, deletingConversation.sessionId);
       return {
         sessionId: context.activeSessionId ?? '',
@@ -825,11 +922,12 @@ export class MindManager extends EventEmitter {
     this.touchConversationRecord(mindId, nextConversation.sessionId);
     this.persistConfig();
     await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
+    await this.deleteForkSeed(mindId, deletingConversation.sessionId);
     await this.deleteSdkSession(context, deletingConversation.sessionId);
 
     return {
       sessionId: nextConversation.sessionId,
-      messages: await this.getMessagesForSession(nextSession),
+      messages: await this.getMessagesForConversation(mindId, nextConversation.sessionId, nextSession),
       conversations: this.listConversationHistory(mindId),
     };
   }
@@ -900,6 +998,14 @@ export class MindManager extends EventEmitter {
     this.persistConfig();
   }
 
+  private async deleteForkSeed(mindId: string, sessionId: string): Promise<void> {
+    try {
+      await this.forkSeedStore.delete(mindId, sessionId);
+    } catch (error) {
+      log.warn(`Failed to delete fork seed for conversation ${sessionId}; conversation metadata was already updated.`, error);
+    }
+  }
+
   async setMindModel(mindId: string, model: string | null): Promise<MindContext | null> {
     const previousUpdate = this.modelUpdates.get(mindId) ?? Promise.resolve();
     let releaseUpdate: () => void;
@@ -965,7 +1071,12 @@ export class MindManager extends EventEmitter {
       if (context.session && selectedModel && !providerChanged) {
         await context.session.setModel(selectedModel);
       } else if (context.session) {
-        await this.createNewConversationSession(mindId, context);
+        const activeConversation = this.getActiveConversationRecord(mindId);
+        if (activeConversation?.forkOf && activeConversation.hasMessages === false) {
+          await this.createNewConversationSession(mindId, context, activeConversation.sessionId, activeConversation);
+        } else {
+          await this.createNewConversationSession(mindId, context);
+        }
       }
     } catch (err) {
       // Stale-session errors trigger a recovery path that re-creates the
@@ -1545,6 +1656,26 @@ export class MindManager extends EventEmitter {
     return mapSessionEventsToChatMessages(events);
   }
 
+  private async getMessagesForConversation(
+    mindId: string,
+    sessionId: string,
+    session: CopilotSession,
+  ): Promise<ChatMessage[]> {
+    const [seed, messages] = await Promise.all([
+      this.forkSeedStore.read(mindId, sessionId),
+      this.getMessagesForSession(session),
+    ]);
+    if (!seed) return messages;
+    return [
+      ...seed.messages.map((message) => {
+        const { eventId: _eventId, ...rest } = message;
+        void _eventId;
+        return { ...rest, forkSeed: true };
+      }),
+      ...messages,
+    ];
+  }
+
   async sendBackgroundPrompt(mindPath: string, prompt: string): Promise<void> {
     const requestedMindPathKey = this.mindPathKey(mindPath);
     const mind = this.listMinds().find(m => this.mindPathKey(m.mindPath) === requestedMindPathKey);
@@ -1596,15 +1727,19 @@ export class MindManager extends EventEmitter {
     return Array.from(records.values());
   }
 
-  private createConversationRecord(mindId: string): ChamberConversationRecord {
-    const now = new Date().toISOString();
+  private createConversationRecord(
+    mindId: string,
+    options: { title?: string; forkOf?: ConversationForkRef; now?: string } = {},
+  ): ChamberConversationRecord {
+    const now = options.now ?? new Date().toISOString();
     return {
       sessionId: `chamber-${mindId}-${randomUUID()}`,
-      title: `New chat · ${new Date(now).toLocaleString()}`,
+      title: options.title ?? `New chat · ${new Date(now).toLocaleString()}`,
       createdAt: now,
       updatedAt: now,
       kind: 'chat',
       hasMessages: false,
+      ...(options.forkOf ? { forkOf: options.forkOf } : {}),
     };
   }
 

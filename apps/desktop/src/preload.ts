@@ -24,6 +24,8 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke(IPC.CHAT.REGENERATE, mindId, messageId, model),
     getConversationEvents: (mindId) =>
       ipcRenderer.invoke(IPC.CHAT.GET_CONVERSATION_EVENTS, mindId),
+    forkConversation: (mindId, sourceSessionId, sourceEventId) =>
+      ipcRenderer.invoke(IPC.CHAT.FORK_CONVERSATION, mindId, sourceSessionId, sourceEventId),
   },
   conversationHistory: {
     list: (mindId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.LIST, mindId),

@@ -139,6 +139,8 @@ export interface ChatMessage {
   timestamp: number;
   isStreaming?: boolean;
   sender?: { mindId: string; name: string };
+  /** True when the row is bounded prior context carried into a fork. */
+  forkSeed?: boolean;
   /**
    * Stable identifier of the backing SDK session event (UUID). Present for
    * messages hydrated from the SDK (resume/reconcile); undefined for a live
@@ -299,6 +301,14 @@ export type UserProfileImportResult =
 
 export type ChamberConversationKind = 'chat' | 'cron' | 'task';
 
+export interface ConversationForkRef {
+  sourceSessionId: string;
+  sourceEventId: string;
+  sourceMessageId: string;
+  sourceTitle: string;
+  createdAt: string;
+}
+
 export interface ChamberConversationRecord {
   sessionId: string;
   title?: string;
@@ -306,6 +316,7 @@ export interface ChamberConversationRecord {
   updatedAt: string;
   kind: ChamberConversationKind;
   hasMessages?: boolean;
+  forkOf?: ConversationForkRef;
 }
 
 export interface ConversationSummary {
@@ -316,6 +327,7 @@ export interface ConversationSummary {
   kind: ChamberConversationKind;
   active: boolean;
   hasMessages?: boolean;
+  forkOf?: ConversationForkRef;
 }
 
 export interface ConversationResumeResult {
