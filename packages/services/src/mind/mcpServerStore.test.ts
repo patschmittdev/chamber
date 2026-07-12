@@ -97,6 +97,16 @@ describe('mcpServerStore', () => {
       const runtime = Object.keys(loadMcpServersFromMindPath(tmpDir)).sort();
       expect(managed).toEqual(runtime);
     });
+
+    it('throws rather than treating an unparseable file as empty (blocker 1)', () => {
+      fs.writeFileSync(path.join(tmpDir, MCP_CONFIG_FILENAME), '{ not json', 'utf-8');
+      expect(() => readMcpServers(tmpDir)).toThrow(/not valid JSON/);
+    });
+
+    it('throws when the file is not a JSON object', () => {
+      fs.writeFileSync(path.join(tmpDir, MCP_CONFIG_FILENAME), '["array"]', 'utf-8');
+      expect(() => readMcpServers(tmpDir)).toThrow(/not valid JSON/);
+    });
   });
 
   describe('writeMcpServers', () => {
@@ -235,6 +245,30 @@ describe('mcpServerStore', () => {
         { name: 'dup', transport: 'stdio', command: 'a', args: [], env: {} },
         { name: 'dup', transport: 'http', url: 'https://b.test', headers: {} },
       ])).toThrow(/Duplicate MCP server name: dup/);
+    });
+
+    it('refuses to overwrite a file it cannot parse (blocker 1)', () => {
+      fs.writeFileSync(path.join(tmpDir, MCP_CONFIG_FILENAME), '{ oops', 'utf-8');
+      expect(() => writeMcpServers(tmpDir, [
+        { name: 'files', transport: 'stdio', command: 'cli', args: [], env: {} },
+      ])).toThrow(/Refusing to overwrite/);
+      // The original bytes are left intact.
+      expect(fs.readFileSync(path.join(tmpDir, MCP_CONFIG_FILENAME), 'utf-8')).toBe('{ oops');
+    });
+
+    it('rejects a managed name that collides with a preserved invalid entry', () => {
+      writeFile({ mcpServers: { conflict: { type: 'stdio' } } }); // invalid: missing command
+      expect(() => writeMcpServers(tmpDir, [
+        { name: 'conflict', transport: 'stdio', command: 'cli', args: [], env: {} },
+      ])).toThrow(/in use by an unmanaged entry: conflict/);
+      // The preserved invalid entry is untouched.
+      expect(readServers().conflict).toEqual({ type: 'stdio' });
+    });
+
+    it('rejects an entry whose serialized form would fail the runtime schema', () => {
+      expect(() => writeMcpServers(tmpDir, [
+        { name: 'bad', transport: 'http', url: 'not-a-url', headers: {} },
+      ])).toThrow(/Invalid MCP server configuration for bad/);
     });
 
     it('round-trips a stdio entry through readMcpServers', () => {

@@ -85,6 +85,22 @@ export function McpServersTab() {
     [loadedMindId, activeMindId],
   );
 
+  // Persists `next`, then applies the result only if the view still shows the
+  // same mind it was written for. Without this the result of an in-flight save
+  // for a previously-active mind could land after a switch and poison `entries`
+  // (which the next write would then persist into the wrong mind) (blocker 3).
+  const runWrite = useCallback(
+    async (next: McpServerEntry[]): Promise<boolean> => {
+      const seq = requestSeq.current;
+      const targetMindId = loadedMindId;
+      const result = await persist(next);
+      if (requestSeq.current !== seq || targetMindId !== activeMindId) return false;
+      setEntries(result);
+      return true;
+    },
+    [persist, loadedMindId, activeMindId],
+  );
+
   const otherNames = useMemo(
     () => entries.filter((entry) => entry.name !== editingName).map((entry) => entry.name),
     [entries, editingName],
@@ -121,8 +137,7 @@ export function McpServersTab() {
     setSaving(true);
     setFormError(null);
     try {
-      setEntries(await persist(next));
-      setDialogOpen(false);
+      if (await runWrite(next)) setDialogOpen(false);
     } catch (err) {
       setFormError(getErrorMessage(err));
     } finally {
@@ -134,7 +149,7 @@ export function McpServersTab() {
     if (!canWrite) return;
     setError(null);
     try {
-      setEntries(await persist(entries.filter((entry) => entry.name !== name)));
+      await runWrite(entries.filter((entry) => entry.name !== name));
     } catch (err) {
       setError(getErrorMessage(err));
     }

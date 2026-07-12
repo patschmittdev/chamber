@@ -30,7 +30,12 @@ const log = Logger.create('mcpServerStore');
 
 type RawServer = Record<string, unknown>;
 
+/** Whether the on-disk file could be safely parsed and round-tripped. */
+type RawConfigStatus = 'empty' | 'loaded' | 'unreadable';
+
 interface RawConfig {
+  /** `empty` = no file; `loaded` = valid JSON object; `unreadable` = present but unsafe to round-trip. */
+  status: RawConfigStatus;
   /** Top-level keys other than `mcpServers`, preserved across writes. */
   top: Record<string, unknown>;
   /** The raw `mcpServers` map exactly as read from disk. */
@@ -49,12 +54,19 @@ function isManageable(raw: unknown): boolean {
 /**
  * Reads the manageable MCP servers configured for `mindPath`. Entries the
  * runtime schema rejects are intentionally omitted (they remain on disk,
- * untouched). Returns an empty array when the file is absent.
+ * untouched). Returns an empty array when the file is absent. Throws when the
+ * file exists but cannot be parsed, so the caller surfaces an error and keeps
+ * the file read-only rather than silently treating it as empty.
  */
 export function readMcpServers(mindPath: string): McpServerEntry[] {
-  const { servers } = readRawConfig(path.join(mindPath, MCP_CONFIG_FILENAME));
+  const config = readRawConfig(path.join(mindPath, MCP_CONFIG_FILENAME));
+  if (config.status === 'unreadable') {
+    throw new Error(
+      `Cannot read ${MCP_CONFIG_FILENAME}: it is not valid JSON. Fix or remove the file to manage MCP servers.`,
+    );
+  }
   const entries: McpServerEntry[] = [];
-  for (const [name, raw] of Object.entries(servers)) {
+  for (const [name, raw] of Object.entries(config.servers)) {
     if (!isManageable(raw)) continue;
     entries.push(toEntry(name, raw));
   }
@@ -65,20 +77,27 @@ export function readMcpServers(mindPath: string): McpServerEntry[] {
  * Replaces the *manageable* MCP server set in `mindPath`'s `.mcp.json` and
  * returns the persisted, normalized list. Raw entries the runtime rejects are
  * preserved verbatim; managed entries are replaced/added by name and removed by
- * omission. Throws on empty or duplicate names.
+ * omission. Refuses to overwrite a file it could not parse, and throws on empty,
+ * duplicate, or preserved-name-colliding entries.
  */
 export function writeMcpServers(mindPath: string, entries: McpServerEntry[]): McpServerEntry[] {
   const filePath = path.join(mindPath, MCP_CONFIG_FILENAME);
-  const { top, servers: rawServers } = readRawConfig(filePath);
+  const existing = readRawConfig(filePath);
+  if (existing.status === 'unreadable') {
+    throw new Error(
+      `Refusing to overwrite ${MCP_CONFIG_FILENAME}: the existing file is not valid JSON. Fix or remove it first.`,
+    );
+  }
 
   const nextServers: Record<string, RawServer> = {};
 
   // Preserve every entry the runtime schema rejects, exactly as written. These
   // are invalid/unsupported servers the UI never surfaced; management must not
   // rewrite them (blocker 1).
-  for (const [name, raw] of Object.entries(rawServers)) {
+  for (const [name, raw] of Object.entries(existing.servers)) {
     if (!isManageable(raw)) nextServers[name] = raw;
   }
+  const preservedNames = new Set(Object.keys(nextServers));
 
   // Serialize the managed entries, replacing/adding by name. Managed entries
   // omitted from `entries` are dropped (removal by name).
@@ -91,32 +110,62 @@ export function writeMcpServers(mindPath: string, entries: McpServerEntry[]): Mc
     if (seen.has(name)) {
       throw new Error(`Duplicate MCP server name: ${name}`);
     }
+    // A managed name must not silently clobber a preserved (invalid) entry that
+    // the UI never showed; keep the preserve-verbatim contract total.
+    if (preservedNames.has(name)) {
+      throw new Error(`MCP server name in use by an unmanaged entry: ${name}`);
+    }
     seen.add(name);
-    nextServers[name] = serializeEntry(entry);
+    const serialized = serializeEntry(entry);
+    // Defense in depth: the IPC layer validates input, but this is a public
+    // service API. Never persist an entry that would fail the runtime schema
+    // (and then vanish from the returned list), which would diverge disk from UI.
+    if (!isManageable(serialized)) {
+      throw new Error(`Invalid MCP server configuration for ${name}`);
+    }
+    nextServers[name] = serialized;
   }
 
-  const document = { ...top, mcpServers: nextServers };
+  const document = { ...existing.top, mcpServers: nextServers };
   fs.mkdirSync(mindPath, { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(document, null, 2)}\n`, 'utf-8');
   return readMcpServers(mindPath);
 }
 
 function readRawConfig(filePath: string): RawConfig {
-  if (!fs.existsSync(filePath)) return { top: {}, servers: {} };
+  if (!fs.existsSync(filePath)) return { status: 'empty', top: {}, servers: {} };
+
+  let text: string;
+  try {
+    text = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    log.warn(`Failed to read ${filePath}; refusing to manage it:`, err);
+    return { status: 'unreadable', top: {}, servers: {} };
+  }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    parsed = JSON.parse(text);
   } catch (err) {
-    log.warn(`Failed to read or parse ${filePath}; treating as empty:`, err);
-    return { top: {}, servers: {} };
+    log.warn(`Invalid JSON in ${filePath}; refusing to manage it:`, err);
+    return { status: 'unreadable', top: {}, servers: {} };
   }
 
-  if (!isRecord(parsed)) return { top: {}, servers: {} };
+  if (!isRecord(parsed)) {
+    log.warn(`${filePath} is not a JSON object; refusing to manage it.`);
+    return { status: 'unreadable', top: {}, servers: {} };
+  }
 
   const { mcpServers, ...top } = parsed;
+  // A present-but-malformed `mcpServers` means we don't understand the file's
+  // shape; refuse rather than clobber it with our own map.
+  if (mcpServers !== undefined && !isRecord(mcpServers)) {
+    log.warn(`${filePath} has a non-object mcpServers; refusing to manage it.`);
+    return { status: 'unreadable', top: {}, servers: {} };
+  }
+
   const servers = isRecord(mcpServers) ? (mcpServers as Record<string, RawServer>) : {};
-  return { top, servers };
+  return { status: 'loaded', top, servers };
 }
 
 /** Maps a schema-valid raw entry to the renderer model, capturing preserved fields. */

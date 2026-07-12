@@ -182,4 +182,46 @@ describe('McpServersTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove b-server' }));
     await waitFor(() => expect(api.mcp.setServers).toHaveBeenCalledWith([], 'mind-b'));
   });
+
+  it('does not apply a stale write result after the mind switches (blocker 3)', async () => {
+    const mindA = makeMind('mind-a', 'Ada');
+    const mindB = makeMind('mind-b', 'Boris');
+    vi.mocked(api.mcp.getServers).mockImplementation(async (id?: string) =>
+      id === 'mind-a'
+        ? [{ name: 'a-server', transport: 'stdio', command: 'a', args: [], env: {} }]
+        : [{ name: 'b-server', transport: 'stdio', command: 'b', args: [], env: {} }],
+    );
+    const writeA = deferred<McpServerEntry[]>();
+    vi.mocked(api.mcp.setServers).mockReturnValueOnce(writeA.promise).mockResolvedValue([]);
+
+    function Harness() {
+      const dispatch = useAppDispatch();
+      return (
+        <>
+          <button onClick={() => dispatch({ type: 'SET_ACTIVE_MIND', payload: 'mind-b' })}>switch</button>
+          <McpServersTab />
+        </>
+      );
+    }
+
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ activeMindId: 'mind-a', minds: [mindA, mindB] }}>
+        <Harness />
+      </AppStateProvider>,
+    );
+
+    // Start a delete on mind A; its setServers stays in flight.
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove a-server' }));
+    expect(api.mcp.setServers).toHaveBeenCalledWith([], 'mind-a');
+
+    // Switch to B, which loads B's servers.
+    fireEvent.click(screen.getByRole('button', { name: 'switch' }));
+    await screen.findByText('b-server');
+
+    // The stale write for A resolves late and must not overwrite B's list.
+    writeA.resolve([]);
+    await waitFor(() => expect(screen.getByText('b-server')).toBeTruthy());
+    expect(screen.queryByText('No MCP servers yet')).toBeNull();
+  });
 });
