@@ -143,5 +143,9 @@ function blockquote(text: string): string {
 }
 
 function fencedCode(text: string, language = ''): string {
-  return `\`\`\`${language}\n${text}\n\`\`\``;
+  // Use a fence longer than any backtick run in the content so tool output that
+  // itself contains code fences cannot prematurely close the block.
+  const longestBacktickRun = (text.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+  return `${fence}${language}\n${text}\n${fence}`;
 }

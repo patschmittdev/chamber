@@ -46,6 +46,8 @@ export function ConversationHistoryPanel() {
   const creatingConversationRef = useRef(false);
   const contentIndexByMind = useRef<Map<string, Map<string, CachedTranscriptText>>>(new Map());
   const contentLoadsInFlight = useRef<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   const conversations = useMemo<ConversationSummary[] | undefined>(() => {
     if (!activeMindId) return undefined;
@@ -160,7 +162,6 @@ export function ConversationHistoryPanel() {
     }).slice(0, MAX_CONTENT_LOADS_PER_PASS);
     if (pending.length === 0) return;
 
-    let cancelled = false;
     void Promise.all(pending.map(async (conversation) => {
       const key = `${mindId}:${conversation.sessionId}`;
       contentLoadsInFlight.current.add(key);
@@ -174,12 +175,11 @@ export function ConversationHistoryPanel() {
         contentLoadsInFlight.current.delete(key);
       }
     })).then(() => {
-      if (!cancelled) setContentIndexVersion((version) => version + 1);
+      // Gate on mounted, not a per-run cleanup flag: a dep change (e.g. the next
+      // keystroke) re-runs this effect, but the batch still finished and
+      // populated the cache, so it must still trigger a recompute.
+      if (isMountedRef.current) setContentIndexVersion((version) => version + 1);
     });
-
-    return () => {
-      cancelled = true;
-    };
   }, [activeMindId, debouncedQuery, visibleConversations, contentIndexVersion]);
 
   useEffect(() => {

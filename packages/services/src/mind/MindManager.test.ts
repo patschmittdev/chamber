@@ -1275,7 +1275,7 @@ describe('MindManager', () => {
       );
     });
 
-    it('does not disconnect a throwaway read session that a concurrent resume promoted to active', async () => {
+    it('serializes a background read against a concurrent resume so the opened conversation is never torn down', async () => {
       const readOnlySession = createSessionStub();
       let releaseGetEvents: (() => void) | undefined;
       const gate = new Promise<void>((resolve) => { releaseGetEvents = resolve; });
@@ -1296,24 +1296,32 @@ describe('MindManager', () => {
 
       mockResumeSession.mockClear();
       mockResumeSession
-        .mockResolvedValueOnce(readOnlySession)  // background read-only load
-        .mockResolvedValueOnce(activeSession);   // concurrent resume promotes to active
+        .mockResolvedValueOnce(readOnlySession)  // background read-only load (holds the lock)
+        .mockResolvedValueOnce(activeSession);   // resume, once the read releases the lock
 
+      // The read acquires the per-mind lock and parks on getEvents.
       const readPromise = manager.getConversationMessages(mind.mindId, inactive!.sessionId);
       await vi.waitFor(() => { expect(mockResumeSession).toHaveBeenCalledTimes(1); });
 
-      await manager.resumeConversation(mind.mindId, inactive!.sessionId);
-      expect(manager.getMind(mind.mindId)?.activeSessionId).toBe(inactive!.sessionId);
-      expect(manager.getMind(mind.mindId)?.session).toBe(activeSession);
+      // The resume must queue behind the read rather than promote mid-read.
+      const resumePromise = manager.resumeConversation(mind.mindId, inactive!.sessionId);
+      await Promise.resolve();
+      expect(mockResumeSession).toHaveBeenCalledTimes(1);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).not.toBe(inactive!.sessionId);
 
       releaseGetEvents?.();
-      await readPromise;
+      const messages = await readPromise;
+      await resumePromise;
 
-      // The background read must not tear down the SDK session that the resume
-      // just promoted to active, nor the live session the user now sees.
-      expect(readOnlySession.disconnect).not.toHaveBeenCalled();
+      // The read read its transcript and disconnected only its own throwaway,
+      // which happened before the resume created the live session.
+      expect(messages).toEqual([
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', sdkMessageId: 'a1', content: 'archived answer' }], timestamp: Date.parse('2026-05-05T22:00:01.000Z') },
+      ]);
+      // The live session the user opened is intact and active.
       expect(activeSession.disconnect).not.toHaveBeenCalled();
       expect(manager.getMind(mind.mindId)?.session).toBe(activeSession);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).toBe(inactive!.sessionId);
     });
 
     it('deduplicates concurrent read-only transcript loads for the same conversation', async () => {

@@ -114,6 +114,32 @@ describe('serializeConversationToMarkdown', () => {
     expect(md).not.toContain('\u2014');
   });
 
+  it('escapes tool output that itself contains a code fence so the block cannot close early', () => {
+    const withFence: ChatMessage[] = [
+      {
+        id: 'a3',
+        role: 'assistant',
+        timestamp: 0,
+        blocks: [
+          {
+            type: 'tool_call',
+            toolCallId: 't9',
+            toolName: 'cat',
+            status: 'done',
+            output: 'here is code:\n```js\nconst x = 1;\n```\ndone',
+          },
+        ],
+      },
+    ];
+
+    const md = serializeConversationToMarkdown(conversation, withFence, options);
+
+    // The outer fence must be longer than the inner ``` so it does not close early.
+    expect(md).toContain('````');
+    expect(md).toContain('```js');
+    expect(md).toContain('const x = 1;');
+  });
+
   it('notes when a conversation has no messages', () => {
     const md = serializeConversationToMarkdown(conversation, [], options);
     expect(md).toContain('_No messages in this conversation._');
