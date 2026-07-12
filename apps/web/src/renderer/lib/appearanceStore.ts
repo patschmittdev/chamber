@@ -2,10 +2,9 @@
  * Appearance store: the always-on owner of runtime appearance synchronization.
  *
  * Started once from the renderer entry (not from any screen), it holds the
- * current preferences, applies them to the document, and keeps them in sync with
- * two external sources for the whole app session:
- *   - the OS color-scheme (`prefers-color-scheme`) for the `system` theme, and
- *   - other windows/tabs via the `storage` event.
+ * current preferences, applies them to the document, and keeps browser mode in
+ * sync with OS and localStorage changes. Desktop mode delegates persistence and
+ * OS-following to the preload appearance bridge backed by ConfigService.
  *
  * React consumes it through `useSyncExternalStore` (see the appearance hooks).
  * Settings only reads the snapshot and calls the setters; it never owns the
@@ -14,20 +13,19 @@
 
 import {
   APPEARANCE_STORAGE_KEYS,
-  applyDensity,
-  applyFontScale,
-  applyResolvedTheme,
+  applyAppearanceSnapshot,
   DARK_MEDIA_QUERY,
+  hasDesktopAppearanceBridge,
   isDensity,
   isFontScale,
   isThemePreference,
+  persistAppearancePatch,
   persistDensity,
   persistFontScale,
   persistThemePreference,
-  readStoredDensity,
-  readStoredFontScale,
-  readStoredThemePreference,
+  readInitialAppearanceSnapshot,
   resolveTheme,
+  subscribeDesktopAppearance,
   systemPrefersDark,
   type Density,
   type FontScale,
@@ -46,13 +44,14 @@ export interface AppearanceState {
 type Listener = () => void;
 
 class AppearanceStore {
-  private themePreference: ThemePreference = readStoredThemePreference();
-  private fontScale: FontScale = readStoredFontScale();
-  private density: Density = readStoredDensity();
+  private snapshot: AppearanceState = readInitialAppearanceSnapshot();
+  private themePreference: ThemePreference = this.snapshot.themePreference;
+  private fontScale: FontScale = this.snapshot.fontScale;
+  private density: Density = this.snapshot.density;
   private prefersDark: boolean = systemPrefersDark();
-  private snapshot: AppearanceState = this.computeSnapshot();
   private readonly listeners = new Set<Listener>();
   private mediaQuery: MediaQueryList | null = null;
+  private desktopUnsubscribe: (() => void) | null = null;
   private started = false;
 
   private readonly handleMedia = (event: MediaQueryListEvent): void => {
@@ -71,11 +70,11 @@ class AppearanceStore {
       this.publish();
     } else if (event.key === APPEARANCE_STORAGE_KEYS.fontScale && isFontScale(event.newValue)) {
       this.fontScale = event.newValue;
-      applyFontScale(this.fontScale);
+      this.applySnapshot(false);
       this.publish();
     } else if (event.key === APPEARANCE_STORAGE_KEYS.density && isDensity(event.newValue)) {
       this.density = event.newValue;
-      applyDensity(this.density);
+      this.applySnapshot(false);
       this.publish();
     }
   };
@@ -88,9 +87,15 @@ class AppearanceStore {
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.applyTheme(false);
-    applyFontScale(this.fontScale);
-    applyDensity(this.density);
+    if (this.isDesktopMode()) {
+      this.acceptSnapshot(readInitialAppearanceSnapshot(), false, false);
+      this.desktopUnsubscribe = subscribeDesktopAppearance((snapshot) => {
+        this.acceptSnapshot(snapshot, true, true);
+      });
+      return;
+    }
+
+    this.applySnapshot(false);
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       this.mediaQuery = window.matchMedia(DARK_MEDIA_QUERY);
       this.mediaQuery.addEventListener('change', this.handleMedia);
@@ -110,6 +115,10 @@ class AppearanceStore {
   getSnapshot = (): AppearanceState => this.snapshot;
 
   setThemePreference = (preference: ThemePreference): void => {
+    if (this.isDesktopMode()) {
+      this.persistDesktop({ themePreference: preference });
+      return;
+    }
     this.themePreference = preference;
     persistThemePreference(preference);
     this.applyTheme(true);
@@ -117,26 +126,38 @@ class AppearanceStore {
   };
 
   toggleTheme = (): void => {
-    const shown = resolveTheme(this.themePreference, this.prefersDark);
+    const shown = this.snapshot.resolvedTheme;
     this.setThemePreference(shown === 'dark' ? 'light' : 'dark');
   };
 
   setFontScale = (scale: FontScale): void => {
+    if (this.isDesktopMode()) {
+      this.persistDesktop({ fontScale: scale });
+      return;
+    }
     this.fontScale = scale;
     persistFontScale(scale);
-    applyFontScale(scale);
+    this.applySnapshot(false);
     this.publish();
   };
 
   setDensity = (density: Density): void => {
+    if (this.isDesktopMode()) {
+      this.persistDesktop({ density });
+      return;
+    }
     this.density = density;
     persistDensity(density);
-    applyDensity(density);
+    this.applySnapshot(false);
     this.publish();
   };
 
   private applyTheme(animate: boolean): void {
-    applyResolvedTheme(resolveTheme(this.themePreference, this.prefersDark), { animate });
+    applyAppearanceSnapshot(this.computeSnapshot(), { animate });
+  }
+
+  private applySnapshot(animate: boolean): void {
+    applyAppearanceSnapshot(this.computeSnapshot(), { animate });
   }
 
   private computeSnapshot(): AppearanceState {
@@ -149,8 +170,35 @@ class AppearanceStore {
   }
 
   private publish(): void {
-    this.snapshot = this.computeSnapshot();
+    this.publishSnapshot(this.computeSnapshot());
+  }
+
+  private publishSnapshot(snapshot: AppearanceState): void {
+    this.snapshot = snapshot;
     for (const listener of this.listeners) listener();
+  }
+
+  private acceptSnapshot(snapshot: AppearanceState, animate: boolean, notify: boolean): void {
+    this.themePreference = snapshot.themePreference;
+    this.fontScale = snapshot.fontScale;
+    this.density = snapshot.density;
+    this.snapshot = snapshot;
+    applyAppearanceSnapshot(snapshot, { animate });
+    if (notify) this.publishSnapshot(snapshot);
+  }
+
+  private persistDesktop(patch: Parameters<typeof persistAppearancePatch>[0]): void {
+    void persistAppearancePatch(patch)
+      .then((snapshot) => {
+        if (snapshot) this.acceptSnapshot(snapshot, true, true);
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to persist desktop appearance preferences:', error);
+      });
+  }
+
+  private isDesktopMode(): boolean {
+    return hasDesktopAppearanceBridge();
   }
 
   /**
@@ -160,14 +208,17 @@ class AppearanceStore {
   resetForTests(): void {
     this.mediaQuery?.removeEventListener('change', this.handleMedia);
     if (typeof window !== 'undefined') window.removeEventListener('storage', this.handleStorage);
+    this.desktopUnsubscribe?.();
+    this.desktopUnsubscribe = null;
     this.mediaQuery = null;
     this.started = false;
     this.listeners.clear();
-    this.themePreference = readStoredThemePreference();
-    this.fontScale = readStoredFontScale();
-    this.density = readStoredDensity();
+    const snapshot = readInitialAppearanceSnapshot();
+    this.themePreference = snapshot.themePreference;
+    this.fontScale = snapshot.fontScale;
+    this.density = snapshot.density;
     this.prefersDark = systemPrefersDark();
-    this.snapshot = this.computeSnapshot();
+    this.snapshot = this.isDesktopMode() ? snapshot : this.computeSnapshot();
   }
 }
 

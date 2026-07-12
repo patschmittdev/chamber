@@ -12,4 +12,6 @@ interface Window {
     confirm?: (message: string) => Promise<boolean>;
     setTheme?: (theme: 'light' | 'dark') => Promise<void>;
   };
+  chamberAppearance?: import('@chamber/shared/electron-types').AppearanceBridge;
+  __CHAMBER_INITIAL_APPEARANCE__?: import('@chamber/shared/appearance-types').AppearanceSnapshot;
 }

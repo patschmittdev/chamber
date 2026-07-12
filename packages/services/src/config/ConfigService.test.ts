@@ -31,6 +31,8 @@ const DEFAULT_CONFIG: AppConfig = {
   activeMindId: null,
   activeLogin: null,
   theme: 'dark',
+  fontScale: 'medium',
+  density: 'comfortable',
   marketplaceRegistries: DEFAULT_MARKETPLACES,
 };
 
@@ -49,6 +51,8 @@ describe('ConfigService', () => {
         activeMindId: 'q-a1b2',
         activeLogin: 'alice',
         theme: 'light',
+        fontScale: 'large',
+        density: 'compact',
         marketplaceRegistries: [
           ...DEFAULT_MARKETPLACES,
           {
@@ -82,8 +86,44 @@ describe('ConfigService', () => {
         activeMindId: 'q-a1b2',
         activeLogin: null,
         theme: 'light',
+        fontScale: 'medium',
+        density: 'comfortable',
         marketplaceRegistries: DEFAULT_MARKETPLACES,
       });
+    });
+
+    it('normalizes saved appearance preferences and backfills legacy v2 configs', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [],
+        activeMindId: null,
+        activeLogin: null,
+        theme: 'system',
+        fontScale: 'large',
+        density: 'compact',
+      }));
+
+      expect(svc.load()).toEqual(expect.objectContaining({
+        theme: 'system',
+        fontScale: 'large',
+        density: 'compact',
+      }));
+
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [],
+        activeMindId: null,
+        activeLogin: null,
+        theme: 'neon',
+        fontScale: 'giant',
+        density: 'cramped',
+      }));
+
+      expect(svc.load()).toEqual(expect.objectContaining({
+        theme: 'dark',
+        fontScale: 'medium',
+        density: 'comfortable',
+      }));
     });
 
     it('preserves saved A2A relay settings', () => {
@@ -216,6 +256,8 @@ describe('ConfigService', () => {
       expect(result.activeMindId).toBe(result.minds[0].id);
       expect(result.activeLogin).toBeNull();
       expect(result.theme).toBe('light');
+      expect(result.fontScale).toBe('medium');
+      expect(result.density).toBe('comfortable');
     });
 
     it('migrates v1 config with null mindPath to empty v2', () => {
@@ -247,6 +289,8 @@ describe('ConfigService', () => {
         activeMindId: 'q-a1b2',
         activeLogin: 'alice',
         theme: 'dark',
+        fontScale: 'medium',
+        density: 'comfortable',
         marketplaceRegistries: DEFAULT_MARKETPLACES,
       };
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(v2));
@@ -290,6 +334,54 @@ describe('ConfigService', () => {
         path.join(configDir, 'config.json'),
         JSON.stringify(config, null, 2),
       );
+    });
+  });
+
+  describe('appearance preferences', () => {
+    it('reads normalized appearance preferences from config', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [],
+        activeMindId: null,
+        activeLogin: null,
+        theme: 'system',
+        fontScale: 'small',
+        density: 'compact',
+      }));
+
+      expect(svc.getAppearancePreferences()).toEqual({
+        themePreference: 'system',
+        fontScale: 'small',
+        density: 'compact',
+      });
+    });
+
+    it('saves appearance preferences without dropping unrelated config', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [{ id: 'q-a1b2', path: '/tmp/agents/q' }],
+        activeMindId: 'q-a1b2',
+        activeLogin: 'alice',
+        theme: 'dark',
+        fontScale: 'medium',
+        density: 'comfortable',
+      }));
+
+      svc.saveAppearancePreferences({
+        themePreference: 'light',
+        fontScale: 'large',
+        density: 'compact',
+      });
+
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(JSON.parse(written)).toEqual(expect.objectContaining({
+        minds: [{ id: 'q-a1b2', path: '/tmp/agents/q' }],
+        activeMindId: 'q-a1b2',
+        activeLogin: 'alice',
+        theme: 'light',
+        fontScale: 'large',
+        density: 'compact',
+      }));
     });
   });
 

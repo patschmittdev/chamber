@@ -22,6 +22,7 @@ import type { ChatroomAPI } from './chatroom-types';
 import type { AppFeatureFlags } from './feature-flags';
 import type { CancelOutcome, LedgerRecord, LedgerStatus } from './ledger';
 import type { OperatorActivityAPI } from './operator-activity-types';
+import type { AppearancePreferences, AppearanceSnapshot } from './appearance-types';
 import type {
   TranscriptionEvent,
   VoiceDictationConfig,
@@ -272,6 +273,13 @@ export interface ElectronAPI {
   };
 }
 
+export interface AppearanceBridge {
+  getInitialSnapshot: () => AppearanceSnapshot;
+  get: () => Promise<AppearanceSnapshot>;
+  set: (preferences: Partial<AppearancePreferences>) => Promise<AppearanceSnapshot>;
+  onChanged: (callback: (snapshot: AppearanceSnapshot) => void) => () => void;
+}
+
 export interface VoiceStartSessionPayload {
   readonly sessionId: string;
   readonly deviceId?: string | null;
@@ -302,5 +310,6 @@ export interface E2EVoiceSessionState {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+    chamberAppearance?: AppearanceBridge;
   }
 }

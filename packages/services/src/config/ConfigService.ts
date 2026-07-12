@@ -4,6 +4,15 @@ import * as os from 'os';
 import { generateMindId } from '../mind';
 import { parseLensViewVisibilityKey } from '@chamber/shared';
 import type { AppConfig, AppConfigV1, ChamberConversationRecord, InstalledTool, MarketplaceRegistry, MindRecord, UserProfile } from '@chamber/shared/types';
+import {
+  DEFAULT_DENSITY,
+  DEFAULT_FONT_SCALE,
+  DEFAULT_THEME_PREFERENCE,
+  normalizeDensity,
+  normalizeFontScale,
+  normalizeThemePreference,
+  type AppearancePreferences,
+} from '@chamber/shared/appearance-types';
 
 const CONFIG_DIR = path.join(os.homedir(), '.chamber');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
@@ -25,7 +34,9 @@ const DEFAULT_CONFIG: AppConfig = {
   minds: [],
   activeMindId: null,
   activeLogin: null,
-  theme: 'dark',
+  theme: DEFAULT_THEME_PREFERENCE,
+  fontScale: DEFAULT_FONT_SCALE,
+  density: DEFAULT_DENSITY,
   marketplaceRegistries: [DEFAULT_MARKETPLACE_REGISTRY],
 };
 
@@ -57,6 +68,25 @@ export class ConfigService {
     fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
   }
 
+  getAppearancePreferences(): AppearancePreferences {
+    const config = this.load();
+    return {
+      themePreference: config.theme,
+      fontScale: normalizeFontScale(config.fontScale),
+      density: normalizeDensity(config.density),
+    };
+  }
+
+  saveAppearancePreferences(preferences: AppearancePreferences): void {
+    const config = this.load();
+    this.save({
+      ...config,
+      theme: preferences.themePreference,
+      fontScale: preferences.fontScale,
+      density: preferences.density,
+    });
+  }
+
   private normalize(raw: Record<string, unknown>): AppConfig {
     if (raw.version === 2) {
       return this.normalizeV2(raw);
@@ -65,21 +95,23 @@ export class ConfigService {
   }
 
   private normalizeV2(raw: Record<string, unknown>): AppConfig {
-    const theme = raw.theme === 'light' || raw.theme === 'dark' || raw.theme === 'system'
-      ? raw.theme
-      : 'dark';
+    const theme = normalizeThemePreference(raw.theme);
     const minds = Array.isArray(raw.minds)
       ? raw.minds.map(normalizeMindRecord).filter((record): record is MindRecord => record !== null)
       : [];
     const installedTools = normalizeInstalledTools(raw.installedTools);
     const userProfile = normalizeUserProfile(raw.userProfile);
     const disabledLensViewKeys = normalizeLensViewVisibilityKeys(raw.disabledLensViewKeys);
+    const fontScale = normalizeFontScale(raw.fontScale);
+    const density = normalizeDensity(raw.density);
     return this.deduplicateMinds({
       version: 2,
       minds,
       activeMindId: typeof raw.activeMindId === 'string' ? raw.activeMindId : null,
       activeLogin: typeof raw.activeLogin === 'string' ? raw.activeLogin : null,
       theme,
+      fontScale,
+      density,
       ...(userProfile ? { userProfile } : {}),
       marketplaceRegistries: this.normalizeMarketplaceRegistries(raw.marketplaceRegistries),
       ...(installedTools.length > 0 ? { installedTools } : {}),
@@ -95,7 +127,7 @@ export class ConfigService {
 
   private migrateV1(v1: AppConfigV1): AppConfig {
     if (!v1.mindPath) {
-      return { ...DEFAULT_CONFIG, theme: v1.theme ?? 'dark' };
+      return { ...DEFAULT_CONFIG, theme: normalizeThemePreference(v1.theme) };
     }
     const id = generateMindId(v1.mindPath);
     return {
@@ -103,7 +135,9 @@ export class ConfigService {
       minds: [{ id, path: v1.mindPath }],
       activeMindId: id,
       activeLogin: null,
-      theme: v1.theme ?? 'dark',
+      theme: normalizeThemePreference(v1.theme),
+      fontScale: DEFAULT_FONT_SCALE,
+      density: DEFAULT_DENSITY,
       marketplaceRegistries: [DEFAULT_MARKETPLACE_REGISTRY],
     };
   }

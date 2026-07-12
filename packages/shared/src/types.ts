@@ -1,3 +1,4 @@
+import type { Density, FontScale, ThemePreference } from './appearance-types';
 export type { A2AIncomingPayload } from './a2a-types';
 export type {
   ManagedSkillDetails,
@@ -356,7 +357,7 @@ export interface ModelInfo {
 /** @deprecated Use AppConfigV2 — kept for migration */
 export interface AppConfigV1 {
   mindPath: string | null;
-  theme: 'light' | 'dark' | 'system';
+  theme: ThemePreference;
 }
 
 export interface AppConfig {
@@ -364,7 +365,9 @@ export interface AppConfig {
   minds: MindRecord[];
   activeMindId: string | null;
   activeLogin: string | null;
-  theme: 'light' | 'dark' | 'system';
+  theme: ThemePreference;
+  fontScale?: FontScale;
+  density?: Density;
   userProfile?: UserProfile;
   marketplaceRegistries?: MarketplaceRegistry[];
   installedTools?: InstalledTool[];

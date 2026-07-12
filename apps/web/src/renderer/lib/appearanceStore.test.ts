@@ -4,6 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appearanceStore } from './appearanceStore';
 import { APPEARANCE_STORAGE_KEYS } from './appearance';
+import type { AppearanceBridge } from '@chamber/shared/electron-types';
+import type { AppearanceSnapshot } from '@chamber/shared/appearance-types';
 
 function installMatchMedia(initialDark: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -34,11 +36,15 @@ describe('appearanceStore', () => {
     localStorage.clear();
     document.documentElement.className = '';
     delete document.documentElement.dataset.theme;
+    delete window.__CHAMBER_INITIAL_APPEARANCE__;
+    delete window.chamberAppearance;
   });
 
   afterEach(() => {
     appearanceStore.resetForTests();
     delete (window as { matchMedia?: unknown }).matchMedia;
+    delete window.__CHAMBER_INITIAL_APPEARANCE__;
+    delete window.chamberAppearance;
   });
 
   it('applies persisted preferences to the document when started', () => {
@@ -136,6 +142,46 @@ describe('appearanceStore', () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it('uses the desktop appearance bridge instead of localStorage in desktop mode', () => {
+    const changed = installDesktopAppearanceBridge({
+      themePreference: 'light',
+      resolvedTheme: 'light',
+      fontScale: 'large',
+      density: 'compact',
+    });
+    localStorage.setItem(APPEARANCE_STORAGE_KEYS.theme, 'dark');
+    appearanceStore.resetForTests();
+
+    appearanceStore.start();
+
+    expect(appearanceStore.getSnapshot()).toEqual({
+      themePreference: 'light',
+      resolvedTheme: 'light',
+      fontScale: 'large',
+      density: 'compact',
+    });
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    appearanceStore.setDensity('comfortable');
+    expect(window.chamberAppearance?.set).toHaveBeenCalledWith({ density: 'comfortable' });
+    expect(localStorage.getItem(APPEARANCE_STORAGE_KEYS.density)).toBeNull();
+
+    changed({
+      themePreference: 'system',
+      resolvedTheme: 'dark',
+      fontScale: 'small',
+      density: 'comfortable',
+    });
+    expect(appearanceStore.getSnapshot()).toEqual({
+      themePreference: 'system',
+      resolvedTheme: 'dark',
+      fontScale: 'small',
+      density: 'comfortable',
+    });
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('font-scale-small')).toBe(true);
+  });
+
   it('stops responding to OS changes after reset', () => {
     const media = installMatchMedia(false);
     localStorage.setItem(APPEARANCE_STORAGE_KEYS.theme, 'system');
@@ -147,4 +193,24 @@ describe('appearanceStore', () => {
 
     expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
+
+  function installDesktopAppearanceBridge(initial: AppearanceSnapshot): (snapshot: AppearanceSnapshot) => void {
+    let listener: ((snapshot: AppearanceSnapshot) => void) | null = null;
+    const set = vi.fn<AppearanceBridge['set']>().mockImplementation(async (patch) => ({
+      ...initial,
+      ...patch,
+    }));
+    window.chamberAppearance = {
+      getInitialSnapshot: () => initial,
+      get: vi.fn<AppearanceBridge['get']>().mockResolvedValue(initial),
+      set,
+      onChanged: vi.fn<AppearanceBridge['onChanged']>().mockImplementation((callback) => {
+        listener = callback;
+        return () => {
+          listener = null;
+        };
+      }),
+    };
+    return (snapshot: AppearanceSnapshot) => listener?.(snapshot);
+  }
 });

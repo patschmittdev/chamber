@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { applyTitleBarTheme, titleBarOverlayFor, TITLE_BAR_OVERLAY_HEIGHT } from './titleBarTheme';
+import { applyTitleBarTheme, titleBarOverlayFor, TITLE_BAR_OVERLAY_HEIGHT, windowBackgroundColorFor } from './titleBarTheme';
 
 describe('titleBarOverlayFor', () => {
   it('returns dark chrome colors for the dark theme', () => {
@@ -24,6 +24,13 @@ describe('applyTitleBarTheme', () => {
     const setTitleBarOverlay = vi.fn();
     applyTitleBarTheme({ setTitleBarOverlay }, 'light', 'win32');
     expect(setTitleBarOverlay).toHaveBeenCalledWith(titleBarOverlayFor('light'));
+  });
+
+  describe('windowBackgroundColorFor', () => {
+    it('uses the same background as the title-bar overlay', () => {
+      expect(windowBackgroundColorFor('dark')).toBe('#09090b');
+      expect(windowBackgroundColorFor('light')).toBe('#ffffff');
+    });
   });
 
   it('is a no-op on non-win32 platforms', () => {

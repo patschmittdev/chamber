@@ -4,16 +4,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   APPEARANCE_STORAGE_KEYS,
+  applyAppearanceSnapshot,
   applyDensity,
   applyFontScale,
   applyResolvedTheme,
+  hasDesktopAppearanceBridge,
   isThemePreference,
+  persistAppearancePatch,
+  readInitialAppearanceSnapshot,
   readStoredDensity,
   readStoredFontScale,
   readStoredThemePreference,
   resolveTheme,
   systemPrefersDark,
 } from './appearance';
+import type { AppearanceBridge } from '@chamber/shared/electron-types';
 
 function setMatchMedia(prefersDark: boolean) {
   Object.defineProperty(window, 'matchMedia', {
@@ -33,10 +38,14 @@ describe('appearance preferences', () => {
     localStorage.clear();
     document.documentElement.className = '';
     delete document.documentElement.dataset.theme;
+    delete window.__CHAMBER_INITIAL_APPEARANCE__;
+    delete window.chamberAppearance;
+    delete window.desktop;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete window.desktop;
   });
 
   describe('resolveTheme', () => {
@@ -98,9 +107,99 @@ describe('appearance preferences', () => {
       expect(document.documentElement.dataset.theme).toBe('light');
     });
 
+    describe('initial snapshot and desktop bridge', () => {
+      it('reads the pre-paint snapshot before falling back to storage', () => {
+        window.__CHAMBER_INITIAL_APPEARANCE__ = {
+          themePreference: 'light',
+          resolvedTheme: 'light',
+          fontScale: 'large',
+          density: 'compact',
+        };
+        localStorage.setItem(APPEARANCE_STORAGE_KEYS.theme, 'dark');
+
+        expect(readInitialAppearanceSnapshot()).toEqual({
+          themePreference: 'light',
+          resolvedTheme: 'light',
+          fontScale: 'large',
+          density: 'compact',
+        });
+      });
+
+      it('delegates persistence to the desktop bridge when available', async () => {
+        const set = vi.fn<AppearanceBridge['set']>().mockResolvedValue({
+          themePreference: 'system',
+          resolvedTheme: 'dark',
+          fontScale: 'medium',
+          density: 'comfortable',
+        });
+        window.chamberAppearance = {
+          getInitialSnapshot: () => ({
+            themePreference: 'dark',
+            resolvedTheme: 'dark',
+            fontScale: 'medium',
+            density: 'comfortable',
+          }),
+          get: vi.fn(),
+          set,
+          onChanged: vi.fn(),
+        };
+
+        await persistAppearancePatch({ themePreference: 'system' });
+
+        expect(hasDesktopAppearanceBridge()).toBe(true);
+        expect(set).toHaveBeenCalledWith({ themePreference: 'system' });
+        expect(localStorage.getItem(APPEARANCE_STORAGE_KEYS.theme)).toBeNull();
+      });
+
+      it('applies a complete snapshot to root classes and data attributes', () => {
+        applyAppearanceSnapshot({
+          themePreference: 'system',
+          resolvedTheme: 'light',
+          fontScale: 'small',
+          density: 'compact',
+        });
+
+        const root = document.documentElement;
+        expect(root.classList.contains('dark')).toBe(false);
+        expect(root.classList.contains('font-scale-small')).toBe(true);
+        expect(root.classList.contains('density-compact')).toBe(true);
+        expect(root.dataset.theme).toBe('light');
+        expect(root.dataset.themePreference).toBe('system');
+      });
+    });
+
     it('adds the transition class when animating', () => {
       applyResolvedTheme('dark', { animate: true });
       expect(document.documentElement.classList.contains('theme-switching')).toBe(true);
+    });
+
+    it('uses the legacy desktop repaint bridge only when the appearance bridge is absent', () => {
+      const setTheme = vi.fn();
+      window.desktop = {
+        pickFolder: vi.fn(),
+        openMindWindow: vi.fn(),
+        setTheme,
+      };
+
+      applyResolvedTheme('light');
+      expect(setTheme).toHaveBeenCalledWith('light');
+
+      window.chamberAppearance = {
+        getInitialSnapshot: () => ({
+          themePreference: 'light',
+          resolvedTheme: 'light',
+          fontScale: 'medium',
+          density: 'comfortable',
+        }),
+        get: vi.fn(),
+        set: vi.fn(),
+        onChanged: vi.fn(),
+      };
+      setTheme.mockClear();
+
+      applyResolvedTheme('dark');
+
+      expect(setTheme).not.toHaveBeenCalled();
     });
   });
 

@@ -43,6 +43,8 @@ describe('ConfigService (v1→v2 migration)', () => {
     expect(config.minds[0].path).toBe('C:\\test\\mind');
     expect(config.activeLogin).toBeNull();
     expect(config.theme).toBe('light');
+    expect(config.fontScale).toBe('medium');
+    expect(config.density).toBe('comfortable');
   });
 
   it('returns default v2 config when file is missing', () => {
@@ -54,6 +56,8 @@ describe('ConfigService (v1→v2 migration)', () => {
       activeMindId: null,
       activeLogin: null,
       theme: 'dark',
+      fontScale: 'medium',
+      density: 'comfortable',
       marketplaceRegistries: DEFAULT_MARKETPLACES,
     });
   });
@@ -67,6 +71,8 @@ describe('ConfigService (v1→v2 migration)', () => {
       activeMindId: null,
       activeLogin: null,
       theme: 'dark',
+      fontScale: 'medium',
+      density: 'comfortable',
       marketplaceRegistries: DEFAULT_MARKETPLACES,
     });
   });

@@ -9,21 +9,47 @@
  * Windows title-bar overlay for the theme (see `applyResolvedTheme`).
  */
 
-export type ThemePreference = 'light' | 'dark' | 'system';
-/** The concrete theme applied to the DOM once `system` has been resolved. */
-export type ResolvedTheme = 'light' | 'dark';
-export type FontScale = 'small' | 'medium' | 'large';
-export type Density = 'comfortable' | 'compact';
+import {
+  DEFAULT_DENSITY,
+  DEFAULT_FONT_SCALE,
+  DEFAULT_THEME_PREFERENCE,
+  DENSITIES,
+  FONT_SCALES,
+  THEME_PREFERENCES,
+  isAppearanceSnapshot,
+  isDensity,
+  isFontScale,
+  isThemePreference,
+  resolveThemePreference,
+} from '@chamber/shared/appearance-types';
+import type {
+  AppearancePreferences,
+  AppearanceSnapshot,
+  Density,
+  FontScale,
+  ResolvedTheme,
+  ThemePreference,
+} from '@chamber/shared/appearance-types';
 
-export const THEME_PREFERENCES = ['light', 'dark', 'system'] as const;
-export const FONT_SCALES = ['small', 'medium', 'large'] as const;
-export const DENSITIES = ['comfortable', 'compact'] as const;
-
-// Defaults preserve the previously hardcoded dark look so existing users see no
-// change until they opt into a different appearance.
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'dark';
-export const DEFAULT_FONT_SCALE: FontScale = 'medium';
-export const DEFAULT_DENSITY: Density = 'comfortable';
+export {
+  DEFAULT_DENSITY,
+  DEFAULT_FONT_SCALE,
+  DEFAULT_THEME_PREFERENCE,
+  DENSITIES,
+  FONT_SCALES,
+  THEME_PREFERENCES,
+  isDensity,
+  isFontScale,
+  isThemePreference,
+};
+export type {
+  AppearancePreferences,
+  AppearanceSnapshot,
+  Density,
+  FontScale,
+  ResolvedTheme,
+  ThemePreference,
+};
 
 export const APPEARANCE_STORAGE_KEYS = {
   theme: 'chamber.theme',
@@ -44,6 +70,7 @@ const DENSITY_CLASSES: Record<Density, string> = {
 
 /** The `matchMedia` query used to detect the OS dark color-scheme preference. */
 export const DARK_MEDIA_QUERY = '(prefers-color-scheme: dark)';
+export const INITIAL_APPEARANCE_GLOBAL = '__CHAMBER_INITIAL_APPEARANCE__';
 
 // Keep aligned with the 450ms color transition in index.css so the
 // `theme-switching` class clears exactly as the crossfade ends.
@@ -83,10 +110,6 @@ function applyRootClass(classes: readonly string[], active: string): void {
 // Theme
 // ---------------------------------------------------------------------------
 
-export function isThemePreference(value: unknown): value is ThemePreference {
-  return typeof value === 'string' && (THEME_PREFERENCES as readonly string[]).includes(value);
-}
-
 export function readStoredThemePreference(): ThemePreference {
   return readChoice(APPEARANCE_STORAGE_KEYS.theme, THEME_PREFERENCES, DEFAULT_THEME_PREFERENCE);
 }
@@ -102,8 +125,7 @@ export function systemPrefersDark(): boolean {
 }
 
 export function resolveTheme(preference: ThemePreference, prefersDark: boolean): ResolvedTheme {
-  if (preference === 'system') return prefersDark ? 'dark' : 'light';
-  return preference;
+  return resolveThemePreference(preference, prefersDark);
 }
 
 export interface ApplyThemeOptions {
@@ -122,13 +144,22 @@ export function applyResolvedTheme(resolved: ResolvedTheme, options: ApplyThemeO
   }
   root.classList.toggle('dark', resolved === 'dark');
   root.dataset.theme = resolved;
-  // Repaint the native Windows titleBarOverlay so the OS chrome stays legible
-  // against the new app background.
+  // Legacy fallback for desktop shells without the ConfigService-backed
+  // appearance bridge. New desktop builds repaint chrome from AppearanceService.
   try {
-    void window.desktop?.setTheme?.(resolved);
+    if (!hasDesktopAppearanceBridge()) void window.desktop?.setTheme?.(resolved);
   } catch {
     /* desktop bridge may not be present in browser smoke tests */
   }
+}
+
+export function applyAppearanceSnapshot(snapshot: AppearanceSnapshot, options: ApplyThemeOptions = {}): void {
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.themePreference = snapshot.themePreference;
+  }
+  applyResolvedTheme(snapshot.resolvedTheme, options);
+  applyFontScale(snapshot.fontScale);
+  applyDensity(snapshot.density);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,10 +168,6 @@ export function applyResolvedTheme(resolved: ResolvedTheme, options: ApplyThemeO
 
 export function readStoredFontScale(): FontScale {
   return readChoice(APPEARANCE_STORAGE_KEYS.fontScale, FONT_SCALES, DEFAULT_FONT_SCALE);
-}
-
-export function isFontScale(value: unknown): value is FontScale {
-  return typeof value === 'string' && (FONT_SCALES as readonly string[]).includes(value);
 }
 
 export function persistFontScale(scale: FontScale): void {
@@ -159,14 +186,51 @@ export function readStoredDensity(): Density {
   return readChoice(APPEARANCE_STORAGE_KEYS.density, DENSITIES, DEFAULT_DENSITY);
 }
 
-export function isDensity(value: unknown): value is Density {
-  return typeof value === 'string' && (DENSITIES as readonly string[]).includes(value);
-}
-
 export function persistDensity(density: Density): void {
   persistChoice(APPEARANCE_STORAGE_KEYS.density, density);
 }
 
 export function applyDensity(density: Density): void {
   applyRootClass(Object.values(DENSITY_CLASSES), DENSITY_CLASSES[density]);
+}
+
+export function readBrowserAppearanceSnapshot(): AppearanceSnapshot {
+  const themePreference = readStoredThemePreference();
+  return {
+    themePreference,
+    resolvedTheme: resolveTheme(themePreference, systemPrefersDark()),
+    fontScale: readStoredFontScale(),
+    density: readStoredDensity(),
+  };
+}
+
+export function readInitialAppearanceSnapshot(): AppearanceSnapshot {
+  if (typeof window !== 'undefined') {
+    const prepaintSnapshot = window[INITIAL_APPEARANCE_GLOBAL];
+    if (isAppearanceSnapshot(prepaintSnapshot)) return prepaintSnapshot;
+
+    const bridgeSnapshot = window.chamberAppearance?.getInitialSnapshot?.();
+    if (isAppearanceSnapshot(bridgeSnapshot)) return bridgeSnapshot;
+  }
+  return readBrowserAppearanceSnapshot();
+}
+
+export function hasDesktopAppearanceBridge(): boolean {
+  return typeof window !== 'undefined' && typeof window.chamberAppearance?.set === 'function';
+}
+
+export function persistAppearancePatch(patch: Partial<AppearancePreferences>): Promise<AppearanceSnapshot | null> {
+  if (hasDesktopAppearanceBridge()) {
+    return window.chamberAppearance!.set(patch);
+  }
+
+  if (patch.themePreference) persistThemePreference(patch.themePreference);
+  if (patch.fontScale) persistFontScale(patch.fontScale);
+  if (patch.density) persistDensity(patch.density);
+  return Promise.resolve(null);
+}
+
+export function subscribeDesktopAppearance(callback: (snapshot: AppearanceSnapshot) => void): (() => void) | null {
+  if (!hasDesktopAppearanceBridge()) return null;
+  return window.chamberAppearance!.onChanged(callback);
 }
