@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '../ui/select';
 import { AddAccountModal } from './AddAccountModal';
+import { AppearanceSettingsSection } from './AppearanceSettingsSection';
 import { LocalLlmSettingsSection } from './LocalLlmSettingsSection';
 import { Skeleton } from '../ui/skeleton';
 import { VoiceDictationSettingsSection } from './VoiceDictationSettingsSection';
@@ -461,6 +462,10 @@ export function SettingsView() {
             </section>
           )}
 
+          {activeSection === 'appearance' && (
+            <AppearanceSettingsSection />
+          )}
+
           {activeSection === 'local-llm' && featureFlags.byoLlm && (
             <section className="space-y-3">
               <LocalLlmSettingsSection />
@@ -494,7 +499,7 @@ export function SettingsView() {
 // index.css so navigating between sections matches the rest of the app.
 // ---------------------------------------------------------------------------
 
-export type SettingsSectionId = 'profile' | 'account' | 'marketplaces' | 'local-llm' | 'voice-dictation';
+export type SettingsSectionId = 'profile' | 'account' | 'marketplaces' | 'appearance' | 'local-llm' | 'voice-dictation';
 
 interface SettingsRailItem {
   id: SettingsSectionId;
@@ -513,6 +518,7 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
       { id: 'profile', label: 'Profile' },
       { id: 'account', label: 'Account' },
       { id: 'marketplaces', label: 'Marketplaces' },
+      { id: 'appearance', label: 'Appearance' },
     ];
     if (showLocalLlm) items.push({ id: 'local-llm', label: 'Local LLM' });
     if (showVoiceDictation) items.push({ id: 'voice-dictation', label: 'Voice dictation' });

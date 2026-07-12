@@ -167,6 +167,32 @@ html.theme-switching .surface-card {
   transition-timing-function: cubic-bezier(0.65, 0, 0.35, 1) !important;
 }
 
+/* Appearance preferences (Settings > Appearance). Both levers are applied as a
+ * single class on the document root by the appearance hooks. */
+
+/* Font scale drives the document root font-size so all rem-based text and
+ * spacing scale together with the user's chosen size. `medium` restates the
+ * browser default, so it is the no-op baseline. */
+html.font-scale-small {
+  font-size: 14px;
+}
+html.font-scale-medium {
+  font-size: 16px;
+}
+html.font-scale-large {
+  font-size: 18px;
+}
+
+/* Density retunes Tailwind's spacing base (`--spacing`, default 0.25rem), which
+ * every spacing and sizing utility multiplies, so tightening it compacts the
+ * whole interface at once. `comfortable` restates the default baseline. */
+html.density-comfortable {
+  --spacing: 0.25rem;
+}
+html.density-compact {
+  --spacing: 0.2rem;
+}
+
 .titlebar-drag {
   -webkit-app-region: drag;
 }
