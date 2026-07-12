@@ -103,6 +103,9 @@ describe('IPC channel constants', () => {
     expect(IPC.CHATROOM.GET_DISABLED_MIND_IDS).toBe('chatroom:get-disabled-mind-ids');
     expect(IPC.CHATROOM.STATE_CHANGED).toBe('chatroom:state-changed');
 
+    expect(IPC.OPERATOR_ACTIVITY.GET_SNAPSHOT).toBe('operatorActivity:getSnapshot');
+    expect(IPC.OPERATOR_ACTIVITY.CHANGED).toBe('operatorActivity:changed');
+
     expect(IPC.UPDATER.GET_STATE).toBe('updater:get-state');
     expect(IPC.UPDATER.CHECK).toBe('updater:check');
     expect(IPC.UPDATER.DOWNLOAD).toBe('updater:download');
@@ -144,6 +147,7 @@ describe('IPC channel constants', () => {
     expectTypeOf<'byoLlm:save'>().toMatchTypeOf<IpcChannel>();
     expectTypeOf<'voice:startSession'>().toMatchTypeOf<IpcChannel>();
     expectTypeOf<'chatroom:set-orchestration'>().toMatchTypeOf<IpcChannel>();
+    expectTypeOf<'operatorActivity:getSnapshot'>().toMatchTypeOf<IpcChannel>();
     // Sanity: an unrelated string is not assignable to IpcChannel.
     expectTypeOf<'not:a:channel'>().not.toMatchTypeOf<IpcChannel>();
   });

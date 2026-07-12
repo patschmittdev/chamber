@@ -145,6 +145,10 @@ const electronAPI: ElectronAPI = {
     getDisabledMindIds: () => ipcRenderer.invoke(IPC.CHATROOM.GET_DISABLED_MIND_IDS),
     onStateChanged: (callback) => createIpcListener(ipcRenderer, IPC.CHATROOM.STATE_CHANGED, callback),
   },
+  operatorActivity: {
+    getSnapshot: () => ipcRenderer.invoke(IPC.OPERATOR_ACTIVITY.GET_SNAPSHOT),
+    onChanged: (callback) => createIpcListener(ipcRenderer, IPC.OPERATOR_ACTIVITY.CHANGED, callback),
+  },
   updater: {
     getState: () => ipcRenderer.invoke(IPC.UPDATER.GET_STATE),
     check: () => ipcRenderer.invoke(IPC.UPDATER.CHECK),

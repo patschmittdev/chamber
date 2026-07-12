@@ -15,6 +15,7 @@ export * from './lens';
 export * from './ledger';
 export * from './mind';
 export * from './mindProfile';
+export * from './operatorActivity';
 export * from './ports';
 export * from './sdk';
 export * from './skills';

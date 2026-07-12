@@ -11,6 +11,7 @@ import type {
   DesktopUpdateState,
 } from '@chamber/shared/types';
 import type { ElectronAPI } from '@chamber/shared/electron-types';
+import type { OperatorActivitySnapshot } from '@chamber/shared/operator-activity-types';
 import type {
   ChatroomMessage,
 } from '@chamber/shared/chatroom-types';
@@ -105,6 +106,20 @@ export function makeModelInfo(id = 'claude-sonnet', name = 'Claude Sonnet'): Mod
 // ---------------------------------------------------------------------------
 
 export function mockElectronAPI(): ElectronAPI {
+  const emptyOperatorActivitySnapshot: OperatorActivitySnapshot = {
+    version: 1,
+    updatedAt: '1970-01-01T00:00:00.000Z',
+    mindActivities: [],
+    chatroom: {
+      runId: null,
+      state: 'idle',
+      updatedAt: '1970-01-01T00:00:00.000Z',
+    },
+    usageSamples: [],
+    usageRollups: [],
+    budgetWarnings: [],
+  };
+
   return {
     chat: {
       send: vi.fn().mockResolvedValue(undefined),
@@ -322,6 +337,10 @@ export function mockElectronAPI(): ElectronAPI {
       setMindEnabled: vi.fn().mockResolvedValue(undefined),
       getDisabledMindIds: vi.fn().mockResolvedValue([]),
       onStateChanged: vi.fn().mockReturnValue(vi.fn()),
+    },
+    operatorActivity: {
+      getSnapshot: vi.fn().mockResolvedValue(emptyOperatorActivitySnapshot),
+      onChanged: vi.fn().mockReturnValue(vi.fn()),
     },
     updater: {
       getState: vi.fn((): Promise<DesktopUpdateState> => new Promise<DesktopUpdateState>(() => {})),

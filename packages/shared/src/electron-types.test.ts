@@ -29,6 +29,8 @@ describe('ElectronAPI contract', () => {
 
     expectTypeOf<ElectronAPI['chatroom']['send']>().toBeFunction();
     expectTypeOf<ElectronAPI['chatroom']['onEvent']>().toBeFunction();
+    expectTypeOf<ElectronAPI['operatorActivity']['getSnapshot']>().toBeFunction();
+    expectTypeOf<ElectronAPI['operatorActivity']['onChanged']>().toBeFunction();
 
     expectTypeOf<ElectronAPI['updater']['getState']>().toBeFunction();
     expectTypeOf<ElectronAPI['a2a']['onIncoming']>().toBeFunction();
