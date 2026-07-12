@@ -224,6 +224,132 @@ describe('MindSkillDiscovery', () => {
     expect(skills[0]).toEqual({ id: 'quoted', name: 'q-name', description: 'q-desc' });
   });
 
+  it('surfaces bounded detail validation when SKILL.md exceeds the byte limit', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const prefix = '---\nname: detail-limit\nversion: 9.9.9\n---\n';
+    const dir = path.join(skillsDir, 'detail-limit');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      prefix + 'x'.repeat(MAX_SKILL_MARKDOWN_BYTES + 1 - Buffer.byteLength(prefix)),
+    );
+
+    const details = await new MindSkillDiscovery().listDetails(mindPath);
+
+    expect(details).toEqual([
+      expect.objectContaining({
+        id: 'detail-limit',
+        name: 'detail-limit',
+        isCore: false,
+        isManaged: false,
+        source: {
+          type: 'local',
+          directory: '.github/skills/detail-limit',
+          manifestPath: '.github/skills/detail-limit/SKILL.md',
+        },
+        requiredFiles: [{ path: 'SKILL.md', status: 'invalid' }],
+        validationErrors: [{
+          path: '.github/skills/detail-limit/SKILL.md',
+          message: `SKILL.md exceeds the ${MAX_SKILL_MARKDOWN_BYTES} byte limit.`,
+        }],
+      }),
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      '[MindSkillDiscovery]',
+      expect.stringContaining(`exceeds the ${MAX_SKILL_MARKDOWN_BYTES} byte limit`),
+    );
+  });
+
+  it('surfaces managed core skill metadata from safe local metadata', async () => {
+    addSkill('lens', 'name: lens\nversion: 2.0.0\ndescription: "Lens views"');
+    const lensDir = path.join(skillsDir, 'lens');
+    fs.mkdirSync(path.join(lensDir, 'examples'));
+    fs.writeFileSync(path.join(lensDir, 'examples', 'demo.md'), '# Demo\n');
+    fs.writeFileSync(path.join(lensDir, '.chamber-skill.json'), JSON.stringify({
+      name: 'lens',
+      version: '2.0.0',
+      managedBy: 'chamber',
+      algorithm: 'sha256-framed-v2',
+      files: [
+        { path: 'SKILL.md', sha256: 'skill-hash' },
+        { path: 'examples/demo.md', sha256: 'demo-hash' },
+      ],
+      capabilities: ['lens-views', 'forms'],
+      source: {
+        type: 'marketplace',
+        marketplaceId: 'github:ianphil/genesis-minds',
+        marketplaceLabel: 'Public Genesis Minds',
+        marketplaceUrl: 'https://github.com/ianphil/genesis-minds',
+        owner: 'ianphil',
+        repo: 'genesis-minds',
+        ref: 'master',
+        plugin: 'genesis-minds',
+        root: 'skills/lens',
+      },
+    }));
+
+    const details = await new MindSkillDiscovery().listDetails(mindPath);
+
+    expect(details).toEqual([
+      expect.objectContaining({
+        id: 'lens',
+        name: 'lens',
+        version: '2.0.0',
+        description: 'Lens views',
+        isCore: true,
+        isManaged: true,
+        capabilities: ['lens-views', 'forms'],
+        source: {
+          type: 'local',
+          directory: '.github/skills/lens',
+          manifestPath: '.github/skills/lens/SKILL.md',
+          metadataPath: '.github/skills/lens/.chamber-skill.json',
+        },
+        requiredFiles: [
+          { path: 'SKILL.md', status: 'present' },
+          { path: 'examples/demo.md', status: 'present' },
+        ],
+        managed: expect.objectContaining({
+          version: '2.0.0',
+          metadataPath: '.github/skills/lens/.chamber-skill.json',
+          source: expect.objectContaining({
+            marketplaceLabel: 'Public Genesis Minds',
+            root: 'skills/lens',
+          }),
+        }),
+        validationErrors: [],
+      }),
+    ]);
+  });
+
+  it('does not mark non-core local metadata as Chamber-managed', async () => {
+    addSkill('team-helper', 'name: team-helper\nversion: 1.0.0');
+    const skillDir = path.join(skillsDir, 'team-helper');
+    fs.writeFileSync(path.join(skillDir, '.chamber-skill.json'), JSON.stringify({
+      name: 'team-helper',
+      version: '1.0.0',
+      managedBy: 'chamber',
+      algorithm: 'sha256-framed-v2',
+      files: [{ path: 'SKILL.md', sha256: 'skill-hash' }],
+      capabilities: ['team-guidance'],
+    }));
+
+    const details = await new MindSkillDiscovery().listDetails(mindPath);
+
+    expect(details).toEqual([
+      expect.objectContaining({
+        id: 'team-helper',
+        isCore: false,
+        isManaged: false,
+        capabilities: ['team-guidance'],
+        managed: expect.objectContaining({
+          version: '1.0.0',
+          metadataPath: '.github/skills/team-helper/.chamber-skill.json',
+        }),
+      }),
+    ]);
+  });
+
   function addSkillAt(directory: string, name: string): void {
     fs.writeFileSync(path.join(directory, 'SKILL.md'), `---\nname: ${name}\n---\n`);
   }

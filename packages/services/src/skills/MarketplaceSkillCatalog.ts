@@ -1,7 +1,12 @@
 import path from 'node:path';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { DEFAULT_GENESIS_MIND_TEMPLATE_SOURCE, GitHubRegistryClient, type TreeEntry } from '../genesis';
-import type { MarketplaceSkillEntry, SkillMarketplaceSource } from './skillTypes';
+import type {
+  MarketplaceSkillEntry,
+  MarketplaceSkillMalformedEntry,
+  MarketplaceSkillSourceStatus,
+  SkillMarketplaceSource,
+} from './skillTypes';
 
 interface RegistryClient {
   fetchTree(owner: string, repo: string, branch: string): Promise<TreeEntry[]>;
@@ -12,11 +17,13 @@ type SourceProvider = SkillMarketplaceSource[] | (() => SkillMarketplaceSource[]
 
 export interface MarketplaceSkillCatalogResult {
   skills: MarketplaceSkillEntry[];
+  malformedEntries: MarketplaceSkillMalformedEntry[];
+  sources: MarketplaceSkillSourceStatus[];
   errors: Array<{ marketplaceId: string; message: string }>;
 }
 
-const RESERVED_CORE_SKILL_IDS = new Set(['lens', 'automation', 'ttasks']);
 const DEFAULT_CORE_SKILL_MARKETPLACE_ID = marketplaceId(DEFAULT_GENESIS_MIND_TEMPLATE_SOURCE);
+const RESERVED_CORE_SKILL_IDS = new Set(['lens', 'automation', 'ttasks']);
 
 export class MarketplaceSkillCatalog {
   constructor(
@@ -26,24 +33,45 @@ export class MarketplaceSkillCatalog {
 
   async listSkills(): Promise<MarketplaceSkillCatalogResult> {
     const skills: MarketplaceSkillEntry[] = [];
+    const malformedEntries: MarketplaceSkillMalformedEntry[] = [];
+    const sources: MarketplaceSkillSourceStatus[] = [];
     const errors: MarketplaceSkillCatalogResult['errors'] = [];
 
     for (const source of this.getSources()) {
-      if (source.enabled === false) continue;
+      const metadata = sourceStatusMetadata(source);
+      if (source.enabled === false) {
+        sources.push({ ...metadata, status: 'disabled', skillCount: 0, malformedCount: 0 });
+        continue;
+      }
       try {
-        skills.push(...await this.readSource(source));
+        const sourceResult = await this.readSource(source);
+        skills.push(...sourceResult.skills);
+        malformedEntries.push(...sourceResult.malformedEntries);
+        sources.push({
+          ...metadata,
+          status: 'ok',
+          skillCount: sourceResult.skills.length,
+          malformedCount: sourceResult.malformedEntries.length,
+          ...(sourceResult.malformedEntries.length > 0
+            ? { message: `${sourceResult.malformedEntries.length} malformed skill entr${sourceResult.malformedEntries.length === 1 ? 'y' : 'ies'} skipped.` }
+            : {}),
+        });
       } catch (error) {
+        const message = getErrorMessage(error);
         errors.push({
           marketplaceId: marketplaceId(source),
-          message: getErrorMessage(error),
+          message,
         });
+        sources.push({ ...metadata, status: 'error', skillCount: 0, malformedCount: 0, message });
       }
     }
 
-    return { skills, errors };
+    return { skills, malformedEntries, sources, errors };
   }
 
-  private async readSource(source: SkillMarketplaceSource): Promise<MarketplaceSkillEntry[]> {
+  private async readSource(
+    source: SkillMarketplaceSource,
+  ): Promise<{ skills: MarketplaceSkillEntry[]; malformedEntries: MarketplaceSkillMalformedEntry[] }> {
     const tree = await this.registryClient.fetchTree(source.owner, source.repo, source.ref);
     const blobPaths = new Set(tree.filter((entry) => entry.type === 'blob').map((entry) => entry.path));
     const pluginPath = `plugins/${source.plugin}/plugin.json`;
@@ -51,11 +79,20 @@ export class MarketplaceSkillCatalog {
     if (!isRecord(plugin)) {
       throw new Error(`Plugin manifest ${pluginPath} is not a JSON object`);
     }
-    if (plugin.skills === undefined) return [];
+    if (plugin.skills === undefined) return { skills: [], malformedEntries: [] };
     if (!Array.isArray(plugin.skills)) {
       throw new Error(`Plugin manifest ${pluginPath} has a non-array skills field`);
     }
-    return plugin.skills.map((entry, index) => parseSkillEntry(entry, index, pluginPath, source, blobPaths));
+    const skills: MarketplaceSkillEntry[] = [];
+    const malformedEntries: MarketplaceSkillMalformedEntry[] = [];
+    for (const [index, entry] of plugin.skills.entries()) {
+      try {
+        skills.push(parseSkillEntry(entry, index, pluginPath, source, blobPaths));
+      } catch (error) {
+        malformedEntries.push(malformedSkillEntry(entry, index, source, getErrorMessage(error)));
+      }
+    }
+    return { skills, malformedEntries };
   }
 
   private getSources(): SkillMarketplaceSource[] {
@@ -93,25 +130,54 @@ function parseSkillEntry(
       throw new Error(`${pluginPath} skills[${index}] is missing required file: ${file}`);
     }
   }
+  const version = optionalStringField(entry, 'version', pluginPath, index);
 
   return {
     id,
     displayName: stringField(entry, 'displayName', pluginPath, index),
     description: stringField(entry, 'description', pluginPath, index),
+    ...(version ? { version } : {}),
     root,
     requiredFiles,
     capabilities: stringArrayField(entry, 'capabilities', pluginPath, index),
     reserved,
-    source: {
-      owner: source.owner,
-      repo: source.repo,
-      ref: source.ref,
-      plugin: source.plugin,
-      marketplaceId: marketplaceId(source),
-      marketplaceLabel: source.label ?? `${source.owner}/${source.repo}`,
-      marketplaceUrl: source.url ?? `https://github.com/${source.owner}/${source.repo}`,
-      isDefault: source.isDefault === true,
-    },
+    source: marketplaceSourceDetails(source),
+  };
+}
+
+function malformedSkillEntry(
+  entry: unknown,
+  index: number,
+  source: SkillMarketplaceSource,
+  message: string,
+): MarketplaceSkillMalformedEntry {
+  return {
+    source: marketplaceSourceDetails(source),
+    index,
+    message,
+    ...(isRecord(entry) && typeof entry.id === 'string' ? { rawId: entry.id } : {}),
+    ...(isRecord(entry) && typeof entry.displayName === 'string' ? { rawDisplayName: entry.displayName } : {}),
+  };
+}
+
+function marketplaceSourceDetails(source: SkillMarketplaceSource): MarketplaceSkillEntry['source'] {
+  return {
+    owner: source.owner,
+    repo: source.repo,
+    ref: source.ref,
+    plugin: source.plugin,
+    marketplaceId: marketplaceId(source),
+    marketplaceLabel: source.label ?? `${source.owner}/${source.repo}`,
+    marketplaceUrl: source.url ?? `https://github.com/${source.owner}/${source.repo}`,
+    isDefault: source.isDefault === true,
+  };
+}
+
+function sourceStatusMetadata(source: SkillMarketplaceSource): Pick<MarketplaceSkillSourceStatus, 'id' | 'label' | 'url'> {
+  return {
+    id: marketplaceId(source),
+    label: source.label ?? `${source.owner}/${source.repo}`,
+    url: source.url ?? `https://github.com/${source.owner}/${source.repo}`,
   };
 }
 
@@ -127,6 +193,20 @@ function stringField(record: Record<string, unknown>, key: string, pluginPath: s
   const value = record[key];
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${pluginPath} skills[${index}].${key} must be a non-empty string`);
+  }
+  return value;
+}
+
+function optionalStringField(
+  record: Record<string, unknown>,
+  key: string,
+  pluginPath: string,
+  index: number,
+): string | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${pluginPath} skills[${index}].${key} must be a non-empty string when provided`);
   }
   return value;
 }

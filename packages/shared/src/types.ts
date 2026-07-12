@@ -1,5 +1,18 @@
 export type { A2AIncomingPayload } from './a2a-types';
-export type { SkillManifest } from './skill-types';
+export type {
+  ManagedSkillDetails,
+  MarketplaceSkillEntry,
+  MarketplaceSkillMalformedEntry,
+  MarketplaceSkillSourceStatus,
+  MarketplaceTemplateEntry,
+  MarketplaceTemplateSourceStatus,
+  SkillDetail,
+  SkillFileReference,
+  SkillManifest,
+  SkillMarketplaceBrowseResult,
+  SkillMarketplaceSourceDetails,
+  SkillValidationError,
+} from './skill-types';
 
 // Shared types across main, preload, and renderer processes
 

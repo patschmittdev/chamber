@@ -64,7 +64,7 @@ import type {
   UserProfileImportResult,
   UserProfileSaveRequest,
 } from './types';
-import type { SkillManifest } from './skill-types';
+import type { SkillDetail, SkillManifest, SkillMarketplaceBrowseResult } from './skill-types';
 import type { McpServerEntry } from './mcp-types';
 
 export interface ElectronAPI {
@@ -245,6 +245,14 @@ export interface ElectronAPI {
      * This does not attest managed provenance, integrity, or lifecycle state.
      */
     listForMind: (mindId: string) => Promise<SkillManifest[]>;
+    /**
+     * Lists bounded local detail metadata for skill directories currently on disk.
+     */
+    listForMindDetails: (mindId: string) => Promise<SkillDetail[]>;
+    /**
+     * Lists read-only skill and template marketplace metadata from enrolled registries.
+     */
+    browseMarketplace: () => Promise<SkillMarketplaceBrowseResult>;
   };
   mcp: {
     /**

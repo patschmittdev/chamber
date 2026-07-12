@@ -19,7 +19,7 @@ describe('ManagedSkillService', () => {
 
   it('fetches reserved core skill bundles once and installs cached bundles into every mind', async () => {
     const asset = skillAsset('lens');
-    catalog.listSkills.mockResolvedValue({ skills: [CORE_SKILL, NON_CORE_SKILL], errors: [] });
+    catalog.listSkills.mockResolvedValue(catalogResult([CORE_SKILL, NON_CORE_SKILL]));
     materializer.materialize.mockResolvedValue(asset);
     const service = new ManagedSkillService(catalog, materializer, install);
 
@@ -35,7 +35,7 @@ describe('ManagedSkillService', () => {
   });
 
   it('refreshes lazily when a mind loads before startup refresh completes', async () => {
-    catalog.listSkills.mockResolvedValue({ skills: [CORE_SKILL], errors: [] });
+    catalog.listSkills.mockResolvedValue(catalogResult([CORE_SKILL]));
     materializer.materialize.mockResolvedValue(skillAsset('lens'));
     const service = new ManagedSkillService(catalog, materializer, install);
 
@@ -48,8 +48,8 @@ describe('ManagedSkillService', () => {
   it('reports degraded status when catalog or materialization fails and keeps existing cached bundles', async () => {
     const asset = skillAsset('lens');
     catalog.listSkills
-      .mockResolvedValueOnce({ skills: [CORE_SKILL], errors: [] })
-      .mockResolvedValueOnce({ skills: [CORE_SKILL], errors: [{ marketplaceId: 'team', message: 'bad manifest' }] });
+      .mockResolvedValueOnce(catalogResult([CORE_SKILL]))
+      .mockResolvedValueOnce(catalogResult([CORE_SKILL], [{ marketplaceId: 'team', message: 'bad manifest' }]));
     materializer.materialize
       .mockResolvedValueOnce(asset)
       .mockRejectedValueOnce(new Error('network down'));
@@ -66,6 +66,43 @@ describe('ManagedSkillService', () => {
       { marketplaceId: 'github:ianphil/genesis-minds', skillId: 'lens', message: 'network down' },
     ]);
     expect(install).toHaveBeenCalledWith('C:\\minds\\alpha', asset);
+  });
+
+  it('reports degraded status for malformed default core skill entries', async () => {
+    catalog.listSkills.mockResolvedValue({
+      skills: [],
+      errors: [],
+      sources: [],
+      malformedEntries: [{
+        index: 0,
+        rawId: 'lens',
+        message: 'root must be a safe relative path',
+        source: {
+          owner: 'ianphil',
+          repo: 'genesis-minds',
+          ref: 'master',
+          plugin: 'genesis-minds',
+          marketplaceId: 'github:ianphil/genesis-minds',
+          marketplaceLabel: 'Public Genesis Minds',
+          marketplaceUrl: 'https://github.com/ianphil/genesis-minds',
+          isDefault: true,
+        },
+      }],
+    });
+    const service = new ManagedSkillService(catalog, materializer, install);
+
+    const result = await service.refresh();
+
+    expect(result).toEqual({
+      status: 'degraded',
+      installed: [],
+      errors: [{
+        marketplaceId: 'github:ianphil/genesis-minds',
+        skillId: 'lens',
+        message: 'root must be a safe relative path',
+      }],
+    });
+    expect(materializer.materialize).not.toHaveBeenCalled();
   });
 });
 
@@ -89,6 +126,13 @@ function skillEntry(id: string): MarketplaceSkillEntry {
       isDefault: true,
     },
   };
+}
+
+function catalogResult(
+  skills: MarketplaceSkillEntry[],
+  errors: MarketplaceSkillCatalogResult['errors'] = [],
+): MarketplaceSkillCatalogResult {
+  return { skills, errors, malformedEntries: [], sources: [] };
 }
 
 function skillAsset(name: string): ManagedSkillAsset {

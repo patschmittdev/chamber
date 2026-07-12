@@ -239,6 +239,7 @@ let scaffold: MindScaffold;
 let genesisTemplateCatalog: GenesisMindTemplateMarketplaceCatalog;
 let genesisTemplateInstaller: GenesisMindTemplateInstaller;
 let marketplaceRegistryService: MarketplaceRegistryService;
+let marketplaceSkillCatalog: MarketplaceSkillCatalog;
 let managedSkillService: ManagedSkillService;
 let toolsService: ToolsService;
 let viewDiscovery: ViewDiscovery;
@@ -371,7 +372,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   genesisTemplateCatalog = new GenesisMindTemplateMarketplaceCatalog(githubRegistryClient, getGenesisMarketplaceSources);
   genesisTemplateInstaller = new GenesisMindTemplateInstaller(githubRegistryClient, clientFactory, getGenesisMarketplaceSources);
   marketplaceRegistryService = new MarketplaceRegistryService(configService, githubRegistryClient);
-  const marketplaceSkillCatalog = new MarketplaceSkillCatalog(githubRegistryClient, getGenesisMarketplaceSources);
+  marketplaceSkillCatalog = new MarketplaceSkillCatalog(githubRegistryClient, getGenesisMarketplaceSources);
   managedSkillService = new ManagedSkillService(
     marketplaceSkillCatalog,
     new MarketplaceSkillMaterializer(githubRegistryClient),
@@ -941,6 +942,8 @@ app.on('ready', async () => {
   setupSkillsIPC(
     { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
     skillDiscovery,
+    marketplaceSkillCatalog,
+    genesisTemplateCatalog,
   );
   setupMcpIPC(
     {
