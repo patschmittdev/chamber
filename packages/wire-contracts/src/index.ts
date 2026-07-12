@@ -32,11 +32,25 @@ export interface AddMindResponse {
   readonly mind: MindDto;
 }
 
-export interface ChatAttachmentDto {
-  readonly name: string;
+export interface ChatImageAttachmentDto {
+  readonly kind: 'image';
+  readonly displayName: string;
   readonly mimeType: string;
+  readonly size: number;
   readonly data: string;
 }
+
+export interface ChatDocumentAttachmentDto {
+  readonly kind: 'document';
+  readonly clientId: string;
+  readonly displayName: string;
+  readonly mimeType: string;
+  readonly size: number;
+  readonly content: string;
+  readonly metadata?: Record<string, string | number | boolean | null>;
+}
+
+export type ChatAttachmentDto = ChatImageAttachmentDto | ChatDocumentAttachmentDto;
 
 export interface SendChatRequest {
   readonly mindId: string;

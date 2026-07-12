@@ -84,6 +84,51 @@ describe('mapSessionEventsToChatMessages', () => {
     expect(messages[0].blocks).toEqual([{ type: 'text', content: 'real question' }]);
   });
 
+  it('hydrates user document attachment manifests without showing the manifest wrapper', () => {
+    const events = [
+      {
+        type: 'user.message',
+        timestamp: '2026-05-05T22:00:00.000Z',
+        data: {
+          messageId: 'u1',
+          content: [
+            'review attached notes',
+            '<chamber_attachment_manifest>',
+            JSON.stringify({
+              version: 1,
+              retrieval: 'Use attachment_read.',
+              attachments: [{
+                id: 'att-1',
+                kind: 'document',
+                displayName: 'notes.md',
+                mimeType: 'text/markdown',
+                size: 12,
+                createdAt: '2026-05-05T22:00:00.000Z',
+              }],
+            }),
+            '</chamber_attachment_manifest>',
+          ].join('\n'),
+        },
+      },
+    ];
+
+    const messages = mapSessionEventsToChatMessages(events);
+
+    expect(messages[0].blocks).toEqual([
+      {
+        type: 'attachment',
+        id: 'att-1',
+        kind: 'document',
+        displayName: 'notes.md',
+        mimeType: 'text/markdown',
+        size: 12,
+        createdAt: '2026-05-05T22:00:00.000Z',
+      },
+      { type: 'text', content: 'review attached notes' },
+    ]);
+    expect(JSON.stringify(messages[0].blocks)).not.toContain('chamber_attachment_manifest');
+  });
+
   it('skips malformed tool and permission events without throwing and keeps the rest of the turn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const events = [

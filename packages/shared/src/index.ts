@@ -14,3 +14,4 @@ export { Logger, type LogLevel } from './logger';
 export { escapeXml } from './escapeXml';
 export { getErrorMessage } from './getErrorMessage';
 export { applyChatEventToMessage } from './chat-transcript';
+export { formatAttachmentSize } from './attachment-format';

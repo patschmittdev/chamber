@@ -53,6 +53,7 @@ function resetSessionMockToDefault(): void {
 }
 
 const mockSession = {
+  sessionId: 'session-1',
   send: vi.fn().mockResolvedValue(undefined),
   abort: vi.fn().mockResolvedValue(undefined),
   destroy: vi.fn().mockResolvedValue(undefined),
@@ -165,6 +166,87 @@ describe('ChatService', () => {
       });
       expect(mockMindManager.markActiveConversationHasMessages).toHaveBeenCalledWith('valid-mind', 'hello');
       expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('persists document attachments and sends a manifest instead of folded file text', async () => {
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        if (eventOrCb === 'session.idle' && cb) {
+          setTimeout(() => cb(), 0);
+        }
+        return vi.fn();
+      });
+      const attachmentStore = {
+        saveDocument: vi.fn(async () => ({
+          id: 'att-1',
+          kind: 'document' as const,
+          displayName: 'notes.md',
+          mimeType: 'text/markdown',
+          size: 7,
+          createdAt: '2026-05-05T15:37:12.065Z',
+          metadata: { source: 'chat-composer' },
+        })),
+      };
+      const svcWithAttachments = new ChatService(
+        mockMindManager as unknown as MindManager,
+        turnQueue,
+        () => ({
+          currentDateTime: '2026-05-05T15:37:12.065Z',
+          timezone: 'America/New_York',
+        }),
+        undefined,
+        attachmentStore,
+      );
+
+      const emit = vi.fn();
+      await svcWithAttachments.sendMessage('valid-mind', 'review attached notes', 'msg-1', emit, undefined, [{
+        kind: 'document',
+        clientId: 'draft-1',
+        displayName: 'notes.md',
+        mimeType: 'text/markdown',
+        size: 7,
+        content: '# Title',
+      }]);
+
+      expect(attachmentStore.saveDocument).toHaveBeenCalledWith('valid-mind', 'session-1', expect.objectContaining({
+        displayName: 'notes.md',
+        content: '# Title',
+      }));
+      const sent = mockSession.send.mock.calls[0][0] as { prompt: string; attachments?: unknown[] };
+      expect(sent.attachments).toBeUndefined();
+      expect(sent.prompt).toContain('review attached notes');
+      expect(sent.prompt).toContain('<chamber_attachment_manifest>');
+      expect(sent.prompt).toContain('"id": "att-1"');
+      expect(sent.prompt).not.toContain('Attached file notes.md:');
+      expect(sent.prompt).not.toContain('# Title');
+      expect(mockMindManager.markActiveConversationHasMessages).toHaveBeenCalledWith('valid-mind', 'review attached notes');
+    });
+
+    it('keeps image attachments on the SDK blob path', async () => {
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        if (eventOrCb === 'session.idle' && cb) {
+          setTimeout(() => cb(), 0);
+        }
+        return vi.fn();
+      });
+
+      const emit = vi.fn();
+      await svc.sendMessage('valid-mind', 'what is this?', 'msg-1', emit, undefined, [{
+        kind: 'image',
+        displayName: 'chart.png',
+        mimeType: 'image/png',
+        size: 3,
+        data: 'abc',
+      }]);
+
+      expect(mockSession.send).toHaveBeenCalledWith({
+        prompt: expect.stringContaining('what is this?'),
+        attachments: [{
+          type: 'blob',
+          data: 'abc',
+          mimeType: 'image/png',
+          displayName: 'chart.png',
+        }],
+      });
     });
 
     it('persists model selection before sending with the mind session', async () => {
@@ -316,6 +398,32 @@ describe('ChatService', () => {
       expect(mockMindManager.truncateActiveConversation).not.toHaveBeenCalled();
       expect(mockSession.send).not.toHaveBeenCalled();
       expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('regenerate refuses to drop document attachments', async () => {
+      idleOnSend();
+      mockMindManager.getActiveConversationMessages.mockResolvedValueOnce([
+        {
+          id: 'u1',
+          role: 'user',
+          blocks: [
+            { type: 'attachment', id: 'att-1', kind: 'document', displayName: 'notes.md', mimeType: 'text/markdown', size: 7 },
+            { type: 'text', content: 'review attached notes' },
+          ],
+          timestamp: 1,
+          eventId: 'evt-u1',
+        },
+      ]);
+      const emit = vi.fn();
+      await svc.regenerate('valid-mind', 'msg-regen', emit);
+
+      expect(mockMindManager.truncateActiveConversation).not.toHaveBeenCalled();
+      expect(mockSession.send).not.toHaveBeenCalled();
+      expect(emit).toHaveBeenCalledWith({
+        type: 'error',
+        message: 'Regenerating messages with attachments is not available yet.',
+      });
       expect(emit).toHaveBeenCalledWith({ type: 'done' });
     });
 

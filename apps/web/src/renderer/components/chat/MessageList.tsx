@@ -1,21 +1,22 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { ArrowDown, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
 import { MessageActions, type RowAction } from './MessageActions';
 import { useAppState, getPlainContent } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useConversationActions } from '../../hooks/useConversationActions';
 import { StreamingMessage } from './StreamingMessage';
-import { hasImageBlocks } from './messageContent';
+import { hasAttachmentBlocks } from './messageContent';
 import { cn, formatTime, parseSkillContextInjection } from '../../lib/utils';
 import type { ChatMessage, MindContext } from '@chamber/shared/types';
+import { formatAttachmentSize } from '@chamber/shared';
 import type { AgentProfileSummary } from '../../lib/store/state';
 import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
 import { useUserProfile } from '../../hooks/useUserProfile';
 import { agentColor, readableTextColor } from './agentColors';
 
-const EDIT_IMAGE_REASON = "Editing isn't available for messages with images yet";
-const REGENERATE_IMAGE_REASON = "Regenerating isn't available for turns with images yet";
+const EDIT_ATTACHMENT_REASON = "Editing isn't available for messages with attachments yet";
+const REGENERATE_ATTACHMENT_REASON = "Regenerating isn't available for turns with attachments yet";
 
 function displayName(name: string, fallback: string): string {
   const trimmed = name.trim();
@@ -72,13 +73,12 @@ export function MessageList() {
   const { regenerate, editAndResubmit, isStreaming } = useChatStreaming();
   const { deleteMessage } = useConversationActions();
   // Regenerate re-runs the most recent user turn, so its availability depends on
-  // that turn: it must be persisted (has an event id — false in browser mode,
-  // which never reconciles ids) and must not contain images (which cannot be
-  // replayed yet).
+  // that turn: it must be persisted and must not contain attachments, which
+  // cannot be replayed yet.
   const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
   const regenerateSupported = Boolean(lastUserMessage?.eventId);
-  const regenerateDisabledReason = lastUserMessage && hasImageBlocks(lastUserMessage)
-    ? REGENERATE_IMAGE_REASON
+  const regenerateDisabledReason = lastUserMessage && hasAttachmentBlocks(lastUserMessage)
+    ? REGENERATE_ATTACHMENT_REASON
     : undefined;
   const activeMind = minds.find(m => m.mindId === activeMindId);
   const activeProfile = activeMind ? profileByMindId[activeMind.mindId] : undefined;
@@ -251,7 +251,7 @@ const MessageRow = memo(function MessageRow({
 
   const edit = useMemo<RowAction | undefined>(
     () => canMutate
-      ? { onRun: () => setIsEditing(true), disabledReason: hasImageBlocks(message) ? EDIT_IMAGE_REASON : undefined }
+      ? { onRun: () => setIsEditing(true), disabledReason: hasAttachmentBlocks(message) ? EDIT_ATTACHMENT_REASON : undefined }
       : undefined,
     [canMutate, message],
   );
@@ -321,6 +321,19 @@ const MessageRow = memo(function MessageRow({
                   alt={img.name}
                   className="max-w-sm max-h-80 rounded-lg border border-border object-contain"
                 />
+              ))}
+            {message.blocks
+              .filter((b): b is Extract<typeof b, { type: 'attachment' }> => b.type === 'attachment')
+              .map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                >
+                  <FileText size={14} aria-hidden className="shrink-0" />
+                  <span className="min-w-0 truncate font-medium text-foreground">{attachment.displayName}</span>
+                  <span className="shrink-0">{attachment.mimeType || 'text/plain'}</span>
+                  <span className="shrink-0">{formatAttachmentSize(attachment.size)}</span>
+                </div>
               ))}
             {(() => {
               const plain = getPlainContent(message);
@@ -447,5 +460,3 @@ function SkillContextChip({ name, body }: { name: string; body: string }) {
     </div>
   );
 }
-
-

@@ -9,6 +9,7 @@ import type {
   ConversationExportFormat,
   ConversationSummary,
 } from '@chamber/shared/types';
+import { formatAttachmentSize } from '@chamber/shared';
 
 export interface ConversationExportOptions {
   /** ISO timestamp recorded in the export. Injectable for deterministic tests. */
@@ -114,6 +115,8 @@ function renderBlockToMarkdown(block: ContentBlock): string {
       return renderToolCall(block);
     case 'image':
       return `_[image: ${block.name} (${block.mimeType})]_`;
+    case 'attachment':
+      return `_[attachment: ${block.displayName} (${block.mimeType}, ${formatAttachmentSize(block.size)}, id ${block.id})]_`;
     case 'permission':
       return `_[permission: ${block.kind} - ${block.summary} (${block.outcome})]_`;
     default:

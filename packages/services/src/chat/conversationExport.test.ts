@@ -114,6 +114,34 @@ describe('serializeConversationToMarkdown', () => {
     expect(md).not.toContain('\u2014');
   });
 
+  it('renders document attachments as compact references without payloads or paths', () => {
+    const withAttachment: ChatMessage[] = [
+      {
+        id: 'u2',
+        role: 'user',
+        timestamp: 0,
+        blocks: [
+          {
+            type: 'attachment',
+            id: 'att-1',
+            kind: 'document',
+            displayName: 'notes.txt',
+            mimeType: 'text/plain',
+            size: 11,
+          },
+          { type: 'text', content: 'Summarize this.' },
+        ],
+      },
+    ];
+
+    const md = serializeConversationToMarkdown(conversation, withAttachment, options);
+
+    expect(md).toContain('_[attachment: notes.txt (text/plain, 11 B, id att-1)]_');
+    expect(md).toContain('Summarize this.');
+    expect(md).not.toContain('hello world');
+    expect(md).not.toContain('C:\\');
+  });
+
   it('escapes tool output that itself contains a code fence so the block cannot close early', () => {
     const withFence: ChatMessage[] = [
       {

@@ -17,8 +17,7 @@ import {
   SLASH_COMMANDS,
   isImageFile,
   isTextLikeFile,
-  safeFenceFor,
-  buildMessageWithTextAttachments,
+  buildDocumentAttachments,
 } from './composer';
 
 function makeMind(mindId: string, name: string): MindContext {
@@ -179,44 +178,32 @@ describe('file classification', () => {
   });
 });
 
-describe('safeFenceFor', () => {
-  it('uses three backticks when content has no fence', () => {
-    expect(safeFenceFor('plain text')).toBe('```');
+describe('buildDocumentAttachments', () => {
+  it('returns no attachments when there are no documents', () => {
+    expect(buildDocumentAttachments('hi', [])).toEqual([]);
   });
 
-  it('grows the fence beyond the longest backtick run in the content', () => {
-    expect(safeFenceFor('a ``` b')).toBe('````');
-    expect(safeFenceFor('a ````` b')).toBe('``````');
-  });
-});
-
-describe('buildMessageWithTextAttachments', () => {
-  it('returns the input unchanged when there are no text attachments', () => {
-    expect(buildMessageWithTextAttachments('hi', [])).toBe('hi');
-  });
-
-  it('folds contents of attachments whose token id is present', () => {
+  it('returns document payloads whose token id is present', () => {
     const input = `look at ${fileToken(5, 'notes.md')}`;
-    const out = buildMessageWithTextAttachments(input, [
-      { id: 5, name: 'notes.md', mimeType: 'text/markdown', content: '# Title' },
+    const out = buildDocumentAttachments(input, [
+      { id: 5, displayName: 'notes.md', mimeType: 'text/markdown', size: 7, content: '# Title' },
     ]);
-    expect(out).toContain(`look at ${fileToken(5, 'notes.md')}`);
-    expect(out).toContain('Attached file notes.md:');
-    expect(out).toContain('# Title');
+    expect(out).toEqual([
+      {
+        kind: 'document',
+        clientId: 'draft-5',
+        displayName: 'notes.md',
+        mimeType: 'text/markdown',
+        size: 7,
+        content: '# Title',
+      },
+    ]);
   });
 
   it('ignores attachments whose token id is not in the input', () => {
-    const out = buildMessageWithTextAttachments('no tokens here', [
-      { id: 5, name: 'notes.md', mimeType: 'text/markdown', content: '# Title' },
+    const out = buildDocumentAttachments('no tokens here', [
+      { id: 5, displayName: 'notes.md', mimeType: 'text/markdown', size: 7, content: '# Title' },
     ]);
-    expect(out).toBe('no tokens here');
-  });
-
-  it('uses a fence long enough to wrap content that itself contains fences', () => {
-    const input = fileToken(1, 'snippet.md');
-    const out = buildMessageWithTextAttachments(input, [
-      { id: 1, name: 'snippet.md', mimeType: 'text/markdown', content: 'text\n```\ncode\n```' },
-    ]);
-    expect(out).toContain('````\ntext');
+    expect(out).toEqual([]);
   });
 });

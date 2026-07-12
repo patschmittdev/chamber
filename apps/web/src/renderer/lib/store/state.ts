@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, ModelInfo, LensViewManifest, LensViewVisibility, MindContext, ImageBlock } from '@chamber/shared/types';
+import type { AttachmentBlock, ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, ModelInfo, LensViewManifest, LensViewVisibility, MindContext, ImageBlock } from '@chamber/shared/types';
 import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent } from '@chamber/shared/a2a-types';
 import type { ChatroomMessage, ChatroomStreamEvent, OrchestrationMode, GroupChatConfig, HandoffConfig, MagenticConfig, TaskLedgerItem } from '@chamber/shared/chatroom-types';
 import { DEFAULT_APP_FEATURE_FLAGS, type AppFeatureFlags } from '@chamber/shared/feature-flags';
@@ -71,7 +71,7 @@ export interface AppState {
 }
 
 export type AppAction =
-  | { type: 'ADD_USER_MESSAGE'; payload: { id: string; content: string; timestamp: number; images?: ImageBlock[] } }
+  | { type: 'ADD_USER_MESSAGE'; payload: { id: string; content: string; timestamp: number; images?: ImageBlock[]; documents?: AttachmentBlock[] } }
   | { type: 'ADD_ASSISTANT_MESSAGE'; payload: { id: string; timestamp: number } }
   | { type: 'CHAT_EVENT'; payload: { mindId: string; messageId: string; event: ChatEvent } }
   | { type: 'TRUNCATE_AFTER'; payload: { mindId: string; messageId: string } }

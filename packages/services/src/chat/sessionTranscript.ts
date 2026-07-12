@@ -9,6 +9,7 @@ import type { ChatEvent, ChatMessage } from '@chamber/shared/types';
 import { applyChatEventToMessage } from '@chamber/shared';
 import { Logger } from '../logger';
 import { stripInjectedCurrentDateTimeContext } from './currentDateTimeContext';
+import { attachmentBlockFromManifest, parseAttachmentManifestContext } from './attachmentContext';
 import {
   mapSdkPermissionCompleted,
   mapSdkPermissionRequested,
@@ -62,6 +63,7 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         role: 'assistant',
         blocks: [],
         timestamp: toTimestamp(event.timestamp),
+        ...(typeof event.id === 'string' ? { eventId: event.id } : {}),
       };
       if (typeof event.id === 'string') {
         assistantEventIdOverride = event.id;
@@ -83,10 +85,16 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         flushAssistant();
         const content = extractTextContent(data);
         if (!content) return;
+        const parsed = parseAttachmentManifestContext(stripInjectedCurrentDateTimeContext(content));
+        const blocks = [
+          ...parsed.attachments.map(attachmentBlockFromManifest),
+          ...(parsed.text ? [{ type: 'text' as const, content: parsed.text }] : []),
+        ];
+        if (blocks.length === 0) return;
         messages.push({
           id: messageId(data, event, index, 'user'),
           role: 'user',
-          blocks: [{ type: 'text', content: stripInjectedCurrentDateTimeContext(content) }],
+          blocks,
           timestamp: toTimestamp(event.timestamp),
           ...(typeof event.id === 'string' ? { eventId: event.id } : {}),
         });
@@ -110,6 +118,9 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         // opened the accumulator earlier with a synthesized id.
         if (assistantIdOverride === null && typeof data.messageId === 'string') {
           assistantIdOverride = data.messageId;
+        }
+        if (assistantEventIdOverride === null && typeof event.id === 'string') {
+          assistantEventIdOverride = event.id;
         }
         foldIntoAssistant(event, index, { type: 'message_final', sdkMessageId, content });
         return;

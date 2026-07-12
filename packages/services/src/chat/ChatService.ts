@@ -3,7 +3,7 @@
 
 import type { MindManager } from '../mind';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, MindInstructionPrecedence, ModelInfo } from '@chamber/shared/types';
+import type { ChatAttachment, ChatAttachmentManifest, ChatDocumentAttachment, ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, MindInstructionPrecedence, ModelInfo } from '@chamber/shared/types';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import type { CopilotSession } from '../mind/types';
 import { isStaleSessionError, SEND_TIMEOUT_MS, sendTimeoutError } from '@chamber/shared/sessionErrors';
@@ -27,12 +27,23 @@ import { TurnQueue } from './TurnQueue';
 import { getCurrentDateTimeContext, injectCurrentDateTimeContext, type DateTimeContextProvider } from './currentDateTimeContext';
 import { buildConversationExport, conversationExportFilename } from './conversationExport';
 import { TurnLifecycleTrace } from './turnLifecycleTrace';
+import { appendAttachmentManifestContext } from './attachmentContext';
 
 const log = Logger.create('ChatService');
 
 // INVARIANT: this is a post-root-turn_end debounce, not a turn deadline.
 // It is never armed unless the SDK has already signalled the root turn ended.
 const TURN_END_QUIESCENCE_MS = 1_000;
+
+interface PreparedTurn {
+  prompt: string;
+  titlePrompt?: string;
+  sdkAttachments?: ChatImageAttachment[];
+}
+
+interface DocumentAttachmentStore {
+  saveDocument(mindId: string, sessionId: string, attachment: ChatDocumentAttachment): Promise<ChatAttachmentManifest>;
+}
 
 export class ChatService {
   private abortControllers = new Map<string, { messageId: string; controller: AbortController }>();
@@ -50,6 +61,7 @@ export class ChatService {
      * inference.
      */
     private readonly byoLlmModelsProvider?: () => Promise<ModelInfo[] | null>,
+    private readonly attachmentStore?: DocumentAttachmentStore,
   ) {}
 
   async sendMessage(
@@ -58,9 +70,9 @@ export class ChatService {
     messageId: string,
     emit: (event: ChatEvent) => void,
     model?: string,
-    attachments?: ChatImageAttachment[],
+    attachments?: ChatAttachment[],
   ): Promise<void> {
-    return this.runTurn(mindId, messageId, emit, async () => prompt, { model, attachments });
+    return this.runTurn(mindId, messageId, emit, async (session) => this.prepareSendTurn(mindId, prompt, attachments, session.sessionId), { model });
   }
 
   /**
@@ -87,7 +99,7 @@ export class ChatService {
   ): Promise<void> {
     return this.runTurn(mindId, messageId, emit, async () => {
       await this.mindManager.truncateActiveConversation(mindId, eventId);
-      return prompt;
+      return { prompt, titlePrompt: prompt };
     }, { model });
   }
 
@@ -109,8 +121,13 @@ export class ChatService {
         emit({ type: 'error', message: 'There is no user message to regenerate.' });
         return null;
       }
+      if (hasAttachmentContent(lastUser)) {
+        emit({ type: 'error', message: 'Regenerating messages with attachments is not available yet.' });
+        return null;
+      }
       await this.mindManager.truncateActiveConversation(mindId, lastUser.eventId);
-      return plainTextOf(lastUser);
+      const prompt = plainTextOf(lastUser);
+      return { prompt, titlePrompt: prompt };
     }, { model });
   }
 
@@ -138,46 +155,75 @@ export class ChatService {
     return { refreshedCount };
   }
 
+  private async prepareSendTurn(
+    mindId: string,
+    prompt: string,
+    attachments: readonly ChatAttachment[] | undefined,
+    sessionId: string,
+  ): Promise<PreparedTurn> {
+    const images = attachments?.filter((attachment): attachment is ChatImageAttachment => attachment.kind === 'image') ?? [];
+    const documents = attachments?.filter((attachment): attachment is ChatDocumentAttachment => attachment.kind === 'document') ?? [];
+    if (documents.length === 0) {
+      return {
+        prompt,
+        titlePrompt: prompt,
+        sdkAttachments: images.length > 0 ? images : undefined,
+      };
+    }
+    if (!this.attachmentStore) {
+      throw new Error('Document attachments are unavailable because the attachment store is not configured.');
+    }
+    const attachmentStore = this.attachmentStore;
+
+    const manifests = await Promise.all(documents.map((document) => attachmentStore.saveDocument(mindId, sessionId, {
+      ...document,
+      metadata: {
+        ...(document.metadata ?? {}),
+        source: 'chat-composer',
+      },
+    })));
+    return {
+      prompt: appendAttachmentManifestContext(prompt, manifests),
+      titlePrompt: prompt,
+      sdkAttachments: images.length > 0 ? images : undefined,
+    };
+  }
+
   /**
-   * Shared turn driver for send/edit/regenerate. `resolvePrompt` performs any
-   * one-time history mutation (e.g. truncation) and returns the prompt to send,
-   * or null to abort the turn. It is invoked at most once per action: the
-   * resolved prompt is cached so a stale-session retry re-sends the same prompt
-   * WITHOUT re-running the resolver. Re-truncating on retry would remove the
-   * target event (already gone) plus the turns after it, so idempotency here is
-   * a correctness requirement, not an optimization. The resolver only throws if
-   * the truncation RPC itself fails to commit (truncateActiveConversation
-   * swallows post-truncate read failures), so a thrown resolver always means the
-   * mutation did NOT happen and the recovered attempt can safely re-run it.
+   * Shared turn driver for send/edit/regenerate. `resolveTurn` performs any
+   * one-time history mutation or attachment persistence and returns the prompt
+   * to send, or null to abort the turn. It is invoked at most once per action:
+   * the resolved turn is cached so a stale-session retry re-sends the same
+   * prompt and manifests without re-running side effects.
    */
   private async runTurn(
     mindId: string,
     messageId: string,
     emit: (event: ChatEvent) => void,
-    resolvePrompt: () => Promise<string | null>,
-    options: { model?: string; attachments?: ChatImageAttachment[] } = {},
+    resolveTurn: (session: CopilotSession) => Promise<PreparedTurn | null>,
+    options: { model?: string } = {},
   ): Promise<void> {
     return this.turnQueue.enqueue(mindId, async () => {
       const abortController = new AbortController();
       this.abortControllers.set(mindId, { messageId, controller: abortController });
 
       let prepared = false;
-      let preparedPrompt: string | null = null;
-      const prepareOnce = async (): Promise<string | null> => {
-        if (prepared) return preparedPrompt;
-        preparedPrompt = await resolvePrompt();
+      let preparedTurn: PreparedTurn | null = null;
+      const prepareOnce = async (session: CopilotSession): Promise<string | null> => {
+        if (prepared) return preparedTurn?.prompt ?? null;
+        preparedTurn = await resolveTurn(session);
         prepared = true;
-        return preparedPrompt;
+        return preparedTurn?.prompt ?? null;
       };
 
       const streamOn = async (session: CopilotSession): Promise<void> => {
-        const prompt = await prepareOnce();
-        if (prompt === null) {
+        const prompt = await prepareOnce(session);
+        if (prompt === null || preparedTurn === null) {
           if (!abortController.signal.aborted) emit({ type: 'done' });
           return;
         }
-        await this.streamTurn(session, prompt, abortController, emit, options.attachments, () => {
-          this.mindManager.markActiveConversationHasMessages(mindId, prompt);
+        await this.streamTurn(session, prompt, abortController, emit, preparedTurn.sdkAttachments, () => {
+          this.mindManager.markActiveConversationHasMessages(mindId, preparedTurn?.titlePrompt ?? prompt);
         });
       };
 
@@ -223,7 +269,7 @@ export class ChatService {
     emit: (event: ChatEvent) => void,
     attachments?: ChatImageAttachment[],
     onSendAccepted?: () => void,
-  ): Promise<void>{
+  ): Promise<void> {
     if (abortController.signal.aborted) return;
 
     const unsubs: (() => void)[] = [];
@@ -467,7 +513,7 @@ export class ChatService {
           type: 'blob' as const,
           data: a.data,
           mimeType: a.mimeType,
-          displayName: a.name,
+          displayName: a.displayName,
         }));
         const promptWithDateTime = injectCurrentDateTimeContext(prompt, this.dateTimeContextProvider());
         await Promise.race([session.send(sdkAttachments ? { prompt: promptWithDateTime, attachments: sdkAttachments } : { prompt: promptWithDateTime }), sendTimeout]);
@@ -634,6 +680,10 @@ function plainTextOf(message: ChatMessage): string {
     .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
     .map((block) => block.content)
     .join('');
+}
+
+function hasAttachmentContent(message: ChatMessage): boolean {
+  return message.blocks.some((block) => block.type === 'image' || block.type === 'attachment');
 }
 
 /**
