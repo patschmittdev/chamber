@@ -7,6 +7,7 @@ const DEFAULT_USER_PROFILE: UserProfile = {
   location: '',
   about: '',
   avatarDataUrl: null,
+  customInstructions: '',
   source: 'local',
   updatedAt: null,
 };
@@ -51,5 +52,6 @@ function definedProfileFields(request: UserProfileSaveRequest): UserProfileSaveR
   if (request.location !== undefined) fields.location = request.location;
   if (request.about !== undefined) fields.about = request.about;
   if (request.avatarDataUrl !== undefined) fields.avatarDataUrl = request.avatarDataUrl;
+  if (request.customInstructions !== undefined) fields.customInstructions = request.customInstructions;
   return fields;
 }

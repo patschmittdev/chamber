@@ -3,15 +3,20 @@ import * as path from 'path';
 import type { InstalledTool, MindIdentity } from '@chamber/shared/types';
 import { buildToolsSection } from '../tools/toolsSystemMessage';
 import { buildChamberSection } from './chamberSystemMessage';
+import { buildCustomInstructionsSection } from './customInstructionsSystemMessage';
 
 const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 const H1_RE = /^#\s+(.+)$/m;
 const WORKING_MEMORY_FILES = ['memory.md', 'rules.md', 'log.md'];
 
 export type InstalledToolsProvider = () => InstalledTool[];
+export type CustomInstructionsProvider = () => string;
 
 export class IdentityLoader {
-  constructor(private readonly getInstalledTools: InstalledToolsProvider = () => []) {}
+  constructor(
+    private readonly getInstalledTools: InstalledToolsProvider = () => [],
+    private readonly getCustomInstructions: CustomInstructionsProvider = () => '',
+  ) {}
 
   load(mindPath: string | null): MindIdentity | null {
     if (!mindPath) return null;
@@ -56,6 +61,9 @@ export class IdentityLoader {
     if (parts.length === 0) return null;
 
     parts.push(buildChamberSection());
+
+    const customInstructionsSection = buildCustomInstructionsSection(this.getCustomInstructions());
+    if (customInstructionsSection) parts.push(customInstructionsSection);
 
     const toolsSection = buildToolsSection(this.getInstalledTools());
     if (toolsSection) parts.push(toolsSection);

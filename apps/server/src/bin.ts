@@ -78,7 +78,10 @@ const mindManager = new MindManager(
     toolsBinDir: getChamberToolsBinDir(),
     getGitHubToken: getActiveGitHubToken,
   }),
-  new IdentityLoader(() => configService.load().installedTools ?? []),
+  new IdentityLoader(
+    () => configService.load().installedTools ?? [],
+    () => configService.load().userProfile?.customInstructions ?? '',
+  ),
   configService,
   viewDiscovery,
 );

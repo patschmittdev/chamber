@@ -182,5 +182,32 @@ describe('IdentityLoader', () => {
       expect(systemMessage.indexOf('## Chamber')).toBeGreaterThan(systemMessage.indexOf('# Q'));
       expect(systemMessage.indexOf('## Tools')).toBeGreaterThan(systemMessage.indexOf('## Chamber'));
     });
+
+    it('injects global custom instructions when the operator has set them', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+      const withInstructions = new IdentityLoader(() => [], () => 'Always answer concisely.');
+      const result = withInstructions.load('/tmp/test');
+      expect(result?.systemMessage).toContain('## Custom Instructions');
+      expect(result?.systemMessage).toContain('Always answer concisely.');
+    });
+
+    it('does not inject a custom instructions section when instructions are empty', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+      const result = new IdentityLoader(() => [], () => '   ').load('/tmp/test');
+      expect(result?.systemMessage).not.toContain('## Custom Instructions');
+    });
+
+    it('injects custom instructions after the Chamber section', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+      const result = new IdentityLoader(() => [], () => 'Be concise.').load('/tmp/test');
+      const systemMessage = result?.systemMessage ?? '';
+      expect(systemMessage.indexOf('## Custom Instructions')).toBeGreaterThan(systemMessage.indexOf('## Chamber'));
+    });
   });
 });

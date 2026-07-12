@@ -236,6 +236,8 @@ export interface UserProfile {
   location: string;
   about: string;
   avatarDataUrl: string | null;
+  /** Global user instructions injected into every mind's system message. */
+  customInstructions: string;
   source: 'local' | 'microsoft';
   microsoftAccount?: string;
   updatedAt: string | null;
@@ -247,6 +249,7 @@ export interface UserProfileSaveRequest {
   location?: string;
   about?: string;
   avatarDataUrl?: string | null;
+  customInstructions?: string;
 }
 
 export type UserProfileImportResult =

@@ -37,6 +37,9 @@ export function SettingsView() {
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileImporting, setProfileImporting] = useState(false);
+  const [customInstructions, setCustomInstructions] = useState('');
+  const [customInstructionsMessage, setCustomInstructionsMessage] = useState<string | null>(null);
+  const [customInstructionsSaving, setCustomInstructionsSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +129,7 @@ export function SettingsView() {
     setProfileLocation(profile.location);
     setProfileAbout(profile.about);
     setProfileAvatarDataUrl(profile.avatarDataUrl);
+    setCustomInstructions(profile.customInstructions ?? '');
   };
 
   const handleSaveProfile = async () => {
@@ -145,6 +149,20 @@ export function SettingsView() {
       setProfileMessage(getErrorMessage(err));
     } finally {
       setProfileSaving(false);
+    }
+  };
+
+  const handleSaveCustomInstructions = async () => {
+    setCustomInstructionsSaving(true);
+    setCustomInstructionsMessage(null);
+    try {
+      const profile = await window.electronAPI.userProfile.save({ customInstructions });
+      setCustomInstructions(profile.customInstructions ?? '');
+      setCustomInstructionsMessage('Custom instructions saved. New chats use them.');
+    } catch (err) {
+      setCustomInstructionsMessage(getErrorMessage(err));
+    } finally {
+      setCustomInstructionsSaving(false);
     }
   };
 
@@ -325,6 +343,46 @@ export function SettingsView() {
             </section>
           )}
 
+          {activeSection === 'custom-instructions' && (
+            <section className="space-y-3">
+              <header>
+                <h2 className="text-lg font-semibold text-foreground">Custom instructions</h2>
+                <p className="text-xs text-foreground/60">Global guidance Chamber adds to every mind&apos;s system message, no matter which agent you chat with.</p>
+              </header>
+              <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="custom-instructions">
+                    Instructions for all minds
+                  </label>
+                  <textarea
+                    id="custom-instructions"
+                    value={customInstructions}
+                    onChange={(event) => setCustomInstructions(event.target.value)}
+                    placeholder="e.g. Keep answers concise. Prefer TypeScript examples. Ask before making large changes."
+                    rows={8}
+                    className="mt-1 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { void handleSaveCustomInstructions(); }}
+                    disabled={customInstructionsSaving}
+                    className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {customInstructionsSaving ? 'Saving…' : 'Save custom instructions'}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Applied to every mind on its next chat turn. Leave empty to add nothing to the system prompt. Stored locally with your profile.
+                </p>
+                {customInstructionsMessage ? (
+                  <p role="status" className="text-xs text-muted-foreground">{customInstructionsMessage}</p>
+                ) : null}
+              </div>
+            </section>
+          )}
+
           {activeSection === 'account' && (
             <section className="space-y-3">
               <header>
@@ -494,7 +552,7 @@ export function SettingsView() {
 // index.css so navigating between sections matches the rest of the app.
 // ---------------------------------------------------------------------------
 
-export type SettingsSectionId = 'profile' | 'account' | 'marketplaces' | 'local-llm' | 'voice-dictation';
+export type SettingsSectionId = 'profile' | 'custom-instructions' | 'account' | 'marketplaces' | 'local-llm' | 'voice-dictation';
 
 interface SettingsRailItem {
   id: SettingsSectionId;
@@ -511,6 +569,7 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
   const railItems = useMemo<SettingsRailItem[]>(() => {
     const items: SettingsRailItem[] = [
       { id: 'profile', label: 'Profile' },
+      { id: 'custom-instructions', label: 'Custom instructions' },
       { id: 'account', label: 'Account' },
       { id: 'marketplaces', label: 'Marketplaces' },
     ];
