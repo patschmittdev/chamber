@@ -22,3 +22,4 @@ export * from './skills';
 export * from './tools';
 export * from './userProfile';
 export * from './voice';
+export * from './wtd';

@@ -81,6 +81,11 @@ import {
   VoiceDictationService,
   VoiceDictationStore,
   VoiceWorkerPool,
+  WtdAdvisorService,
+  WtdRuntimeProcess,
+  FakeWtdRuntimeClient,
+  DEFAULT_WTD_MODEL_REPO,
+  DEFAULT_WTD_MODEL_REVISION,
   SQLiteLedgerStore,
   setSqliteDatabase,
   ByoLlmStore,
@@ -100,6 +105,9 @@ import {
   type CredentialStore,
   type GenesisMindTemplateMarketplaceSource,
   type Notifier,
+  type WtdRuntimeResolution,
+  applyWtdRuntimeAvailability,
+  resolveWtdRuntimeForApp,
 } from '@chamber/services';
 import { Logger } from '@chamber/services';
 import { SqliteStore } from '@ianphil/ttasks-ts';
@@ -267,6 +275,7 @@ let chatroomService: ChatroomService;
 let operatorActivityService: OperatorActivityService;
 let canvasService: CanvasService;
 let cronService: CronService;
+let wtdAdvisorService: WtdAdvisorService | null = null;
 let automationBridgeStop: (() => Promise<void>) | null = null;
 let authService: AuthService;
 let chamberCopilotService: ChamberCopilotService | null = null;
@@ -343,7 +352,27 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     devFeatureFlags: DEV_FEATURE_FLAGS,
     previewFeatures: process.env.CHAMBER_E2E === '1' && process.env.CHAMBER_E2E_PREVIEW_FEATURES === '1',
   }).initialize();
-  appFeatureFlags = applyVoiceRuntimeAvailability(configuredFeatureFlags, voiceRuntimeAvailable);
+  const useFakeWtdRuntime =
+    process.env.CHAMBER_E2E === '1'
+    && process.env.CHAMBER_E2E_WTD_FAKE_TOPOLOGY === '1';
+  let wtdRuntimeResolution: WtdRuntimeResolution | null = null;
+  if (configuredFeatureFlags.wtdTopology && !useFakeWtdRuntime) {
+    try {
+      wtdRuntimeResolution = resolveWtdRuntimeForApp({
+        isPackaged: app.isPackaged,
+        resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+        cwd: process.cwd(),
+        userDataPath: appPaths.userData,
+      });
+    } catch (error) {
+      log.warn('WTD topology is enabled by policy, but its runtime is unavailable:', error);
+    }
+  }
+
+  appFeatureFlags = applyWtdRuntimeAvailability(
+    applyVoiceRuntimeAvailability(configuredFeatureFlags, voiceRuntimeAvailable),
+    useFakeWtdRuntime || wtdRuntimeResolution !== null,
+  );
   if (configuredFeatureFlags.voiceDictation && !voiceRuntimeAvailable) {
     log.warn('Voice dictation is enabled by policy, but the Foundry voice runtime is unavailable.');
   }
@@ -547,7 +576,34 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   });
   const a2aToolProvider = new A2aToolProvider(messageRouter, activeA2AResolver, taskManager);
   const attachmentToolProvider = new AttachmentToolProvider(attachmentStore);
-  const mindToolProviders: ChamberToolProvider[] = [cronService, canvasService, attachmentToolProvider, a2aToolProvider];
+  if (appFeatureFlags.wtdTopology) {
+    let runtime;
+    if (useFakeWtdRuntime) {
+      runtime = new FakeWtdRuntimeClient();
+    } else {
+      if (!wtdRuntimeResolution) {
+        throw new Error('WTD topology was enabled without an available runtime.');
+      }
+      const resolution = wtdRuntimeResolution;
+      runtime = new WtdRuntimeProcess({
+        cacheDir:
+          process.env.CHAMBER_E2E === '1'
+            ? process.env.CHAMBER_E2E_WTD_MODEL_CACHE_DIR ?? resolution.cachePath
+            : resolution.cachePath,
+        modelRepo: DEFAULT_WTD_MODEL_REPO,
+        modelRevision: DEFAULT_WTD_MODEL_REVISION,
+        resolveRuntime: () => resolution,
+      });
+    }
+    wtdAdvisorService = new WtdAdvisorService(runtime);
+  }
+  const mindToolProviders: ChamberToolProvider[] = [
+    cronService,
+    canvasService,
+    attachmentToolProvider,
+    a2aToolProvider,
+    ...(wtdAdvisorService ? [wtdAdvisorService] : []),
+  ];
   chamberCopilotService = createChamberCopilotService(mindToolProviders, createTaskLedger);
   mindManager.setProviders(mindToolProviders);
   wireLifecycleEvents({ mindManager, agentCardRegistry, a2aRelayModeService, taskManager, a2aEventBus });
@@ -631,6 +687,7 @@ const requestQuit = () => {
         a2aRelayModeService.disconnect(),
         stopMvpServer(),
         voiceWorkerPool?.stop() ?? Promise.resolve(),
+        wtdAdvisorService?.stop() ?? Promise.resolve(),
       ]);
     })
     .catch(() => { /* noop */ })
