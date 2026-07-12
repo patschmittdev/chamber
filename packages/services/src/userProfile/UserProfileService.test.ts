@@ -15,6 +15,7 @@ describe('UserProfileService', () => {
         location: '',
         about: '',
         avatarDataUrl: null,
+        customInstructions: '',
         source: 'local',
         updatedAt: null,
       });
@@ -62,6 +63,93 @@ describe('UserProfileService', () => {
       expect(profile.displayName).toBe('Ian Philpot');
       expect(profile.work).toBe('Principal SWE Manager');
       expect(profile.location).toBe('Remote');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  it('preserves an imported Microsoft source on a custom-instructions-only save', () => {
+    const fixture = createFixture();
+    try {
+      fixture.service.saveMicrosoftProfile({
+        displayName: 'Ian Philpot',
+        microsoftAccount: 'ianphil@microsoft.com',
+      });
+
+      const profile = fixture.service.saveProfile({ customInstructions: 'Prefer TypeScript examples.' });
+
+      expect(profile.source).toBe('microsoft');
+      expect(profile.microsoftAccount).toBe('ianphil@microsoft.com');
+      expect(profile.customInstructions).toBe('Prefer TypeScript examples.');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  it('marks the profile local when identity fields are edited', () => {
+    const fixture = createFixture();
+    try {
+      fixture.service.saveMicrosoftProfile({
+        displayName: 'Ian Philpot',
+        microsoftAccount: 'ianphil@microsoft.com',
+      });
+
+      const profile = fixture.service.saveProfile({ displayName: 'Ian P.' });
+
+      expect(profile.source).toBe('local');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  it('persists global custom instructions', () => {
+    const fixture = createFixture();
+    try {
+      const saved = fixture.service.saveProfile({ customInstructions: 'Always answer concisely.' });
+
+      expect(saved.customInstructions).toBe('Always answer concisely.');
+      expect(fixture.service.getProfile().customInstructions).toBe('Always answer concisely.');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  it('preserves custom instructions when saving other profile fields', () => {
+    const fixture = createFixture();
+    try {
+      fixture.service.saveProfile({ customInstructions: 'Prefer TypeScript examples.' });
+
+      const profile = fixture.service.saveProfile({ displayName: 'Ian Philpot' });
+
+      expect(profile.displayName).toBe('Ian Philpot');
+      expect(profile.customInstructions).toBe('Prefer TypeScript examples.');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  it('defaults custom instructions to empty for profiles persisted before the field existed', () => {
+    const fixture = createFixture();
+    try {
+      fs.mkdirSync(fixture.root, { recursive: true });
+      fs.writeFileSync(path.join(fixture.root, 'config.json'), JSON.stringify({
+        version: 2,
+        minds: [],
+        activeMindId: null,
+        activeLogin: null,
+        theme: 'dark',
+        userProfile: {
+          displayName: 'Ian Philpot',
+          work: '',
+          location: '',
+          about: '',
+          avatarDataUrl: null,
+          source: 'local',
+          updatedAt: null,
+        },
+      }));
+
+      expect(fixture.service.getProfile().customInstructions).toBe('');
     } finally {
       fixture.dispose();
     }

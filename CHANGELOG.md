@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add insiders-gated local voice dictation** — Adds local Foundry/Nemotron dictation with a dedicated Settings page, chat mic and push-to-talk controls, explicit runtime capability gating, and insiders-only prepared runtime packaging. (#385) (#385)
 - **Add appearance preferences** — Adds a Settings > Appearance section with light/dark/system theme, font size (small/medium/large), and density (comfortable/compact) that apply live and persist across reloads. An always-on renderer store follows the OS color scheme for the system option and syncs preferences across windows, and the native Windows title-bar overlay repaints to match the active theme.
 - **Add global command palette** — Adds a Cmd/Ctrl-K command palette built on the existing cmdk primitive and mounted once in the app shell, to switch between loaded agents, open Chat, Chatroom, Settings, and discovered Lens views, add an agent, and start a guarded new conversation for the active mind that is withheld while it is streaming or switching models.
+- **Add global custom instructions** — Adds a ChatGPT/Claude-style global custom instructions field to the user profile, editable in a new Settings section, injected into every mind's system message before the Chamber safety guidance, and applied to already-loaded minds so the next chat, task, and chatroom session uses the fresh instructions.
 
 ### Refactor
 

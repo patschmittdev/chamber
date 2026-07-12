@@ -3,15 +3,20 @@ import * as path from 'path';
 import type { InstalledTool, MindIdentity } from '@chamber/shared/types';
 import { buildToolsSection } from '../tools/toolsSystemMessage';
 import { buildChamberSection } from './chamberSystemMessage';
+import { buildCustomInstructionsSection } from './customInstructionsSystemMessage';
 
 const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 const H1_RE = /^#\s+(.+)$/m;
 const WORKING_MEMORY_FILES = ['memory.md', 'rules.md', 'log.md'];
 
 export type InstalledToolsProvider = () => InstalledTool[];
+export type CustomInstructionsProvider = () => string;
 
 export class IdentityLoader {
-  constructor(private readonly getInstalledTools: InstalledToolsProvider = () => []) {}
+  constructor(
+    private readonly getInstalledTools: InstalledToolsProvider = () => [],
+    private readonly getCustomInstructions: CustomInstructionsProvider = () => '',
+  ) {}
 
   load(mindPath: string | null): MindIdentity | null {
     if (!mindPath) return null;
@@ -54,6 +59,12 @@ export class IdentityLoader {
 
     const parts = [...identityParts, ...memoryParts];
     if (parts.length === 0) return null;
+
+    // Custom instructions are user-authored preferences. Emit them before the
+    // Chamber operating/safety guidance so that guidance keeps the final word
+    // and user text cannot override Chamber or A2A safety rules.
+    const customInstructionsSection = buildCustomInstructionsSection(this.getCustomInstructions());
+    if (customInstructionsSection) parts.push(customInstructionsSection);
 
     parts.push(buildChamberSection());
 

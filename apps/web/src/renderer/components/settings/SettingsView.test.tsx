@@ -14,7 +14,7 @@ import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
 // Settings is now tabbed. Tests that assert on Account / Marketplaces /
 // feature-specific content must first activate that tab (the Profile tab is the
 // default). Profile-tab tests don't need this helper.
-function gotoTab(label: 'Profile' | 'Account' | 'Marketplaces' | 'Appearance' | 'Local LLM' | 'Voice dictation') {
+function gotoTab(label: 'Profile' | 'Custom instructions' | 'Account' | 'Marketplaces' | 'Appearance' | 'Local LLM' | 'Voice dictation') {
   const nav = screen.getByRole('navigation', { name: /settings sections/i });
   fireEvent.click(within(nav).getByRole('button', { name: label }));
 }
@@ -253,6 +253,41 @@ describe('SettingsView', () => {
 
     expect(await screen.findByText('Microsoft Graph profile request failed (403).')).toBeTruthy();
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('');
+  });
+
+  it('loads persisted custom instructions into the Custom instructions tab', async () => {
+    (api.userProfile.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      displayName: '',
+      work: '',
+      location: '',
+      about: '',
+      avatarDataUrl: null,
+      customInstructions: 'Always answer concisely.',
+      source: 'local',
+      updatedAt: null,
+    });
+
+    render(<SettingsView />);
+    gotoTab('Custom instructions');
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('Instructions for all minds') as HTMLTextAreaElement).value)
+        .toBe('Always answer concisely.');
+    });
+  });
+
+  it('saves global custom instructions', async () => {
+    render(<SettingsView />);
+    gotoTab('Custom instructions');
+
+    const textarea = await screen.findByLabelText('Instructions for all minds');
+    fireEvent.change(textarea, { target: { value: 'Prefer TypeScript examples.' } });
+    fireEvent.click(screen.getByRole('button', { name: /save custom instructions/i }));
+
+    await waitFor(() => {
+      expect(api.userProfile.save).toHaveBeenCalledWith({ customInstructions: 'Prefer TypeScript examples.' });
+    });
+    expect(await screen.findByText(/custom instructions saved/i)).toBeTruthy();
   });
 
   it('shows the app version from package.json', async () => {

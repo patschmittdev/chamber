@@ -343,7 +343,10 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   });
 
   configService = new ConfigService();
-  const identityLoader = new IdentityLoader(() => configService.load().installedTools ?? []);
+  const identityLoader = new IdentityLoader(
+    () => configService.load().installedTools ?? [],
+    () => configService.load().userProfile?.customInstructions ?? '',
+  );
   const getGenesisMarketplaceSources = (): GenesisMindTemplateMarketplaceSource[] =>
     configService.load().marketplaceRegistries ?? [DEFAULT_GENESIS_MIND_TEMPLATE_SOURCE];
   const saveActiveLogin = (login: string | null) => {
@@ -895,7 +898,15 @@ app.on('ready', async () => {
     windowIcon,
   });
   setupMindProfileIPC(mindProfileService, mindManager, sharp);
-  setupUserProfileIPC(userProfileService, microsoftGraphProfileImporter);
+  setupUserProfileIPC(userProfileService, microsoftGraphProfileImporter, {
+    onProfileSaved: async () => {
+      try {
+        await mindManager.refreshLoadedMindIdentities();
+      } catch (err) {
+        log.warn('Failed to refresh minds after profile save (change applies on next mind load):', err);
+      }
+    },
+  });
   setupLensIPC(viewDiscovery, mindManager, canvasService);
   setupGenesisIPC(
     mindManager,

@@ -835,6 +835,35 @@ export class MindManager extends EventEmitter {
   }
 
   /**
+   * Re-read every loaded mind's identity (e.g. after the operator changes global
+   * custom instructions) and refresh the cached system message so the next task,
+   * chatroom, or new chat session picks up the change without a full mind reload.
+   *
+   * Empty active chat sessions are recreated in place so the current conversation
+   * adopts the change immediately. Conversations that already have messages keep
+   * their session and inherit the new instructions on the next new chat, matching
+   * the safe recreation policy in `startNewConversation`.
+   */
+  async refreshLoadedMindIdentities(): Promise<{ refreshedCount: number }> {
+    await this.awaitRestore();
+    let refreshedCount = 0;
+    for (const context of this.minds.values()) {
+      const refreshed = this.identityLoader.load(context.mindPath);
+      if (!refreshed || refreshed.systemMessage === context.identity.systemMessage) {
+        continue;
+      }
+      context.identity = refreshed;
+      refreshedCount += 1;
+
+      const activeConversation = this.getActiveConversationRecord(context.mindId);
+      if (activeConversation?.hasMessages === false && context.session) {
+        await this.createNewConversationSession(context.mindId, context, activeConversation.sessionId);
+      }
+    }
+    return { refreshedCount };
+  }
+
+  /**
    * Recreate only sessions that can be affected by a BYO provider change.
    * Enabling/updating BYO does not force cloud-selected minds onto the custom
    * endpoint; disabling BYO clears only BYO-selected minds before reload.

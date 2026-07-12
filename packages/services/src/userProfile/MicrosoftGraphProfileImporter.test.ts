@@ -105,6 +105,7 @@ function createFixture(responses: Array<Response | Promise<Response>>) {
     location: '',
     about: '',
     avatarDataUrl: null,
+    customInstructions: '',
     source: 'local',
     updatedAt: null,
   };

@@ -136,6 +136,7 @@ function normalizeUserProfile(value: unknown): UserProfile | undefined {
     avatarDataUrl: typeof record.avatarDataUrl === 'string' && record.avatarDataUrl.startsWith('data:image/')
       ? record.avatarDataUrl
       : null,
+    customInstructions: stringValue(record.customInstructions),
     source: record.source === 'microsoft' ? 'microsoft' : 'local',
     ...(typeof record.microsoftAccount === 'string' && record.microsoftAccount.trim().length > 0
       ? { microsoftAccount: record.microsoftAccount.trim() }
