@@ -8,7 +8,7 @@ import * as path from 'path';
 import type { PermissionHandler, ResumeSessionConfig, SessionConfig } from '@github/copilot-sdk';
 import { parseModelSelectionKey } from '@chamber/shared/model-selection';
 import { isStaleSessionError } from '@chamber/shared/sessionErrors';
-import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationResumeResult, ConversationSummary, MindContext, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
+import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationResumeResult, ConversationSummary, MindContext, MindInstructionPrecedence, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
 import { Logger } from '../logger';
 import type { InternalMindContext, CopilotClient, CopilotSession, Tool, UserInputHandler } from './types';
 import { generateMindId } from './generateMindId';
@@ -186,7 +186,7 @@ export class MindManager extends EventEmitter {
     const id = mindId ?? generateMindId(resolvedMindPath);
 
     // Load identity
-    const identity = this.identityLoader.load(resolvedMindPath);
+    const identity = this.loadIdentityForMind(id, resolvedMindPath);
     if (!identity) {
       throw new Error(`Failed to load identity from ${resolvedMindPath}`);
     }
@@ -262,18 +262,26 @@ export class MindManager extends EventEmitter {
 
     const knownRecord = this.knownMindRecords.get(id);
     const { selectedModel, selectedModelProvider } = this.getRestorableModelSelection(id, knownRecord);
-    const activeSessionId = knownRecord?.activeSessionId ?? this.createConversationRecord(id).sessionId;
-    const conversationRecord = this.ensureConversationRecord(id, activeSessionId, knownRecord?.conversations);
+    const createdConversation = knownRecord?.activeSessionId ? null : this.createConversationRecord(id, identity.systemMessage);
+    const activeSessionId = knownRecord?.activeSessionId ?? createdConversation?.sessionId;
+    if (!activeSessionId) throw new Error(`Failed to create active conversation for mind ${id}`);
+    const conversationRecord = createdConversation
+      ?? this.ensureConversationRecord(id, activeSessionId, knownRecord?.conversations, identity.systemMessage);
+    const conversationSystemMessage = this.getConversationSystemMessage(conversationRecord, identity.systemMessage);
+    const activeConversationRecord = conversationRecord.systemMessage === conversationSystemMessage
+      ? conversationRecord
+      : { ...conversationRecord, systemMessage: conversationSystemMessage };
     const session = knownRecord?.activeSessionId
       ? await this.loadConversationSession(
         client,
         'conversation',
         resolvedMindPath,
-        identity.systemMessage,
+        conversationSystemMessage,
         sessionTools,
-        conversationRecord.sessionId,
+        activeConversationRecord.sessionId,
         selectedModel,
         selectedModelProvider,
+        conversationSystemMessage,
       )
       : await this.createSessionForMind({
         kind: 'conversation',
@@ -294,6 +302,7 @@ export class MindManager extends EventEmitter {
       selectedModel,
       selectedModelProvider,
       activeSessionId,
+      activeSessionSystemMessage: conversationSystemMessage,
       client,
       session,
     };
@@ -319,9 +328,10 @@ export class MindManager extends EventEmitter {
         path: resolvedMindPath,
         ...(selectedModel ? { selectedModel } : {}),
         ...(selectedModelProvider ? { selectedModelProvider } : {}),
+        ...this.getGlobalCustomInstructionsOverrideFields(knownRecord),
         activeSessionId,
         conversations: [
-          conversationRecord,
+          activeConversationRecord,
           ...(knownRecord?.conversations ?? []).filter((conversation) => conversation.sessionId !== activeSessionId),
         ],
       });
@@ -472,8 +482,11 @@ export class MindManager extends EventEmitter {
     if (!context.activeSessionId) {
       return this.createNewConversationSession(mindId, context);
     }
+    const activeSystemMessage = context.activeSessionSystemMessage
+      ?? activeConversation?.systemMessage
+      ?? context.identity.systemMessage;
     if (!activeConversation) {
-      this.upsertConversationRecord(mindId, this.ensureConversationRecord(mindId, context.activeSessionId));
+      this.upsertConversationRecord(mindId, this.ensureConversationRecord(mindId, context.activeSessionId, undefined, activeSystemMessage));
     }
 
     const previousSession = context.session;
@@ -482,13 +495,17 @@ export class MindManager extends EventEmitter {
       context.client,
       'conversation',
       context.mindPath,
-      context.identity.systemMessage,
+      activeSystemMessage,
       sessionTools,
       context.activeSessionId,
       context.selectedModel,
       context.selectedModelProvider,
+      activeSystemMessage,
     );
     context.session = recoveredSession;
+    context.activeSessionSystemMessage = activeSystemMessage;
+    this.touchConversationRecord(mindId, context.activeSessionId, activeSystemMessage);
+    this.persistConfig();
     await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
     return recoveredSession;
   }
@@ -496,18 +513,21 @@ export class MindManager extends EventEmitter {
   async startNewConversation(mindId: string): Promise<CopilotSession> {
     const context = this.minds.get(mindId);
     if (!context) throw new Error(`Mind ${mindId} not found`);
-    const refreshedIdentity = this.identityLoader.load(context.mindPath);
+    const refreshedIdentity = this.loadIdentityForMind(mindId, context.mindPath);
     const identityChanged = refreshedIdentity !== null
       && refreshedIdentity.systemMessage !== context.identity.systemMessage;
     if (identityChanged) {
       context.identity = refreshedIdentity;
     }
     const activeConversation = this.getActiveConversationRecord(mindId);
-    if (activeConversation?.hasMessages === false && context.session && !identityChanged) {
+    const draftMatchesCurrentIdentity = activeConversation?.hasMessages === false
+      && context.activeSessionSystemMessage === context.identity.systemMessage
+      && activeConversation.systemMessage === context.identity.systemMessage;
+    if (activeConversation?.hasMessages === false && context.session && !identityChanged && draftMatchesCurrentIdentity) {
       return context.session;
     }
 
-    if (activeConversation?.hasMessages === false && context.session && identityChanged) {
+    if (activeConversation?.hasMessages === false && context.session) {
       // Recreate the SDK session so the model picks up the refreshed system message
       // (e.g. newly installed marketplace tools advertised in ## Tools).
       return this.createNewConversationSession(mindId, context, activeConversation.sessionId);
@@ -545,11 +565,11 @@ export class MindManager extends EventEmitter {
     context: InternalMindContext,
     replaceSessionId?: string,
   ): Promise<CopilotSession> {
-    const refreshedIdentity = this.identityLoader.load(context.mindPath);
+    const refreshedIdentity = this.loadIdentityForMind(mindId, context.mindPath);
     if (refreshedIdentity) {
       context.identity = refreshedIdentity;
     }
-    const conversation = this.createConversationRecord(mindId);
+    const conversation = this.createConversationRecord(mindId, context.identity.systemMessage);
     const previousSession = context.session;
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
     const nextSession = await this.createSessionForMind({
@@ -564,6 +584,7 @@ export class MindManager extends EventEmitter {
     });
     context.session = nextSession;
     context.activeSessionId = conversation.sessionId;
+    context.activeSessionSystemMessage = context.identity.systemMessage;
     this.upsertConversationRecord(mindId, conversation, replaceSessionId);
     this.persistConfig();
     await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
@@ -596,19 +617,22 @@ export class MindManager extends EventEmitter {
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
     const conversation = record.conversations.find((candidate) => candidate.sessionId === sessionId);
     if (!conversation) throw new Error(`Conversation ${sessionId} not found for mind ${mindId}`);
+    const conversationSystemMessage = this.getConversationSystemMessage(conversation, context.identity.systemMessage);
     const nextSession = await this.loadConversationSession(
       context.client,
       'conversation',
       context.mindPath,
-      context.identity.systemMessage,
+      conversationSystemMessage,
       sessionTools,
       conversation.sessionId,
       context.selectedModel,
       context.selectedModelProvider,
+      conversationSystemMessage,
     );
     context.session = nextSession;
     context.activeSessionId = sessionId;
-    this.touchConversationRecord(mindId, sessionId);
+    context.activeSessionSystemMessage = conversationSystemMessage;
+    this.touchConversationRecord(mindId, sessionId, conversationSystemMessage);
     this.persistConfig();
     await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
 
@@ -699,15 +723,21 @@ export class MindManager extends EventEmitter {
     }
 
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
+    const record = this.knownMindRecords.get(mindId);
+    const conversation = record?.conversations?.find((candidate) => candidate.sessionId === sessionId);
+    const conversationSystemMessage = conversation
+      ? this.getConversationSystemMessage(conversation, context.identity.systemMessage)
+      : context.identity.systemMessage;
     const readOnlySession = await this.loadConversationSession(
       context.client,
       'conversation',
       context.mindPath,
-      context.identity.systemMessage,
+      conversationSystemMessage,
       sessionTools,
       sessionId,
       context.selectedModel,
       context.selectedModelProvider,
+      conversationSystemMessage,
     );
     try {
       return await this.getMessagesForSession(readOnlySession);
@@ -810,19 +840,22 @@ export class MindManager extends EventEmitter {
       .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
     const previousSession = context.session;
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
+    const nextSystemMessage = this.getConversationSystemMessage(nextConversation, context.identity.systemMessage);
     const nextSession = await this.loadConversationSession(
       context.client,
       'conversation',
       context.mindPath,
-      context.identity.systemMessage,
+      nextSystemMessage,
       sessionTools,
       nextConversation.sessionId,
       context.selectedModel,
       context.selectedModelProvider,
+      nextSystemMessage,
     );
     context.session = nextSession;
     context.activeSessionId = nextConversation.sessionId;
-    this.touchConversationRecord(mindId, nextConversation.sessionId);
+    context.activeSessionSystemMessage = nextSystemMessage;
+    this.touchConversationRecord(mindId, nextConversation.sessionId, nextSystemMessage);
     this.persistConfig();
     await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
     await this.deleteSdkSession(context, deletingConversation.sessionId);
@@ -938,6 +971,7 @@ export class MindManager extends EventEmitter {
         path: existingRecord.path,
         ...(selectedModel ? { selectedModel } : {}),
         ...(selectedModelProvider ? { selectedModelProvider } : {}),
+        ...this.getGlobalCustomInstructionsOverrideFields(existingRecord),
         ...(existingRecord.activeSessionId ? { activeSessionId: existingRecord.activeSessionId } : {}),
         ...(existingRecord.conversations ? { conversations: existingRecord.conversations } : {}),
       });
@@ -990,6 +1024,52 @@ export class MindManager extends EventEmitter {
     return external;
   }
 
+  async setMindGlobalCustomInstructionsEnabled(mindId: string, enabled: boolean): Promise<MindInstructionPrecedence> {
+    await this.awaitRestore();
+    const context = this.minds.get(mindId);
+    const existingRecord = this.knownMindRecords.get(mindId);
+    if (!context && !existingRecord) throw new Error(`Mind ${mindId} not found`);
+    const mindPath = context?.mindPath ?? existingRecord?.path;
+    if (!mindPath) throw new Error(`Mind ${mindId} not found`);
+
+    const record: MindRecord = existingRecord ?? {
+      id: mindId,
+      path: mindPath,
+      ...(context?.selectedModel ? { selectedModel: context.selectedModel } : {}),
+      ...(context?.selectedModelProvider ? { selectedModelProvider: context.selectedModelProvider } : {}),
+      ...(context?.activeSessionId ? { activeSessionId: context.activeSessionId } : {}),
+    };
+    this.knownMindRecords.set(mindId, this.withGlobalCustomInstructionsPreference(record, enabled));
+    this.persistConfig();
+
+    if (context) {
+      const changed = await this.refreshLoadedMindIdentityContext(context);
+      if (changed) this.emit('mind:loaded', this.toExternalContext(context));
+    }
+
+    return this.getMindInstructionPrecedence(mindId);
+  }
+
+  getMindInstructionPrecedence(mindId: string): MindInstructionPrecedence {
+    const context = this.minds.get(mindId);
+    const record = this.knownMindRecords.get(mindId);
+    const mindPath = context?.mindPath ?? record?.path;
+    if (!mindPath) throw new Error(`Mind ${mindId} not found`);
+
+    const precedence = this.identityLoader.getInstructionPrecedence(mindPath, {
+      includeGlobalCustomInstructions: this.isGlobalCustomInstructionsEnabledForMind(mindId),
+    });
+    if (!precedence) throw new Error(`Failed to load identity from ${mindPath}`);
+
+    return {
+      mindId,
+      mindName: context?.identity.name ?? precedence.mindName,
+      globalCustomInstructionsEnabled: precedence.globalCustomInstructionsEnabled,
+      hasGlobalCustomInstructions: precedence.hasGlobalCustomInstructions,
+      layers: precedence.layers,
+    };
+  }
+
   awaitRestore(): Promise<void> {
     return this.restorePromise ?? Promise.resolve();
   }
@@ -1039,19 +1119,16 @@ export class MindManager extends EventEmitter {
     await this.awaitRestore();
     let refreshedCount = 0;
     for (const context of this.minds.values()) {
-      const refreshed = this.identityLoader.load(context.mindPath);
-      if (!refreshed || refreshed.systemMessage === context.identity.systemMessage) {
-        continue;
-      }
-      context.identity = refreshed;
-      refreshedCount += 1;
-
-      const activeConversation = this.getActiveConversationRecord(context.mindId);
-      if (activeConversation?.hasMessages === false && context.session) {
-        await this.createNewConversationSession(context.mindId, context, activeConversation.sessionId);
-      }
+      if (await this.refreshLoadedMindIdentityContext(context)) refreshedCount += 1;
     }
     return { refreshedCount };
+  }
+
+  async refreshLoadedMindIdentity(mindId: string): Promise<boolean> {
+    await this.awaitRestore();
+    const context = this.minds.get(mindId);
+    if (!context) return false;
+    return this.refreshLoadedMindIdentityContext(context);
   }
 
   /**
@@ -1137,6 +1214,53 @@ export class MindManager extends EventEmitter {
   }
 
   // --- Private helpers ---
+
+  private loadIdentityForMind(mindId: string, mindPath: string): NonNullable<ReturnType<IdentityLoader['load']>> | null {
+    return this.identityLoader.load(mindPath, {
+      includeGlobalCustomInstructions: this.isGlobalCustomInstructionsEnabledForMind(mindId),
+    });
+  }
+
+  private async refreshLoadedMindIdentityContext(context: InternalMindContext): Promise<boolean> {
+    const refreshed = this.loadIdentityForMind(context.mindId, context.mindPath);
+    if (!refreshed || refreshed.systemMessage === context.identity.systemMessage) {
+      return false;
+    }
+    await this.withMindSessionLock(context.mindId, async () => {
+      const current = this.minds.get(context.mindId);
+      if (!current) return;
+      current.identity = refreshed;
+
+      const activeConversation = this.getActiveConversationRecord(context.mindId);
+      if (activeConversation?.hasMessages === false && current.session) {
+        await this.createNewConversationSession(context.mindId, current, activeConversation.sessionId);
+      }
+    });
+    return true;
+  }
+
+  private isGlobalCustomInstructionsEnabledForMind(mindId: string): boolean {
+    return this.knownMindRecords.get(mindId)?.globalCustomInstructionsDisabled !== true;
+  }
+
+  private getGlobalCustomInstructionsOverrideFields(record: Pick<MindRecord, 'globalCustomInstructionsDisabled'> | undefined): Pick<MindRecord, 'globalCustomInstructionsDisabled'> {
+    return record?.globalCustomInstructionsDisabled === true ? { globalCustomInstructionsDisabled: true } : {};
+  }
+
+  private getConversationSystemMessage(conversation: ChamberConversationRecord, currentSystemMessage: string): string {
+    return conversation.hasMessages === false
+      ? currentSystemMessage
+      : conversation.systemMessage ?? currentSystemMessage;
+  }
+
+  private withGlobalCustomInstructionsPreference(record: MindRecord, enabled: boolean): MindRecord {
+    if (!enabled) {
+      return { ...record, globalCustomInstructionsDisabled: true };
+    }
+    const { globalCustomInstructionsDisabled: _globalCustomInstructionsDisabled, ...rest } = record;
+    void _globalCustomInstructionsDisabled;
+    return rest;
+  }
 
   private resolveMindPath(mindPath: string): string {
     let current = mindPath;
@@ -1240,7 +1364,7 @@ export class MindManager extends EventEmitter {
     const context = this.minds.get(mindId);
     if (!context) throw new Error(`Mind ${mindId} not found`);
 
-    const refreshedIdentity = this.identityLoader.load(context.mindPath);
+    const refreshedIdentity = this.loadIdentityForMind(mindId, context.mindPath);
     if (refreshedIdentity) {
       context.identity = refreshedIdentity;
     }
@@ -1316,6 +1440,7 @@ export class MindManager extends EventEmitter {
       path: context.mindPath,
       ...(context.selectedModel ? { selectedModel: context.selectedModel } : {}),
       ...(context.selectedModelProvider ? { selectedModelProvider: context.selectedModelProvider } : {}),
+      ...this.getGlobalCustomInstructionsOverrideFields(existingRecord),
       ...(context.activeSessionId ? { activeSessionId: context.activeSessionId } : {}),
       ...(existingRecord?.conversations ? { conversations: existingRecord.conversations } : {}),
     });
@@ -1364,13 +1489,7 @@ export class MindManager extends EventEmitter {
       configDir: this.getCopilotRuntimeConfigDir(),
       enableConfigDiscovery: false,
       tools,
-      systemMessage: {
-        mode: 'customize',
-        sections: {
-          identity: { action: 'replace', content: systemMessage },
-          tone: { action: 'remove' },
-        },
-      },
+      systemMessage: this.buildSystemMessageConfig(systemMessage),
       onPermissionRequest,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(skillDirectories.length > 0 ? { skillDirectories } : {}),
@@ -1397,12 +1516,22 @@ export class MindManager extends EventEmitter {
     return session;
   }
 
+  private buildSystemMessageConfig(systemMessage: string): NonNullable<SessionConfig['systemMessage']> {
+    return {
+      mode: 'customize',
+      sections: {
+        identity: { action: 'replace', content: systemMessage },
+        tone: { action: 'remove' },
+      },
+    };
+  }
+
   private async resumeSessionForMind(
     client: CopilotClient,
     kind: MindSessionKind,
     sessionId: string,
     mindPath: string,
-    systemMessage: string,
+    systemMessage: string | undefined,
     tools: Tool[],
     onUserInputRequest?: UserInputHandler,
     onPermissionRequest: PermissionHandler = approveForSessionCompat,
@@ -1421,13 +1550,6 @@ export class MindManager extends EventEmitter {
       workingDirectory: mindPath,
       enableConfigDiscovery: false,
       tools,
-      systemMessage: {
-        mode: 'customize',
-        sections: {
-          identity: { action: 'replace', content: systemMessage },
-          tone: { action: 'remove' },
-        },
-      },
       onPermissionRequest,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(skillDirectories.length > 0 ? { skillDirectories } : {}),
@@ -1438,6 +1560,7 @@ export class MindManager extends EventEmitter {
       ...(effectiveModel ? { model: effectiveModel } : {}),
       ...(provider ? { provider } : {}),
       ...(onUserInputRequest ? { onUserInputRequest } : {}),
+      ...(systemMessage ? { systemMessage: this.buildSystemMessageConfig(systemMessage) } : {}),
     };
     const session = await client.resumeSession(sessionId, sessionConfig);
     if (useSetApproveAllShortcut) {
@@ -1476,11 +1599,12 @@ export class MindManager extends EventEmitter {
     client: CopilotClient,
     kind: MindSessionKind,
     mindPath: string,
-    systemMessage: string,
+    systemMessage: string | undefined,
     tools: Tool[],
     conversationSessionId: string,
     model?: string,
     modelProvider?: ModelProvider,
+    reattachSystemMessage = systemMessage,
   ): Promise<CopilotSession> {
     try {
       return await this.resumeSessionForMind(
@@ -1516,13 +1640,16 @@ export class MindManager extends EventEmitter {
         );
       } catch (legacyError) {
         if (!isStaleSessionError(legacyError)) throw legacyError;
+        if (!reattachSystemMessage) {
+          throw new Error(`Cannot reattach SDK session ${conversationSessionId} without a system message snapshot.`, { cause: legacyError });
+        }
       }
       log.warn(`SDK session ${conversationSessionId} was not found in either session-state root; reattaching by recreating the session under the same id.`);
       return this.createSessionForMind({
         kind,
         client,
         mindPath,
-        systemMessage,
+        systemMessage: reattachSystemMessage,
         tools,
         model,
         modelProvider,
@@ -1589,6 +1716,7 @@ export class MindManager extends EventEmitter {
         path: mind.mindPath,
         ...(mind.selectedModel ? { selectedModel: mind.selectedModel } : {}),
         ...(mind.selectedModelProvider ? { selectedModelProvider: mind.selectedModelProvider } : {}),
+        ...this.getGlobalCustomInstructionsOverrideFields(this.knownMindRecords.get(mind.mindId)),
         ...(mind.activeSessionId ? { activeSessionId: mind.activeSessionId } : {}),
         ...(this.knownMindRecords.get(mind.mindId)?.conversations ? { conversations: this.knownMindRecords.get(mind.mindId)?.conversations } : {}),
       });
@@ -1596,7 +1724,7 @@ export class MindManager extends EventEmitter {
     return Array.from(records.values());
   }
 
-  private createConversationRecord(mindId: string): ChamberConversationRecord {
+  private createConversationRecord(mindId: string, systemMessage: string): ChamberConversationRecord {
     const now = new Date().toISOString();
     return {
       sessionId: `chamber-${mindId}-${randomUUID()}`,
@@ -1605,6 +1733,7 @@ export class MindManager extends EventEmitter {
       updatedAt: now,
       kind: 'chat',
       hasMessages: false,
+      systemMessage,
     };
   }
 
@@ -1612,16 +1741,21 @@ export class MindManager extends EventEmitter {
     mindId: string,
     sessionId: string,
     conversations: ChamberConversationRecord[] = [],
+    systemMessage?: string,
   ): ChamberConversationRecord {
-    return conversations.find((conversation) => conversation.sessionId === sessionId)
-      ?? {
-        sessionId,
-        title: `New chat · ${new Date().toLocaleString()}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        kind: 'chat',
-        hasMessages: false,
-      };
+    const existing = conversations.find((conversation) => conversation.sessionId === sessionId);
+    if (existing) {
+      return existing.systemMessage || !systemMessage ? existing : { ...existing, systemMessage };
+    }
+    return {
+      sessionId,
+      title: `New chat · ${new Date().toLocaleString()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      kind: 'chat',
+      hasMessages: false,
+      ...(systemMessage ? { systemMessage } : {}),
+    };
   }
 
   private upsertConversationRecord(mindId: string, conversation: ChamberConversationRecord, replaceSessionId?: string): void {
@@ -1638,12 +1772,21 @@ export class MindManager extends EventEmitter {
     });
   }
 
-  private touchConversationRecord(mindId: string, sessionId: string): void {
+  private touchConversationRecord(mindId: string, sessionId: string, systemMessage?: string): void {
     const record = this.knownMindRecords.get(mindId);
     if (!record) return;
     this.knownMindRecords.set(mindId, {
       ...record,
       activeSessionId: sessionId,
+      ...(record.conversations && systemMessage
+        ? {
+          conversations: record.conversations.map((conversation) =>
+            conversation.sessionId === sessionId && !conversation.systemMessage
+              ? { ...conversation, systemMessage }
+              : conversation,
+          ),
+        }
+        : {}),
     });
   }
 

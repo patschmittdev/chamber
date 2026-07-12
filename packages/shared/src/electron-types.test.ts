@@ -17,6 +17,8 @@ describe('ElectronAPI contract', () => {
     expectTypeOf<ElectronAPI['chat']['onEvent']>().toBeFunction();
 
     expectTypeOf<ElectronAPI['mind']['list']>().toBeFunction();
+    expectTypeOf<ElectronAPI['mind']['setGlobalCustomInstructionsEnabled']>().toBeFunction();
+    expectTypeOf<ElectronAPI['mind']['getInstructionPrecedence']>().toBeFunction();
     expectTypeOf<ElectronAPI['mind']['onMindChanged']>().toBeFunction();
 
     expectTypeOf<ElectronAPI['lens']['getViews']>().toBeFunction();

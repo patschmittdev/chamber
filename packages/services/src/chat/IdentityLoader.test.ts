@@ -193,6 +193,17 @@ describe('IdentityLoader', () => {
       expect(result?.systemMessage).toContain('Always answer concisely.');
     });
 
+    it('skips global custom instructions when the mind opts out', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+      const withInstructions = new IdentityLoader(() => [], () => 'Always answer concisely.');
+      const result = withInstructions.load('/tmp/test', { includeGlobalCustomInstructions: false });
+      expect(result?.systemMessage).not.toContain('## Custom Instructions');
+      expect(result?.systemMessage).not.toContain('Always answer concisely.');
+      expect(result?.systemMessage).toContain('## Chamber');
+    });
+
     it('does not inject a custom instructions section when instructions are empty', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
@@ -232,6 +243,81 @@ describe('IdentityLoader', () => {
       const customIndex = systemMessage.indexOf('## Custom Instructions');
       expect(customIndex).toBeLessThan(systemMessage.indexOf('## Chamber'));
       expect(customIndex).toBeLessThan(systemMessage.indexOf('## Tools'));
+    });
+
+    it('returns sanitized instruction precedence metadata without prompt content', () => {
+      vi.mocked(fs.existsSync).mockImplementation((candidate) => {
+        const normalized = String(candidate).replace(/\\/g, '/');
+        return [
+          '/tmp/test/SOUL.md',
+          '/tmp/test/.working-memory',
+        ].includes(normalized);
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((candidate) => {
+        const normalized = String(candidate).replace(/\\/g, '/');
+        if (normalized.endsWith('SOUL.md')) return '# Q\nPrivate soul text';
+        if (normalized.endsWith('memory.md')) return 'Private memory text';
+        return '';
+      });
+      vi.mocked(fs.readdirSync).mockImplementation((candidate) => {
+        const normalized = String(candidate).replace(/\\/g, '/');
+        if (normalized.endsWith('/.working-memory')) {
+          return ['memory.md'] as unknown as ReturnType<typeof fs.readdirSync>;
+        }
+        return [] as unknown as ReturnType<typeof fs.readdirSync>;
+      });
+      const loaderWithInstructions = new IdentityLoader(() => [], () => 'Private global instruction');
+
+      const precedence = loaderWithInstructions.getInstructionPrecedence('/tmp/test');
+
+      expect(precedence?.mindName).toBe('Q');
+      expect(precedence?.layers.map((layer) => layer.id)).toEqual([
+        'mind-identity',
+        'working-memory',
+        'global-custom-instructions',
+        'chamber-guidance',
+        'tools',
+      ]);
+      expect(precedence?.hasGlobalCustomInstructions).toBe(true);
+      expect(precedence?.globalCustomInstructionsEnabled).toBe(true);
+      const serialized = JSON.stringify(precedence);
+      expect(serialized).not.toContain('Private soul text');
+      expect(serialized).not.toContain('Private memory text');
+      expect(serialized).not.toContain('Private global instruction');
+    });
+
+    it('marks global custom instructions disabled in precedence metadata when the mind opts out', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+      const withInstructions = new IdentityLoader(() => [], () => 'Always answer concisely.');
+
+      const precedence = withInstructions.getInstructionPrecedence('/tmp/test', { includeGlobalCustomInstructions: false });
+      const globalLayer = precedence?.layers.find((layer) => layer.id === 'global-custom-instructions');
+
+      expect(precedence?.hasGlobalCustomInstructions).toBe(true);
+      expect(precedence?.globalCustomInstructionsEnabled).toBe(false);
+      expect(globalLayer).toMatchObject({
+        present: true,
+        enabled: false,
+        included: false,
+      });
+    });
+
+    it('marks empty global custom instructions as not present in precedence metadata', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+
+      const precedence = new IdentityLoader(() => [], () => '   ').getInstructionPrecedence('/tmp/test');
+      const globalLayer = precedence?.layers.find((layer) => layer.id === 'global-custom-instructions');
+
+      expect(precedence?.hasGlobalCustomInstructions).toBe(false);
+      expect(globalLayer).toMatchObject({
+        present: false,
+        enabled: true,
+        included: false,
+      });
     });
   });
 });

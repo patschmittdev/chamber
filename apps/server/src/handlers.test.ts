@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   addMindHandler,
   cancelChatHandler,
+  getConfigHandler,
   listModelsHandler,
   newConversationHandler,
   sendChatHandler,
@@ -38,6 +39,54 @@ describe('server handlers', () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid mind directory' });
+  });
+
+  it('redacts persisted prompt snapshots from the config API', async () => {
+    const response = await getConfigHandler({
+      method: 'GET',
+      path: '/api/config',
+      headers: new Headers(),
+    }, makeContext({
+      getConfig: () => ({
+        version: 2,
+        minds: [{
+          id: 'dude-1234',
+          path: 'C:\\agents\\dude',
+          conversations: [{
+            sessionId: 'conversation-1',
+            title: 'Draft',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            kind: 'chat',
+            hasMessages: true,
+            systemMessage: 'working-memory secret prompt',
+          }],
+        }],
+        activeMindId: 'dude-1234',
+        activeLogin: null,
+        theme: 'dark',
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      version: 2,
+      minds: [{
+        id: 'dude-1234',
+        path: 'C:\\agents\\dude',
+        conversations: [{
+          sessionId: 'conversation-1',
+          title: 'Draft',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          kind: 'chat',
+          hasMessages: true,
+        }],
+      }],
+      activeMindId: 'dude-1234',
+      activeLogin: null,
+      theme: 'dark',
+    });
   });
 
   it('sends chat through the server context', async () => {

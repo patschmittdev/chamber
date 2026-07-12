@@ -3,7 +3,7 @@ import { ChatService } from './ChatService';
 import { TurnQueue } from './TurnQueue';
 import { Logger } from '../logger';
 import type { MindManager } from '../mind';
-import type { ChatMessage, ConversationEventRef, ConversationSummary } from '@chamber/shared/types';
+import type { ChatMessage, ConversationEventRef, ConversationSummary, MindInstructionPrecedence } from '@chamber/shared/types';
 
 type AllEventsHandler = (event: unknown) => void;
 type TypedHandler = (event: unknown) => void;
@@ -75,6 +75,14 @@ const validModelClient = {
   listModels: vi.fn(async () => [{ id: 'm1', name: 'Model 1', extra: true }]),
 };
 
+const defaultInstructionPrecedence: MindInstructionPrecedence = {
+  mindId: 'valid-mind',
+  mindName: 'Valid Mind',
+  globalCustomInstructionsEnabled: true,
+  hasGlobalCustomInstructions: true,
+  layers: [],
+};
+
 const mockMindManager = {
   getMind: vi.fn((mindId: string) => {
     if (mindId === 'valid-mind') {
@@ -88,6 +96,14 @@ const mockMindManager = {
     }
     return undefined;
   }),
+  awaitRestore: vi.fn(async () => undefined),
+  listMinds: vi.fn(() => [{
+    mindId: 'valid-mind',
+    mindPath: 'C:\\agents\\valid-mind',
+    identity: { name: 'Valid Mind', systemMessage: '' },
+    status: 'ready' as const,
+  }]),
+  refreshLoadedMindIdentity: vi.fn(async () => false),
   recreateSession: vi.fn(),
   recoverActiveConversationSession: vi.fn(),
   startNewConversation: vi.fn(),
@@ -101,6 +117,8 @@ const mockMindManager = {
   truncateActiveConversation: vi.fn(async (): Promise<ConversationSummary[]> => [{ sessionId: 'session-1', title: 'Chat', createdAt: '', updatedAt: '', kind: 'chat', active: true, hasMessages: true }]),
   getActiveConversationMessages: vi.fn(async (): Promise<ChatMessage[]> => []),
   getConversationEventRefs: vi.fn(async (): Promise<ConversationEventRef[]> => []),
+  setMindGlobalCustomInstructionsEnabled: vi.fn(async (): Promise<MindInstructionPrecedence> => defaultInstructionPrecedence),
+  getMindInstructionPrecedence: vi.fn((): MindInstructionPrecedence => defaultInstructionPrecedence),
 };
 
 describe('ChatService', () => {
@@ -112,6 +130,15 @@ describe('ChatService', () => {
     allEventsHandlers.length = 0;
     typedHandlers.clear();
     validModelClient.modelsCache = {};
+    mockMindManager.setMindGlobalCustomInstructionsEnabled.mockResolvedValue(defaultInstructionPrecedence);
+    mockMindManager.getMindInstructionPrecedence.mockReturnValue(defaultInstructionPrecedence);
+    mockMindManager.listMinds.mockReturnValue([{
+      mindId: 'valid-mind',
+      mindPath: 'C:\\agents\\valid-mind',
+      identity: { name: 'Valid Mind', systemMessage: '' },
+      status: 'ready',
+    }]);
+    mockMindManager.refreshLoadedMindIdentity.mockResolvedValue(false);
     turnQueue = new TurnQueue();
     svc = new ChatService(mockMindManager as unknown as MindManager, turnQueue, () => ({
       currentDateTime: '2026-05-05T15:37:12.065Z',
@@ -861,6 +888,71 @@ describe('ChatService', () => {
 
       expect(emit1).toHaveBeenCalledWith({ type: 'done' });
       expect(emit2).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('serializes global custom instructions preference changes behind active turns', async () => {
+      const order: string[] = [];
+      const idleCallbacks: (() => void)[] = [];
+
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        if (eventOrCb === 'session.idle' && cb) {
+          idleCallbacks.push(cb);
+        }
+        return vi.fn();
+      });
+      mockSession.send.mockImplementation(async () => {
+        order.push('send');
+      });
+      mockMindManager.setMindGlobalCustomInstructionsEnabled.mockImplementation(async () => {
+        order.push('preference');
+        return { ...defaultInstructionPrecedence, globalCustomInstructionsEnabled: false };
+      });
+
+      const send = svc.sendMessage('valid-mind', 'hello', 'msg-1', vi.fn());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const preference = svc.setMindGlobalCustomInstructionsEnabled('valid-mind', false);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(order).toEqual(['send']);
+
+      idleCallbacks.shift()?.();
+      await Promise.all([send, preference]);
+
+      expect(order).toEqual(['send', 'preference']);
+      expect(mockMindManager.setMindGlobalCustomInstructionsEnabled).toHaveBeenCalledWith('valid-mind', false);
+    });
+
+    it('serializes global custom instructions content refreshes behind active turns', async () => {
+      const order: string[] = [];
+      const idleCallbacks: (() => void)[] = [];
+
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        if (eventOrCb === 'session.idle' && cb) {
+          idleCallbacks.push(cb);
+        }
+        return vi.fn();
+      });
+      mockSession.send.mockImplementation(async () => {
+        order.push('send');
+      });
+      mockMindManager.refreshLoadedMindIdentity.mockImplementation(async () => {
+        order.push('refresh');
+        return true;
+      });
+
+      const send = svc.sendMessage('valid-mind', 'hello', 'msg-1', vi.fn());
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const refresh = svc.refreshLoadedMindIdentities();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(order).toEqual(['send']);
+
+      idleCallbacks.shift()?.();
+      await Promise.all([send, refresh]);
+
+      expect(order).toEqual(['send', 'refresh']);
+      expect(mockMindManager.refreshLoadedMindIdentity).toHaveBeenCalledWith('valid-mind');
+      await expect(refresh).resolves.toEqual({ refreshedCount: 1 });
     });
   });
 

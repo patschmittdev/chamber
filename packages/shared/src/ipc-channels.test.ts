@@ -23,6 +23,8 @@ describe('IPC channel constants', () => {
     expect(IPC.MIND.LIST).toBe('mind:list');
     expect(IPC.MIND.SET_ACTIVE).toBe('mind:setActive');
     expect(IPC.MIND.SET_MODEL).toBe('mind:setModel');
+    expect(IPC.MIND.SET_GLOBAL_CUSTOM_INSTRUCTIONS_ENABLED).toBe('mind:setGlobalCustomInstructionsEnabled');
+    expect(IPC.MIND.GET_INSTRUCTION_PRECEDENCE).toBe('mind:getInstructionPrecedence');
     expect(IPC.MIND.SELECT_DIRECTORY).toBe('mind:selectDirectory');
     expect(IPC.MIND.OPEN_WINDOW).toBe('mind:openWindow');
     expect(IPC.MIND.CHANGED).toBe('mind:changed');

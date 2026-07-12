@@ -10,6 +10,7 @@ import { AppStateProvider } from '../../lib/store';
 import { APPEARANCE_STORAGE_KEYS } from '../../lib/appearance';
 import { appearanceStore } from '../../lib/appearanceStore';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
+import type { MindContext, MindInstructionPrecedence } from '@chamber/shared/types';
 
 // Settings is now tabbed. Tests that assert on Account / Marketplaces /
 // feature-specific content must first activate that tab (the Profile tab is the
@@ -17,6 +18,76 @@ import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
 function gotoTab(label: 'Profile' | 'Custom instructions' | 'Account' | 'Marketplaces' | 'Appearance' | 'Local LLM' | 'Voice dictation') {
   const nav = screen.getByRole('navigation', { name: /settings sections/i });
   fireEvent.click(within(nav).getByRole('button', { name: label }));
+}
+
+const settingsMind: MindContext = {
+  mindId: 'q-a1b2',
+  mindPath: 'C:\\agents\\q',
+  identity: { name: 'Q', systemMessage: 'Secret prompt content' },
+  status: 'ready',
+};
+
+function makePrecedence(overrides: Partial<MindInstructionPrecedence> = {}): MindInstructionPrecedence {
+  const enabled = overrides.globalCustomInstructionsEnabled ?? true;
+  return {
+    mindId: 'q-a1b2',
+    mindName: 'Q',
+    globalCustomInstructionsEnabled: enabled,
+    hasGlobalCustomInstructions: overrides.hasGlobalCustomInstructions ?? true,
+    layers: overrides.layers ?? [
+      {
+        id: 'mind-identity',
+        label: 'Mind identity',
+        source: 'SOUL.md and .github/agents/*.agent.md',
+        description: 'Defines the mind role, personality, and agent-specific instructions.',
+        included: true,
+        present: true,
+        enabled: true,
+        contentExposed: false,
+      },
+      {
+        id: 'working-memory',
+        label: 'Working memory',
+        source: '.working-memory/memory.md, rules.md, and log.md',
+        description: 'Private mind memory is included when present. Its contents are not shown here.',
+        included: true,
+        present: true,
+        enabled: true,
+        contentExposed: false,
+      },
+      {
+        id: 'global-custom-instructions',
+        label: 'Global custom instructions',
+        source: 'Settings > Custom instructions',
+        description: 'Operator preferences shared across minds when this mind inherits them.',
+        included: enabled,
+        present: true,
+        enabled,
+        contentExposed: false,
+      },
+      {
+        id: 'chamber-guidance',
+        label: 'Chamber safety guidance',
+        source: 'Chamber runtime',
+        description: 'Host operating and safety guidance remains authoritative for every mind.',
+        included: true,
+        present: true,
+        enabled: true,
+        contentExposed: false,
+      },
+      {
+        id: 'tools',
+        label: 'Installed tool guidance',
+        source: 'Installed Chamber tools',
+        description: 'Tool capability hints do not override Chamber safety guidance.',
+        included: false,
+        present: false,
+        enabled: true,
+        contentExposed: false,
+      },
+    ],
+    ...overrides,
+  };
 }
 
 vi.mock('./VoiceDictationSettingsSection', async () => {
@@ -288,6 +359,71 @@ describe('SettingsView', () => {
       expect(api.userProfile.save).toHaveBeenCalledWith({ customInstructions: 'Prefer TypeScript examples.' });
     });
     expect(await screen.findByText(/custom instructions saved/i)).toBeTruthy();
+  });
+
+  it('shows per-mind inheritance status and ordered precedence without prompt content', async () => {
+    (api.mind.getInstructionPrecedence as ReturnType<typeof vi.fn>).mockResolvedValue(makePrecedence());
+    render(
+      <AppStateProvider testInitialState={{ minds: [settingsMind] }}>
+        <SettingsView />
+      </AppStateProvider>,
+    );
+    gotoTab('Custom instructions');
+
+    expect(await screen.findByText('Per-mind inheritance')).toBeTruthy();
+    expect(screen.getByText(/Chamber safety guidance remains authoritative/i)).toBeTruthy();
+    expect(await screen.findByText('Inherits global custom instructions.')).toBeTruthy();
+    expect(screen.queryByText('Secret prompt content')).toBeNull();
+
+    const list = await screen.findByRole('list', { name: /instruction precedence for q/i });
+    const items = within(list).getAllByRole('listitem').map((item) => item.textContent ?? '');
+    expect(items.map((item) => item.replace(/\s+/g, ' ').trim())).toEqual([
+      expect.stringContaining('Mind identity'),
+      expect.stringContaining('Working memory'),
+      expect.stringContaining('Global custom instructions'),
+      expect.stringContaining('Chamber safety guidance'),
+      expect.stringContaining('Installed tool guidance'),
+    ]);
+  });
+
+  it('toggles per-mind global custom instructions inheritance', async () => {
+    (api.mind.getInstructionPrecedence as ReturnType<typeof vi.fn>).mockResolvedValue(makePrecedence());
+    (api.mind.setGlobalCustomInstructionsEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(makePrecedence({
+      globalCustomInstructionsEnabled: false,
+    }));
+    render(
+      <AppStateProvider testInitialState={{ minds: [settingsMind] }}>
+        <SettingsView />
+      </AppStateProvider>,
+    );
+    gotoTab('Custom instructions');
+
+    const toggle = await screen.findByRole('checkbox', { name: /apply global custom instructions to q/i });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(api.mind.setGlobalCustomInstructionsEnabled).toHaveBeenCalledWith('q-a1b2', false);
+    });
+    expect(await screen.findByText('Q now skips global custom instructions.')).toBeTruthy();
+    expect(await screen.findByText('Global custom instructions are disabled for this mind.')).toBeTruthy();
+  });
+
+  it('shows when inheritance is enabled but no global custom instructions are saved', async () => {
+    (api.mind.getInstructionPrecedence as ReturnType<typeof vi.fn>).mockResolvedValue(makePrecedence({
+      hasGlobalCustomInstructions: false,
+      layers: makePrecedence().layers.map((layer) => layer.id === 'global-custom-instructions'
+        ? { ...layer, present: false, included: false }
+        : layer),
+    }));
+    render(
+      <AppStateProvider testInitialState={{ minds: [settingsMind] }}>
+        <SettingsView />
+      </AppStateProvider>,
+    );
+    gotoTab('Custom instructions');
+
+    expect(await screen.findByText('Inheritance is enabled, but no global custom instructions are saved.')).toBeTruthy();
   });
 
   it('shows the app version from package.json', async () => {

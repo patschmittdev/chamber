@@ -3,7 +3,7 @@
 
 import type { MindManager } from '../mind';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, ModelInfo } from '@chamber/shared/types';
+import type { ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, MindInstructionPrecedence, ModelInfo } from '@chamber/shared/types';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import type { CopilotSession } from '../mind/types';
 import { isStaleSessionError, SEND_TIMEOUT_MS, sendTimeoutError } from '@chamber/shared/sessionErrors';
@@ -117,6 +117,25 @@ export class ChatService {
   /** Ordered references to persisted user/assistant turns, for reconciling live messages with event ids. */
   async getConversationEvents(mindId: string): Promise<ConversationEventRef[]> {
     return this.mindManager.getConversationEventRefs(mindId);
+  }
+
+  async setMindGlobalCustomInstructionsEnabled(mindId: string, enabled: boolean): Promise<MindInstructionPrecedence> {
+    return this.turnQueue.enqueue(mindId, () => this.mindManager.setMindGlobalCustomInstructionsEnabled(mindId, enabled));
+  }
+
+  getMindInstructionPrecedence(mindId: string): MindInstructionPrecedence {
+    return this.mindManager.getMindInstructionPrecedence(mindId);
+  }
+
+  async refreshLoadedMindIdentities(): Promise<{ refreshedCount: number }> {
+    await this.mindManager.awaitRestore();
+    let refreshedCount = 0;
+    await Promise.all(this.mindManager.listMinds().map((mind) =>
+      this.turnQueue.enqueue(mind.mindId, async () => {
+        if (await this.mindManager.refreshLoadedMindIdentity(mind.mindId)) refreshedCount += 1;
+      }),
+    ));
+    return { refreshedCount };
   }
 
   /**

@@ -186,6 +186,20 @@ export function installBrowserApi(): void {
       list: () => client.listMinds() as Promise<MindContext[]>,
       setActive: async () => unavailable('active mind changes'),
       setModel: async () => null,
+      setGlobalCustomInstructionsEnabled: async (mindId, enabled) => ({
+        mindId,
+        mindName: '',
+        globalCustomInstructionsEnabled: enabled,
+        hasGlobalCustomInstructions: false,
+        layers: [],
+      }),
+      getInstructionPrecedence: async (mindId) => ({
+        mindId,
+        mindName: '',
+        globalCustomInstructionsEnabled: true,
+        hasGlobalCustomInstructions: false,
+        layers: [],
+      }),
       selectDirectory: async () => window.prompt('Enter a local agent folder path on this computer:')?.trim() || null,
       openWindow: async (mindId) => {
         window.open(`/?mindId=${encodeURIComponent(mindId)}`, '_blank', 'noopener,noreferrer');

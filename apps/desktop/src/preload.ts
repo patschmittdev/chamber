@@ -42,6 +42,10 @@ const electronAPI: ElectronAPI = {
     list: () => ipcRenderer.invoke(IPC.MIND.LIST),
     setActive: (mindId) => ipcRenderer.invoke(IPC.MIND.SET_ACTIVE, mindId),
     setModel: (mindId, model) => ipcRenderer.invoke(IPC.MIND.SET_MODEL, mindId, model),
+    setGlobalCustomInstructionsEnabled: (mindId, enabled) =>
+      ipcRenderer.invoke(IPC.MIND.SET_GLOBAL_CUSTOM_INSTRUCTIONS_ENABLED, mindId, enabled),
+    getInstructionPrecedence: (mindId) =>
+      ipcRenderer.invoke(IPC.MIND.GET_INSTRUCTION_PRECEDENCE, mindId),
     selectDirectory: () => ipcRenderer.invoke(IPC.MIND.SELECT_DIRECTORY),
     openWindow: (mindId) => ipcRenderer.invoke(IPC.MIND.OPEN_WINDOW, mindId),
     onMindChanged: (callback) => createIpcListener(ipcRenderer, IPC.MIND.CHANGED, callback),

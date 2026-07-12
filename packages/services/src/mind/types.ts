@@ -21,6 +21,7 @@ export interface InternalMindContext extends MindContext {
   client: CopilotClient;
   session: CopilotSession | null;
   activeSessionId?: string;
+  activeSessionSystemMessage?: string;
   // Override the readonly identity from MindContext so internal callers can
   // refresh it (e.g. when newly installed marketplace tools change the
   // system message advertised at the start of a new conversation).
