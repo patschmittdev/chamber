@@ -141,9 +141,14 @@ function readExactDependencyVersion(packageJsonPath, packageName) {
 
 function readRequiredVersions(runtimeManifestRoot = manifestDir) {
   const packageJsonPath = path.join(runtimeManifestRoot, 'package.json');
+  const pkg = readJson(packageJsonPath);
+  const reportedCliVersion = typeof pkg.copilotReportedVersion === 'string'
+    ? pkg.copilotReportedVersion
+    : null;
   return {
     sdk: readExactDependencyVersion(packageJsonPath, '@github/copilot-sdk'),
     cli: readExactDependencyVersion(packageJsonPath, '@github/copilot'),
+    reportedCli: reportedCliVersion ?? readExactDependencyVersion(packageJsonPath, '@github/copilot').split('-')[0],
   };
 }
 
@@ -317,10 +322,9 @@ function smokeTestRuntime(binaryPath, expectedCliVersion) {
     const output = runCommandCapture(binaryPath, ['--version'], {
       env: createIsolatedCopilotEnvironment(isolatedHome),
     });
-    const reportedVersion = expectedCliVersion.split('-')[0];
-    if (!output.includes(reportedVersion)) {
+    if (!output.includes(expectedCliVersion)) {
       throw new Error(
-        `Copilot CLI smoke test output did not include ${reportedVersion}. Output: ${output.trim()}`
+        `Copilot CLI smoke test output did not include ${expectedCliVersion}. Output: ${output.trim()}`
       );
     }
   } finally {
@@ -382,7 +386,7 @@ function prepareCopilotRuntime({ targetPlatform, targetArch }) {
   if (fs.existsSync(targetDir)) {
     try {
       const existing = validateRuntimeDir(targetDir, normalizedPlatform, normalizedArch, requiredVersions);
-      smokeTestRuntime(existing.binaryPath, requiredVersions.cli);
+      smokeTestRuntime(existing.binaryPath, requiredVersions.reportedCli);
       console.log(
         `[CopilotRuntime] Existing runtime is ready sdk=${existing.installedSdkVersion} `
         + `cli=${existing.installedCliVersion} target=${normalizedPlatform}-${normalizedArch}`
@@ -419,7 +423,7 @@ function prepareCopilotRuntime({ targetPlatform, targetArch }) {
   }
 
   const prepared = validateRuntimeDir(stagingDir, normalizedPlatform, normalizedArch, requiredVersions);
-  smokeTestRuntime(prepared.binaryPath, requiredVersions.cli);
+  smokeTestRuntime(prepared.binaryPath, requiredVersions.reportedCli);
   promoteRuntime();
 
   console.log(

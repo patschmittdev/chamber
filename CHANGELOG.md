@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Restore legacy conversation resume fallback** — Conversation resume now falls back from Chamber's current SDK session-state root to the legacy default Copilot session-state root before recreating a missing session, so pre-move chat history hydrates instead of opening empty.
-- **Refresh the packaged Copilot runtime** — Pins @github/copilot-sdk 1.0.6-preview.1 with its compatible @github/copilot 1.0.69-1 runtime and updates Chamber for the SDK's current session configuration and event contracts.
+- **Refresh the packaged Copilot runtime** — Pins @github/copilot-sdk 1.0.6-preview.1 with its compatible @github/copilot 1.0.69-1 package, records the bundled CLI's reported 1.0.71-0 version for package smoke, and updates Chamber for the SDK's current session configuration and event contracts.
 - **Stop Copilot CLI auth popups after sign-in** — Pass Chamber's stored GitHub OAuth token into SDK-created CLI clients and disable CLI auto-login so device-flow browser prompts only occur from Chamber's explicit sign-in flow.
 - **Align desktop appearance before first paint** - Desktop theme preference, font scale, and density now persist through ConfigService while browser mode keeps localStorage, with preload backed first paint and native chrome parity. Fixes ianphil/chamber#401
 - **Chatroom @mentions target selected agents** - Routes selected @mentions by stable mindId, falls back only for exact unique names, avoids broadcasts when mentioned agents are disabled or unavailable, and preserves hydrated event IDs for message reconciliation (#48)

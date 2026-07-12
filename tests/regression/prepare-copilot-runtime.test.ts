@@ -12,6 +12,7 @@ async function loadPrepareRuntime(): Promise<{
   getKeepPrebuildTriples: (platform: string, arch: string) => Set<string>;
   getPlatformPackageName: (platform: string, arch: string) => string;
   pruneForeignPrebuilds: (modulesDir: string, platform: string, arch: string) => string[];
+  readRequiredVersions: (runtimeManifestRoot?: string) => { sdk: string; cli: string; reportedCli: string };
   promoteDirectory: (
     dirs: { stagingDir: string; targetDir: string; backupDir: string },
     fsImpl?: typeof fs,
@@ -27,6 +28,7 @@ async function loadPrepareRuntime(): Promise<{
     getKeepPrebuildTriples: (platform: string, arch: string) => Set<string>;
     getPlatformPackageName: (platform: string, arch: string) => string;
     pruneForeignPrebuilds: (modulesDir: string, platform: string, arch: string) => string[];
+    readRequiredVersions: (runtimeManifestRoot?: string) => { sdk: string; cli: string; reportedCli: string };
     promoteDirectory: (
       dirs: { stagingDir: string; targetDir: string; backupDir: string },
       fsImpl?: typeof fs,
@@ -66,6 +68,49 @@ describe('prepare-copilot-runtime', () => {
       HOME: 'C:\\temp\\copilot-home',
       USERPROFILE: 'C:\\temp\\copilot-home',
     });
+  });
+
+  it('allows the runtime manifest to pin a reported CLI version separately from the package version', async () => {
+    const { readRequiredVersions } = await loadPrepareRuntime();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-copilot-runtime-manifest-'));
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+      dependencies: {
+        '@github/copilot': '1.0.69-1',
+        '@github/copilot-sdk': '1.0.6-preview.1',
+      },
+      copilotReportedVersion: '1.0.71-0',
+    }, null, 2));
+
+    try {
+      expect(readRequiredVersions(root)).toEqual({
+        sdk: '1.0.6-preview.1',
+        cli: '1.0.69-1',
+        reportedCli: '1.0.71-0',
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults the reported CLI version to the package semver without prerelease metadata', async () => {
+    const { readRequiredVersions } = await loadPrepareRuntime();
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-copilot-runtime-default-'));
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+      dependencies: {
+        '@github/copilot': '1.0.58',
+        '@github/copilot-sdk': '1.0.0-beta.8',
+      },
+    }, null, 2));
+
+    try {
+      expect(readRequiredVersions(root)).toEqual({
+        sdk: '1.0.0-beta.8',
+        cli: '1.0.58',
+        reportedCli: '1.0.58',
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('rejects cross-compiling the Copilot runtime', async () => {
