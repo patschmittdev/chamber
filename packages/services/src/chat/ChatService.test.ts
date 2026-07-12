@@ -92,10 +92,11 @@ const mockMindManager = {
   recoverActiveConversationSession: vi.fn(),
   startNewConversation: vi.fn(),
   markActiveConversationHasMessages: vi.fn(),
-  listConversationHistory: vi.fn(() => []),
+  listConversationHistory: vi.fn<() => ConversationSummary[]>(() => []),
   resumeConversation: vi.fn(async () => ({ sessionId: 'session-1', messages: [], conversations: [] })),
   deleteConversation: vi.fn(async () => ({ sessionId: 'session-1', messages: [], conversations: [] })),
   renameConversation: vi.fn(() => []),
+  getConversationMessages: vi.fn<(mindId: string, sessionId: string) => Promise<ChatMessage[]>>(async () => []),
   setMindModel: vi.fn(async () => null),
   truncateActiveConversation: vi.fn(async (): Promise<ConversationSummary[]> => [{ sessionId: 'session-1', title: 'Chat', createdAt: '', updatedAt: '', kind: 'chat', active: true, hasMessages: true }]),
   getActiveConversationMessages: vi.fn(async (): Promise<ChatMessage[]> => []),
@@ -445,6 +446,103 @@ describe('ChatService', () => {
 
       await svc.cancelMessage('valid-mind', 'msg-1');
       await send;
+    });
+  });
+
+  describe('getConversationMessages', () => {
+    it('delegates to mindManager.getConversationMessages', async () => {
+      const messages = [{ id: 'u1', role: 'user' as const, blocks: [{ type: 'text' as const, content: 'hi' }], timestamp: 1 }];
+      mockMindManager.getConversationMessages.mockResolvedValueOnce(messages);
+
+      const result = await svc.getConversationMessages('valid-mind', 'session-1');
+
+      expect(mockMindManager.getConversationMessages).toHaveBeenCalledWith('valid-mind', 'session-1');
+      expect(result).toBe(messages);
+    });
+  });
+
+  describe('exportConversation', () => {
+    it('serializes a known conversation to markdown using its summary and messages', async () => {
+      mockMindManager.listConversationHistory.mockReturnValueOnce([
+        {
+          sessionId: 'session-1',
+          title: 'Design review',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:30:00.000Z',
+          kind: 'chat',
+          active: true,
+          hasMessages: true,
+        },
+      ]);
+      mockMindManager.getConversationMessages.mockResolvedValueOnce([
+        { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'Ship it?' }], timestamp: 1 },
+      ]);
+
+      const result = await svc.exportConversation('valid-mind', 'session-1', 'markdown');
+
+      expect(result.format).toBe('markdown');
+      expect(result.filename).toBe('design-review.md');
+      expect(result.content).toContain('# Design review');
+      expect(result.content).toContain('Ship it?');
+    });
+
+    it('serializes a known conversation to json', async () => {
+      mockMindManager.listConversationHistory.mockReturnValueOnce([
+        {
+          sessionId: 'session-1',
+          title: 'Design review',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:30:00.000Z',
+          kind: 'chat',
+          active: true,
+          hasMessages: true,
+        },
+      ]);
+      mockMindManager.getConversationMessages.mockResolvedValueOnce([]);
+
+      const result = await svc.exportConversation('valid-mind', 'session-1', 'json');
+
+      expect(result.format).toBe('json');
+      expect(result.filename).toBe('design-review.json');
+      expect(JSON.parse(result.content).sessionId).toBe('session-1');
+    });
+
+    it('throws when the conversation is not in the mind history', async () => {
+      mockMindManager.listConversationHistory.mockReturnValueOnce([]);
+
+      await expect(svc.exportConversation('valid-mind', 'missing', 'markdown')).rejects.toThrow(
+        'Conversation missing not found',
+      );
+      expect(mockMindManager.getConversationMessages).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getConversationExportFilename', () => {
+    it('resolves the filename from the summary without reading the transcript', () => {
+      mockMindManager.listConversationHistory.mockReturnValueOnce([
+        {
+          sessionId: 'session-1',
+          title: 'Design review',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:30:00.000Z',
+          kind: 'chat',
+          active: true,
+          hasMessages: true,
+        },
+      ]);
+
+      const markdownName = svc.getConversationExportFilename('valid-mind', 'session-1', 'markdown');
+
+      expect(markdownName).toBe('design-review.md');
+      expect(mockMindManager.getConversationMessages).not.toHaveBeenCalled();
+    });
+
+    it('throws when the conversation is unknown', () => {
+      mockMindManager.listConversationHistory.mockReturnValueOnce([]);
+
+      expect(() => svc.getConversationExportFilename('valid-mind', 'missing', 'json')).toThrow(
+        'Conversation missing not found',
+      );
     });
   });
 

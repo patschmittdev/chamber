@@ -302,6 +302,21 @@ export interface ConversationResumeResult {
   conversations: ConversationSummary[];
 }
 
+export type ConversationExportFormat = 'markdown' | 'json';
+
+/** Serialized conversation payload produced by the chat/history service. */
+export interface ConversationExport {
+  format: ConversationExportFormat;
+  /** Suggested file name including extension (e.g. `planning-thread.md`). */
+  filename: string;
+  content: string;
+}
+
+/** Outcome of a main-process save-dialog export. */
+export type ConversationExportResult =
+  | { status: 'saved'; path: string; format: ConversationExportFormat }
+  | { status: 'canceled' };
+
 export interface MarketplaceRegistry {
   id: string;
   label: string;

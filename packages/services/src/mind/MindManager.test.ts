@@ -1066,7 +1066,7 @@ describe('MindManager', () => {
         {
           id: 'a1',
           role: 'assistant',
-          blocks: [{ type: 'text', content: 'hello human' }],
+          blocks: [{ type: 'text', sdkMessageId: 'a1', content: 'hello human' }],
           timestamp: Date.parse('2026-05-05T22:00:01.000Z'),
         },
       ]);
@@ -1270,6 +1270,151 @@ describe('MindManager', () => {
         role: 'user',
         blocks: [{ type: 'text', content: 'you should add another comment to the gh issue 125' }],
       });
+    });
+
+    it('getConversationMessages reads the active conversation from its live session without resuming', async () => {
+      const activeSession = createSessionStub();
+      activeSession.getEvents.mockResolvedValue([
+        {
+          type: 'user.message',
+          timestamp: '2026-05-05T22:00:00.000Z',
+          data: { messageId: 'u1', content: 'active content' },
+        },
+      ]);
+      mockCreateSession.mockResolvedValueOnce(activeSession);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const activeSessionId = mind.activeSessionId!;
+      manager.markActiveConversationHasMessages(mind.mindId, 'Active chat');
+      mockResumeSession.mockClear();
+
+      const messages = await manager.getConversationMessages(mind.mindId, activeSessionId);
+
+      expect(mockResumeSession).not.toHaveBeenCalled();
+      expect(activeSession.disconnect).not.toHaveBeenCalled();
+      expect(messages).toEqual([
+        {
+          id: 'u1',
+          role: 'user',
+          blocks: [{ type: 'text', content: 'active content' }],
+          timestamp: Date.parse('2026-05-05T22:00:00.000Z'),
+        },
+      ]);
+    });
+
+    it('getConversationMessages resumes an inactive conversation read-only and leaves the active session untouched', async () => {
+      const readOnlySession = createSessionStub();
+      readOnlySession.getEvents.mockResolvedValue([
+        {
+          type: 'assistant.message',
+          timestamp: '2026-05-05T22:00:01.000Z',
+          data: { messageId: 'a1', content: 'archived answer' },
+        },
+      ]);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'Existing chat');
+      await manager.startNewConversation(mind.mindId);
+      const activeSessionBefore = manager.getMind(mind.mindId)?.session;
+      const activeSessionIdBefore = manager.getMind(mind.mindId)?.activeSessionId;
+      const inactive = manager.listConversationHistory(mind.mindId).find((conversation) => !conversation.active);
+      expect(inactive).toBeDefined();
+      mockResumeSession.mockClear();
+      mockResumeSession.mockResolvedValueOnce(readOnlySession);
+
+      const messages = await manager.getConversationMessages(mind.mindId, inactive!.sessionId);
+
+      expect(mockResumeSession).toHaveBeenCalledWith(
+        inactive!.sessionId,
+        expect.objectContaining({ workingDirectory: '/tmp/agents/q' }),
+      );
+      expect(readOnlySession.disconnect).toHaveBeenCalled();
+      expect(manager.getMind(mind.mindId)?.session).toBe(activeSessionBefore);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).toBe(activeSessionIdBefore);
+      expect(messages).toEqual([
+        {
+          id: 'a1',
+          role: 'assistant',
+          blocks: [{ type: 'text', sdkMessageId: 'a1', content: 'archived answer' }],
+          timestamp: Date.parse('2026-05-05T22:00:01.000Z'),
+        },
+      ]);
+    });
+
+    it('getConversationMessages throws for an unknown conversation', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      await expect(manager.getConversationMessages(mind.mindId, 'missing-session')).rejects.toThrow(
+        'Conversation missing-session not found',
+      );
+    });
+
+    it('serializes a background read against a concurrent resume so the opened conversation is never torn down', async () => {
+      const readOnlySession = createSessionStub();
+      let releaseGetEvents: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => { releaseGetEvents = resolve; });
+      readOnlySession.getEvents.mockImplementation(async () => {
+        await gate;
+        return [
+          { type: 'assistant.message', timestamp: '2026-05-05T22:00:01.000Z', data: { messageId: 'a1', content: 'archived answer' } },
+        ];
+      });
+      const activeSession = createSessionStub();
+      activeSession.getEvents.mockResolvedValue([]);
+
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'Existing chat');
+      await manager.startNewConversation(mind.mindId);
+      const inactive = manager.listConversationHistory(mind.mindId).find((conversation) => !conversation.active);
+      expect(inactive).toBeDefined();
+
+      mockResumeSession.mockClear();
+      mockResumeSession
+        .mockResolvedValueOnce(readOnlySession)  // background read-only load (holds the lock)
+        .mockResolvedValueOnce(activeSession);   // resume, once the read releases the lock
+
+      // The read acquires the per-mind lock and parks on getEvents.
+      const readPromise = manager.getConversationMessages(mind.mindId, inactive!.sessionId);
+      await vi.waitFor(() => { expect(mockResumeSession).toHaveBeenCalledTimes(1); });
+
+      // The resume must queue behind the read rather than promote mid-read.
+      const resumePromise = manager.resumeConversation(mind.mindId, inactive!.sessionId);
+      await Promise.resolve();
+      expect(mockResumeSession).toHaveBeenCalledTimes(1);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).not.toBe(inactive!.sessionId);
+
+      releaseGetEvents?.();
+      const messages = await readPromise;
+      await resumePromise;
+
+      // The read read its transcript and disconnected only its own throwaway,
+      // which happened before the resume created the live session.
+      expect(messages).toEqual([
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', sdkMessageId: 'a1', content: 'archived answer' }], timestamp: Date.parse('2026-05-05T22:00:01.000Z') },
+      ]);
+      // The live session the user opened is intact and active.
+      expect(activeSession.disconnect).not.toHaveBeenCalled();
+      expect(manager.getMind(mind.mindId)?.session).toBe(activeSession);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).toBe(inactive!.sessionId);
+    });
+
+    it('deduplicates concurrent read-only transcript loads for the same conversation', async () => {
+      const readOnlySession = createSessionStub();
+      readOnlySession.getEvents.mockResolvedValue([
+        { type: 'assistant.message', timestamp: '2026-05-05T22:00:01.000Z', data: { messageId: 'a1', content: 'archived' } },
+      ]);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'Existing chat');
+      await manager.startNewConversation(mind.mindId);
+      const inactive = manager.listConversationHistory(mind.mindId).find((conversation) => !conversation.active);
+      mockResumeSession.mockClear();
+      mockResumeSession.mockResolvedValue(readOnlySession);
+
+      const [first, second] = await Promise.all([
+        manager.getConversationMessages(mind.mindId, inactive!.sessionId),
+        manager.getConversationMessages(mind.mindId, inactive!.sessionId),
+      ]);
+
+      expect(mockResumeSession).toHaveBeenCalledTimes(1);
+      expect(readOnlySession.disconnect).toHaveBeenCalledTimes(1);
+      expect(first).toEqual(second);
     });
 
     it('renames only Chamber-owned conversation metadata', async () => {

@@ -3,7 +3,7 @@
 
 import type { MindManager } from '../mind';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationResumeResult, ConversationSummary, ModelInfo } from '@chamber/shared/types';
+import type { ChatEvent, ChatImageAttachment, ChatMessage, ContentBlock, ConversationEventRef, ConversationExport, ConversationExportFormat, ConversationResumeResult, ConversationSummary, ModelInfo } from '@chamber/shared/types';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import type { CopilotSession } from '../mind/types';
 import { isStaleSessionError, SEND_TIMEOUT_MS, sendTimeoutError } from '@chamber/shared/sessionErrors';
@@ -25,6 +25,7 @@ import { clearCopilotModelsCache } from '../sdk/modelCacheCompat';
 import { mapSdkModelList } from '../sdk/sdkModelMapper';
 import { TurnQueue } from './TurnQueue';
 import { getCurrentDateTimeContext, injectCurrentDateTimeContext, type DateTimeContextProvider } from './currentDateTimeContext';
+import { buildConversationExport, conversationExportFilename } from './conversationExport';
 import { TurnLifecycleTrace } from './turnLifecycleTrace';
 
 const log = Logger.create('ChatService');
@@ -510,6 +511,38 @@ export class ChatService {
 
   renameConversation(mindId: string, sessionId: string, title: string): ConversationSummary[] {
     return this.mindManager.renameConversation(mindId, sessionId, title);
+  }
+
+  getConversationMessages(mindId: string, sessionId: string): Promise<ChatMessage[]> {
+    return this.mindManager.getConversationMessages(mindId, sessionId);
+  }
+
+  /**
+   * Resolve the suggested export file name without reading the transcript, so
+   * the save dialog can be shown before any expensive read/serialize work.
+   */
+  getConversationExportFilename(mindId: string, sessionId: string, format: ConversationExportFormat): string {
+    return conversationExportFilename(this.requireConversationSummary(mindId, sessionId), format);
+  }
+
+  async exportConversation(
+    mindId: string,
+    sessionId: string,
+    format: ConversationExportFormat,
+  ): Promise<ConversationExport> {
+    const conversation = this.requireConversationSummary(mindId, sessionId);
+    const messages = await this.mindManager.getConversationMessages(mindId, sessionId);
+    return buildConversationExport(conversation, messages, format);
+  }
+
+  private requireConversationSummary(mindId: string, sessionId: string): ConversationSummary {
+    const conversation = this.mindManager
+      .listConversationHistory(mindId)
+      .find((candidate) => candidate.sessionId === sessionId);
+    if (!conversation) {
+      throw new Error(`Conversation ${sessionId} not found for mind ${mindId}`);
+    }
+    return conversation;
   }
 
   async listModels(mindId: string): Promise<ModelInfo[]> {

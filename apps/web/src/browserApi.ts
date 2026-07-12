@@ -163,6 +163,8 @@ export function installBrowserApi(): void {
       resume: async () => ({ sessionId: '', messages: [], conversations: [] }),
       rename: async () => [],
       delete: async () => ({ sessionId: '', messages: [], conversations: [] }),
+      messages: async () => [],
+      export: async () => ({ status: 'canceled' as const }),
     },
     mind: {
       add: (mindPath): Promise<MindContext> => client.addMind(mindPath) as Promise<MindContext>,

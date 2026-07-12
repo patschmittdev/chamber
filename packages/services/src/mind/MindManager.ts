@@ -17,7 +17,8 @@ import { loadChamberMindConfig } from './chamberMindConfig';
 import type { CopilotClientFactory } from '../sdk/CopilotClientFactory';
 import { approveForSessionCompat } from '../sdk/approveForSessionCompat';
 import type { IdentityLoader } from '../chat/IdentityLoader';
-import { getCurrentDateTimeContext, injectCurrentDateTimeContext, stripInjectedCurrentDateTimeContext } from '../chat/currentDateTimeContext';
+import { getCurrentDateTimeContext, injectCurrentDateTimeContext } from '../chat/currentDateTimeContext';
+import { mapSessionEventsToChatMessages } from '../chat/sessionTranscript';
 import type { ChamberToolProvider } from '../chamberTools';
 import type { ConfigService } from '../config/ConfigService';
 import type { ViewDiscovery } from '../lens/ViewDiscovery';
@@ -84,6 +85,17 @@ export class MindManager extends EventEmitter {
   private minds = new Map<string, InternalMindContext>();
   private pathToId = new Map<string, string>();
   private loading = new Map<string, Promise<MindContext>>();
+  // Deduplicates concurrent read-only transcript loads for the same
+  // `mindId:sessionId`, so history search fan-out and an export cannot resume
+  // the same SDK session twice and race each other's teardown.
+  private readonly inFlightConversationReads = new Map<string, Promise<ChatMessage[]>>();
+  // Serializes per-mind session-lifecycle mutations (resume, delete, and
+  // read-only transcript loads) so a background read can never resume or
+  // disconnect an SDK session id while a resume/delete is concurrently
+  // promoting that same id to the mind's active session. The SDK keys live
+  // sessions by id and `disconnect()` destroys the shared runtime session, so
+  // these operations must not interleave for a given mind.
+  private readonly sessionLifecycleLocks = new Map<string, Promise<unknown>>();
   // Lowercased+NFC display names held by in-flight `loadMind({enforceUnique:true})`
   // calls. Two concurrent uniqueness-enforcing loads with colliding identity
   // names would otherwise both pass the `this.minds`-only check because neither
@@ -559,6 +571,10 @@ export class MindManager extends EventEmitter {
   }
 
   async resumeConversation(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
+    return this.withMindSessionLock(mindId, () => this.resumeConversationUnlocked(mindId, sessionId));
+  }
+
+  private async resumeConversationUnlocked(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
     const context = this.minds.get(mindId);
     if (!context) throw new Error(`Mind ${mindId} not found`);
     const record = this.knownMindRecords.get(mindId);
@@ -603,6 +619,111 @@ export class MindManager extends EventEmitter {
     };
   }
 
+  /**
+   * Read a conversation's messages without changing the mind's active session.
+   * The active conversation is read from its live session; any other
+   * conversation is resumed into a throwaway session that is disconnected once
+   * its transcript is read, so the user's current chat is never disturbed.
+   * Used by history search (content lookup) and export.
+   *
+   * Safety against a background read tearing down a conversation the user just
+   * opened rests on three properties:
+   *   1. Concurrent reads of the same session are deduplicated via
+   *      `inFlightConversationReads`, so only one throwaway session exists.
+   *   2. The throwaway resume/read/disconnect runs under the per-mind
+   *      `sessionLifecycleLocks`, so it cannot interleave with a `resume`/
+   *      `delete` that promotes the same id to active. The read either runs
+   *      fully before the promotion (and safely disconnects its own throwaway)
+   *      or fully after it (and observes the id as active, reading the live
+   *      session instead of resuming a rival).
+   *   3. Inside the lock we re-check the active session before touching it, so
+   *      a promotion that landed first is honored.
+   */
+  async getConversationMessages(mindId: string, sessionId: string): Promise<ChatMessage[]> {
+    const context = this.minds.get(mindId);
+    if (!context) throw new Error(`Mind ${mindId} not found`);
+    const record = this.knownMindRecords.get(mindId);
+    if (!record?.conversations?.some((conversation) => conversation.sessionId === sessionId)) {
+      throw new Error(`Conversation ${sessionId} not found for mind ${mindId}`);
+    }
+
+    if (context.activeSessionId === sessionId && context.session) {
+      return this.getMessagesForSession(context.session);
+    }
+
+    const key = `${mindId}:${sessionId}`;
+    const existing = this.inFlightConversationReads.get(key);
+    if (existing) return existing;
+
+    const load = this.withMindSessionLock(mindId, () => this.readConversationMessagesReadOnly(mindId, sessionId, context))
+      .finally(() => this.inFlightConversationReads.delete(key));
+    this.inFlightConversationReads.set(key, load);
+    return load;
+  }
+
+  /**
+   * Serialize a session-lifecycle operation for a single mind, mirroring the
+   * per-mind queue used by `setMindModel`. Operations for different minds run
+   * concurrently; operations for the same mind run one at a time in call order.
+   */
+  private async withMindSessionLock<T>(mindId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.sessionLifecycleLocks.get(mindId) ?? Promise.resolve();
+    let release: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const queued = previous.then(() => current, () => current);
+    this.sessionLifecycleLocks.set(mindId, queued);
+    await previous.catch(() => { /* previous caller observes its own failure */ });
+
+    try {
+      return await operation();
+    } finally {
+      release!();
+      if (this.sessionLifecycleLocks.get(mindId) === queued) {
+        this.sessionLifecycleLocks.delete(mindId);
+      }
+    }
+  }
+
+  private async readConversationMessagesReadOnly(
+    mindId: string,
+    sessionId: string,
+    context: InternalMindContext,
+  ): Promise<ChatMessage[]> {
+    // Under the per-mind lock, no resume/delete can run concurrently. Still
+    // re-check: a resume/delete that ran just before us may have already
+    // promoted this session to active, in which case read the live session
+    // rather than resuming a rival throwaway for the same id.
+    const beforeLoad = this.minds.get(mindId);
+    if (beforeLoad?.activeSessionId === sessionId && beforeLoad.session) {
+      return this.getMessagesForSession(beforeLoad.session);
+    }
+
+    const sessionTools = this.getSessionTools(mindId, context.mindPath);
+    const readOnlySession = await this.loadConversationSession(
+      context.client,
+      'conversation',
+      context.mindPath,
+      context.identity.systemMessage,
+      sessionTools,
+      sessionId,
+      context.selectedModel,
+      context.selectedModelProvider,
+    );
+    try {
+      return await this.getMessagesForSession(readOnlySession);
+    } finally {
+      // The lock guarantees no live session adopted this id while we read, so
+      // disconnecting our throwaway cannot tear down an active conversation.
+      // The active-session guard is defense in depth for the read-after-promote
+      // ordering handled above.
+      const current = this.minds.get(mindId);
+      const promotedToActive = current?.activeSessionId === sessionId && Boolean(current.session);
+      if (!promotedToActive) {
+        await readOnlySession.disconnect().catch(() => { /* session already disconnected */ });
+      }
+    }
+  }
+
   listConversationHistory(mindId: string): ConversationSummary[] {
     const context = this.minds.get(mindId);
     const record = this.knownMindRecords.get(mindId);
@@ -639,6 +760,10 @@ export class MindManager extends EventEmitter {
   }
 
   async deleteConversation(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
+    return this.withMindSessionLock(mindId, () => this.deleteConversationUnlocked(mindId, sessionId));
+  }
+
+  private async deleteConversationUnlocked(mindId: string, sessionId: string): Promise<ConversationResumeResult> {
     const context = this.minds.get(mindId);
     if (!context) throw new Error(`Mind ${mindId} not found`);
     const record = this.knownMindRecords.get(mindId);
@@ -1417,52 +1542,7 @@ export class MindManager extends EventEmitter {
 
   private async getMessagesForSession(session: CopilotSession): Promise<ChatMessage[]> {
     const events = await session.getEvents();
-    return events.flatMap((event, index) => this.mapSessionEventToChatMessage(event, index));
-  }
-
-  private mapSessionEventToChatMessage(event: unknown, index: number): ChatMessage[] {
-    if (typeof event !== 'object' || event === null) return [];
-    const record = event as Record<string, unknown>;
-    const data = typeof record.data === 'object' && record.data !== null
-      ? record.data as Record<string, unknown>
-      : {};
-    const rawContent = this.extractMessageContent(data);
-    const content = record.type === 'user.message' && rawContent
-      ? stripInjectedCurrentDateTimeContext(rawContent)
-      : rawContent;
-    if (!content) return [];
-    const timestamp = typeof record.timestamp === 'number'
-      ? record.timestamp
-      : Date.parse(String(record.timestamp ?? '')) || Date.now();
-    const id = typeof data.messageId === 'string'
-      ? data.messageId
-      : `${String(record.type ?? 'session-event')}-${index}`;
-    const eventId = typeof record.id === 'string' ? record.id : undefined;
-    if (record.type === 'user.message') {
-      return [{ id, role: 'user', blocks: [{ type: 'text', content }], timestamp, ...(eventId ? { eventId } : {}) }];
-    }
-    if (record.type === 'assistant.message') {
-      return [{ id, role: 'assistant', blocks: [{ type: 'text', content }], timestamp, ...(eventId ? { eventId } : {}) }];
-    }
-    return [];
-  }
-
-  private extractMessageContent(data: Record<string, unknown>): string | null {
-    const value = data.content ?? data.message ?? data.text ?? data.prompt;
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) {
-      const content = value
-        .map((item) => {
-          if (typeof item === 'string') return item;
-          if (typeof item !== 'object' || item === null) return '';
-          const block = item as Record<string, unknown>;
-          return typeof block.text === 'string' ? block.text : '';
-        })
-        .filter(Boolean)
-        .join('\n');
-      return content || null;
-    }
-    return null;
+    return mapSessionEventsToChatMessages(events);
   }
 
   async sendBackgroundPrompt(mindPath: string, prompt: string): Promise<void> {
