@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add Lens visibility controls** - Lets users disable discovered Lens views per mind from Extensions while keeping catalog entries available for re-enable
 - **Add skill details and marketplace browse** - Extensions > Skills now shows bounded local and managed skill details plus read-only marketplace skills and templates with malformed-entry and source-error states
 - **Add operator activity contracts** - Adds shared operator activity and usage contracts, a minimal service seam, and validated desktop IPC/preload access for future activity, chatroom progress, and usage rollup slices. Refs ianphil/chamber#215. Refs ianphil/chamber#342.
+- **Add operator activity surface** - Adds a persistent renderer surface for per-mind and chatroom activity metadata outside the transcript, using the shared operator activity contracts without exposing prompts, outputs, raw tool payloads, credentials, or reasoning text. Refs ianphil/chamber#215
 
 ### Refactor
 

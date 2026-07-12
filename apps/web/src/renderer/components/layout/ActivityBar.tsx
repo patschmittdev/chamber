@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { isMac } from '../../lib/platform';
-import { MessageSquare, Zap, Newspaper, Users, Clock, Settings, Layout, RadioTower, Blocks, type LucideIcon } from 'lucide-react';
+import { Activity, MessageSquare, Zap, Newspaper, Users, Clock, Settings, Layout, RadioTower, Blocks, type LucideIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { Separator } from '../ui/separator';
 import type { LensViewManifest } from '@chamber/shared/types';
@@ -76,6 +76,24 @@ export function ActivityBar() {
           <TooltipContent side="right" sideOffset={8}>
             {isChatroomRunning ? 'Chatroom — agents running…' : 'Chatroom'}
           </TooltipContent>
+        </Tooltip>
+
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="Operator Activity"
+              onClick={() => dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'activity' })}
+              className={cn(
+                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                activeView === 'activity'
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              )}
+            >
+              <Activity size={20} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>Operator Activity</TooltipContent>
         </Tooltip>
 
         {visibleViews.length > 0 && <Separator className="my-1 w-8" />}

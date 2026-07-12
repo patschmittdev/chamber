@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch } from 'react';
 import {
+  Activity,
   Bot,
   Layout,
   MessageSquare,
@@ -36,6 +37,7 @@ const INPUT_PLACEHOLDER = 'Type a command or search...';
 const STATIC_VIEWS: readonly { id: LensView; label: string; icon: LucideIcon }[] = [
   { id: 'chat', label: 'Open Chat', icon: MessageSquare },
   { id: 'chatroom', label: 'Open Chatroom', icon: Users },
+  { id: 'activity', label: 'Open Operator Activity', icon: Activity },
   { id: 'settings', label: 'Open Settings', icon: Settings },
 ];
 
