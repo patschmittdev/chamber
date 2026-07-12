@@ -64,6 +64,7 @@ import type {
   UserProfileSaveRequest,
 } from './types';
 import type { SkillManifest } from './skill-types';
+import type { McpServerEntry } from './mcp-types';
 
 export interface ElectronAPI {
   chat: {
@@ -240,6 +241,20 @@ export interface ElectronAPI {
      * This does not attest managed provenance, integrity, or lifecycle state.
      */
     listForMind: (mindId: string) => Promise<SkillManifest[]>;
+  };
+  mcp: {
+    /**
+     * Reads the configured MCP servers from a mind's `.mcp.json`. Defaults to
+     * the active mind when `mindId` is omitted. Returns [] when no mind is
+     * resolved or the file is absent/invalid.
+     */
+    getServers: (mindId?: string) => Promise<McpServerEntry[]>;
+    /**
+     * Replaces the MCP server set in a mind's `.mcp.json` and returns the
+     * persisted, normalized list. Non-managed per-server fields (tools,
+     * timeout, cwd) are preserved for servers kept on the same transport.
+     */
+    setServers: (servers: McpServerEntry[], mindId?: string) => Promise<McpServerEntry[]>;
   };
 }
 

@@ -5,6 +5,7 @@ import { ChatroomPanel } from '../chatroom/ChatroomPanel';
 import { LensViewRenderer } from '../views/LensViewRenderer';
 import { SettingsView } from '../settings/SettingsView';
 import { A2ARelayView } from '../a2a/A2ARelayView';
+import { ExtensionsView } from '../extensions/ExtensionsView';
 
 export function ViewRouter() {
   const { activeView, discoveredViews, featureFlags } = useAppState();
@@ -19,6 +20,10 @@ export function ViewRouter() {
 
   if (activeView === 'settings') {
     return <SettingsView />;
+  }
+
+  if (activeView === 'extensions') {
+    return <ExtensionsView />;
   }
 
   if (activeView === 'a2a-relay' && featureFlags.switchboardRelay) {

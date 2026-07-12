@@ -60,6 +60,19 @@ describe('ActivityBar', () => {
     expect(screen.getByLabelText('Chatroom')).toBeTruthy();
   });
 
+  it('renders an Extensions button in the footer', () => {
+    renderActivityBar();
+    const extensionsButton = screen.getByLabelText('Extensions');
+    expect(extensionsButton.closest('[data-testid="activity-bar-footer"]')).toBeTruthy();
+  });
+
+  it('activates the extensions view when the Extensions button is clicked', () => {
+    renderActivityBar();
+    fireEvent.click(screen.getByLabelText('Extensions'));
+    const extensionsButton = screen.getByLabelText('Extensions');
+    expect(extensionsButton.className).toContain('bg-accent');
+  });
+
   it('renders the updater action when an update is available', async () => {
     const api = mockElectronAPI();
     api.updater.getState = vi.fn().mockResolvedValue({

@@ -1,4 +1,5 @@
 export * from './types';
+export * from './mcp-types';
 export * from './model-selection';
 export * from './feature-flags';
 export * from './voice-types';

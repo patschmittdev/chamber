@@ -62,6 +62,8 @@ import {
   MindProfileService,
   MindScaffold,
   MindSkillDiscovery,
+  readMcpServers,
+  writeMcpServers,
   TaskManager,
   TaskLedger,
   ChildProcessRunner,
@@ -121,6 +123,7 @@ import { setupConversationHistoryIPC } from './main/ipc/conversationHistory';
 import { setupUpdaterIPC } from './main/ipc/updater';
 import { setupUserProfileIPC } from './main/ipc/userProfile';
 import { setupSkillsIPC } from './main/ipc/skills';
+import { setupMcpIPC } from './main/ipc/mcp';
 import { setupVoiceIPC } from './main/ipc/voice';
 
 import { EventEmitter } from 'events';
@@ -934,6 +937,13 @@ app.on('ready', async () => {
   setupSkillsIPC(
     { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
     skillDiscovery,
+  );
+  setupMcpIPC(
+    {
+      getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath,
+      getActiveMindId: () => mindManager.getActiveMindId(),
+    },
+    { read: readMcpServers, write: writeMcpServers },
   );
   setupAuthIPC(authService, mindManager, async () => {
     await chamberCopilotService?.resetAuthState();
