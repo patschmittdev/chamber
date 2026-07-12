@@ -117,6 +117,25 @@ export interface ChatMessage {
   timestamp: number;
   isStreaming?: boolean;
   sender?: { mindId: string; name: string };
+  /**
+   * Stable identifier of the backing SDK session event (UUID). Present for
+   * messages hydrated from the SDK (resume/reconcile); undefined for a live
+   * message until it has been reconciled against persisted history. Message
+   * actions (edit/delete) address the persisted turn through this id.
+   */
+  eventId?: string;
+}
+
+/**
+ * Lightweight reference to a persisted user/assistant turn, used to reconcile
+ * a live conversation's messages with their backing SDK event ids after a turn
+ * completes. `messageId` is the SDK message id (matches a streamed text block's
+ * `sdkMessageId`); `eventId` is the id passed to history truncation.
+ */
+export interface ConversationEventRef {
+  eventId: string;
+  messageId: string;
+  role: 'user' | 'assistant';
 }
 
 // ---------------------------------------------------------------------------

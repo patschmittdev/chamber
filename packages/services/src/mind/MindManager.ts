@@ -8,7 +8,7 @@ import * as path from 'path';
 import type { PermissionHandler, ResumeSessionConfig, SessionConfig } from '@github/copilot-sdk';
 import { parseModelSelectionKey } from '@chamber/shared/model-selection';
 import { isStaleSessionError } from '@chamber/shared/sessionErrors';
-import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationResumeResult, ConversationSummary, MindContext, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
+import type { AppConfig, ChamberConversationRecord, ChatMessage, ConversationEventRef, ConversationResumeResult, ConversationSummary, MindContext, MindRecord, ModelProvider, ModelSelection } from '@chamber/shared/types';
 import { Logger } from '../logger';
 import type { InternalMindContext, CopilotClient, CopilotSession, Tool, UserInputHandler } from './types';
 import { generateMindId } from './generateMindId';
@@ -709,6 +709,72 @@ export class MindManager extends EventEmitter {
     };
   }
 
+  /**
+   * Persisted user/assistant turns for the mind's active conversation, mapped
+   * to chat messages (text-only, carrying their backing SDK event ids). Used
+   * to reconcile live messages with event ids and to resolve the most recent
+   * user turn for regeneration.
+   */
+  async getActiveConversationMessages(mindId: string): Promise<ChatMessage[]> {
+    const context = this.minds.get(mindId);
+    if (!context?.session) return [];
+    return this.getMessagesForSession(context.session);
+  }
+
+  /** Ordered references to persisted user/assistant turns for the active conversation. */
+  async getConversationEventRefs(mindId: string): Promise<ConversationEventRef[]> {
+    const messages = await this.getActiveConversationMessages(mindId);
+    const refs: ConversationEventRef[] = [];
+    for (const message of messages) {
+      if (message.eventId) {
+        refs.push({ eventId: message.eventId, messageId: message.id, role: message.role });
+      }
+    }
+    return refs;
+  }
+
+  /**
+   * Truncates the active conversation's persisted history to `eventId` — the
+   * SDK removes that event and every later one — then refreshes the record's
+   * hasMessages flag. Returns the updated conversation summaries.
+   */
+  async truncateActiveConversation(mindId: string, eventId: string): Promise<ConversationSummary[]> {
+    const context = this.minds.get(mindId);
+    if (!context?.session) throw new Error(`Mind ${mindId} not found or has no session`);
+    await context.session.rpc.history.truncate({ eventId });
+    // The truncate above is the commit point and is not idempotent (a second
+    // truncate to the same, now-removed, event would drop further turns). If
+    // reading back the remaining events fails — e.g. the session goes stale
+    // immediately after — swallow it rather than rethrow: a thrown truncate
+    // signals "not done yet" to callers, who would then retry and truncate
+    // again. We only lose the hasMessages refresh, which the next settled turn
+    // repairs.
+    try {
+      const remaining = await this.getMessagesForSession(context.session);
+      this.updateActiveConversationHasMessages(mindId, remaining.length > 0);
+    } catch (error) {
+      log.warn(`Truncated conversation for mind ${mindId} but could not refresh message state`, error);
+    }
+    return this.listConversationHistory(mindId);
+  }
+
+  private updateActiveConversationHasMessages(mindId: string, hasMessages: boolean): void {
+    const context = this.minds.get(mindId);
+    const record = this.knownMindRecords.get(mindId);
+    const activeSessionId = context?.activeSessionId ?? record?.activeSessionId;
+    if (!record?.conversations || !activeSessionId) return;
+    const updatedAt = new Date().toISOString();
+    this.knownMindRecords.set(mindId, {
+      ...record,
+      conversations: record.conversations.map((conversation) =>
+        conversation.sessionId === activeSessionId
+          ? { ...conversation, hasMessages, updatedAt }
+          : conversation,
+      ),
+    });
+    this.persistConfig();
+  }
+
   async setMindModel(mindId: string, model: string | null): Promise<MindContext | null> {
     const previousUpdate = this.modelUpdates.get(mindId) ?? Promise.resolve();
     let releaseUpdate: () => void;
@@ -1342,11 +1408,12 @@ export class MindManager extends EventEmitter {
     const id = typeof data.messageId === 'string'
       ? data.messageId
       : `${String(record.type ?? 'session-event')}-${index}`;
+    const eventId = typeof record.id === 'string' ? record.id : undefined;
     if (record.type === 'user.message') {
-      return [{ id, role: 'user', blocks: [{ type: 'text', content }], timestamp }];
+      return [{ id, role: 'user', blocks: [{ type: 'text', content }], timestamp, ...(eventId ? { eventId } : {}) }];
     }
     if (record.type === 'assistant.message') {
-      return [{ id, role: 'assistant', blocks: [{ type: 'text', content }], timestamp }];
+      return [{ id, role: 'assistant', blocks: [{ type: 'text', content }], timestamp, ...(eventId ? { eventId } : {}) }];
     }
     return [];
   }

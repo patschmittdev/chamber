@@ -3,6 +3,7 @@ import { ChatService } from './ChatService';
 import { TurnQueue } from './TurnQueue';
 import { Logger } from '../logger';
 import type { MindManager } from '../mind';
+import type { ChatMessage, ConversationEventRef, ConversationSummary } from '@chamber/shared/types';
 
 type AllEventsHandler = (event: unknown) => void;
 type TypedHandler = (event: unknown) => void;
@@ -96,6 +97,9 @@ const mockMindManager = {
   deleteConversation: vi.fn(async () => ({ sessionId: 'session-1', messages: [], conversations: [] })),
   renameConversation: vi.fn(() => []),
   setMindModel: vi.fn(async () => null),
+  truncateActiveConversation: vi.fn(async (): Promise<ConversationSummary[]> => [{ sessionId: 'session-1', title: 'Chat', createdAt: '', updatedAt: '', kind: 'chat', active: true, hasMessages: true }]),
+  getActiveConversationMessages: vi.fn(async (): Promise<ChatMessage[]> => []),
+  getConversationEventRefs: vi.fn(async (): Promise<ConversationEventRef[]> => []),
 };
 
 describe('ChatService', () => {
@@ -219,6 +223,98 @@ describe('ChatService', () => {
         consoleError.mockRestore();
         mockSession.send.mockResolvedValue(undefined);
       }
+    });
+  });
+
+  describe('message actions', () => {
+    const idleOnSend = () => {
+      mockSession.on.mockImplementation((eventOrCb: string | ((...args: unknown[]) => void), cb?: (...args: unknown[]) => void) => {
+        if (eventOrCb === 'session.idle' && cb) {
+          setTimeout(() => cb(), 0);
+        }
+        return vi.fn();
+      });
+    };
+
+    it('deleteMessage truncates the active conversation and returns the refreshed history', async () => {
+      const conversations = await svc.deleteMessage('valid-mind', 'evt-42');
+      expect(mockMindManager.truncateActiveConversation).toHaveBeenCalledWith('valid-mind', 'evt-42');
+      expect(conversations).toEqual([expect.objectContaining({ sessionId: 'session-1', hasMessages: true })]);
+    });
+
+    it('getConversationEvents delegates to the mind manager', async () => {
+      mockMindManager.getConversationEventRefs.mockResolvedValueOnce([
+        { eventId: 'evt-1', messageId: 'm1', role: 'user' },
+      ]);
+      const refs = await svc.getConversationEvents('valid-mind');
+      expect(mockMindManager.getConversationEventRefs).toHaveBeenCalledWith('valid-mind');
+      expect(refs).toEqual([{ eventId: 'evt-1', messageId: 'm1', role: 'user' }]);
+    });
+
+    it('editMessage truncates back to the target turn then streams the edited prompt', async () => {
+      idleOnSend();
+      const emit = vi.fn();
+      await svc.editMessage('valid-mind', 'evt-7', 'edited prompt', 'msg-9', emit);
+
+      expect(mockMindManager.truncateActiveConversation).toHaveBeenCalledWith('valid-mind', 'evt-7');
+      expect(mockSession.send).toHaveBeenCalledWith({
+        prompt: expect.stringContaining('edited prompt'),
+      });
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('regenerate re-runs the most recent user turn from persisted history', async () => {
+      idleOnSend();
+      mockMindManager.getActiveConversationMessages.mockResolvedValueOnce([
+        { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'first question' }], timestamp: 1, eventId: 'evt-u1' },
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: 'answer' }], timestamp: 2, eventId: 'evt-a1' },
+      ]);
+      const emit = vi.fn();
+      await svc.regenerate('valid-mind', 'msg-regen', emit);
+
+      expect(mockMindManager.truncateActiveConversation).toHaveBeenCalledWith('valid-mind', 'evt-u1');
+      expect(mockSession.send).toHaveBeenCalledWith({
+        prompt: expect.stringContaining('first question'),
+      });
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('regenerate emits an error when there is no user turn to re-run', async () => {
+      idleOnSend();
+      mockMindManager.getActiveConversationMessages.mockResolvedValueOnce([]);
+      const emit = vi.fn();
+      await svc.regenerate('valid-mind', 'msg-regen', emit);
+
+      expect(mockMindManager.truncateActiveConversation).not.toHaveBeenCalled();
+      expect(mockSession.send).not.toHaveBeenCalled();
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
+    });
+
+    it('editMessage truncates exactly once and re-sends the same prompt after a stale-session retry', async () => {
+      // First send throws stale AFTER the truncate has already run. The retry
+      // must reuse the cached prompt and must NOT truncate again (re-truncating
+      // would drop additional turns because the target event is already gone).
+      mockSession.send.mockRejectedValueOnce(new Error('Session not found: abc-123'));
+      mockSession.on.mockReturnValue(vi.fn());
+      const freshSession = {
+        send: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn((event: string, cb?: (...args: unknown[]) => void) => {
+          if (event === 'session.idle' && cb) setTimeout(() => cb(), 0);
+          return vi.fn();
+        }),
+      };
+      mockMindManager.recoverActiveConversationSession.mockResolvedValueOnce(freshSession);
+
+      const emit = vi.fn();
+      await svc.editMessage('valid-mind', 'evt-7', 'edited prompt', 'msg-9', emit);
+
+      expect(mockMindManager.truncateActiveConversation).toHaveBeenCalledTimes(1);
+      expect(mockMindManager.truncateActiveConversation).toHaveBeenCalledWith('valid-mind', 'evt-7');
+      expect(emit).toHaveBeenCalledWith({ type: 'reconnecting' });
+      expect(freshSession.send).toHaveBeenCalledWith({ prompt: expect.stringContaining('edited prompt') });
+      expect(emit).toHaveBeenCalledWith({ type: 'done' });
     });
   });
 

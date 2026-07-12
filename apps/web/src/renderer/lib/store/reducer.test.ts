@@ -362,6 +362,93 @@ describe('appReducer', () => {
     expect(state.isStreaming).toBe(false);
   });
 
+  describe('TRUNCATE_AFTER', () => {
+    const seeded: AppState = {
+      ...withActiveMind,
+      messagesByMind: {
+        [mindId]: [
+          makeMessage([makeTextBlock('u1')], { id: 'u1', role: 'user' }),
+          makeMessage([makeTextBlock('a1')], { id: 'a1', role: 'assistant' }),
+          makeMessage([makeTextBlock('u2')], { id: 'u2', role: 'user' }),
+          makeMessage([makeTextBlock('a2')], { id: 'a2', role: 'assistant' }),
+        ],
+      },
+    };
+
+    it('removes the target message and everything after it', () => {
+      const state = appReducer(seeded, { type: 'TRUNCATE_AFTER', payload: { mindId, messageId: 'u2' } });
+      expect(getMsgs(state).map((m) => m.id)).toEqual(['u1', 'a1']);
+    });
+
+    it('returns the same state when the target id is not present', () => {
+      const state = appReducer(seeded, { type: 'TRUNCATE_AFTER', payload: { mindId, messageId: 'missing' } });
+      expect(state).toBe(seeded);
+    });
+  });
+
+  describe('RECONCILE_EVENT_IDS', () => {
+    it('annotates live messages with backing event ids by role order and sdkMessageId', () => {
+      const seeded: AppState = {
+        ...withActiveMind,
+        messagesByMind: {
+          [mindId]: [
+            makeMessage([makeTextBlock('hi')], { id: 'local-user', role: 'user' }),
+            makeMessage([makeTextBlock('reply', 'sdk-a1')], { id: 'local-assistant', role: 'assistant' }),
+          ],
+        },
+      };
+      const state = appReducer(seeded, {
+        type: 'RECONCILE_EVENT_IDS',
+        payload: {
+          mindId,
+          events: [
+            { eventId: 'evt-u1', messageId: 'sdk-u1', role: 'user' },
+            { eventId: 'evt-a1', messageId: 'sdk-a1', role: 'assistant' },
+          ],
+        },
+      });
+      expect(getMsgs(state)[0].eventId).toBe('evt-u1');
+      expect(getMsgs(state)[1].eventId).toBe('evt-a1');
+    });
+
+    it('returns the same state when nothing needs annotating', () => {
+      const seeded: AppState = {
+        ...withActiveMind,
+        messagesByMind: {
+          [mindId]: [makeMessage([makeTextBlock('hi')], { id: 'u1', role: 'user', eventId: 'evt-u1' })],
+        },
+      };
+      const state = appReducer(seeded, { type: 'RECONCILE_EVENT_IDS', payload: { mindId, events: [] } });
+      expect(state).toBe(seeded);
+    });
+
+    it('skips positional user matching when displayed and persisted user turns disagree', () => {
+      const seeded: AppState = {
+        ...withActiveMind,
+        messagesByMind: {
+          [mindId]: [
+            makeMessage([makeTextBlock('first')], { id: 'user-a', role: 'user' }),
+            makeMessage([makeTextBlock('second')], { id: 'user-b', role: 'user' }),
+            makeMessage([makeTextBlock('reply', 'sdk-a1')], { id: 'assistant-a', role: 'assistant' }),
+          ],
+        },
+      };
+      const state = appReducer(seeded, {
+        type: 'RECONCILE_EVENT_IDS',
+        payload: {
+          mindId,
+          events: [
+            { eventId: 'evt-u1', messageId: 'sdk-u1', role: 'user' },
+            { eventId: 'evt-a1', messageId: 'sdk-a1', role: 'assistant' },
+          ],
+        },
+      });
+      expect(getMsgs(state)[0].eventId).toBeUndefined();
+      expect(getMsgs(state)[1].eventId).toBeUndefined();
+      expect(getMsgs(state)[2].eventId).toBe('evt-a1');
+    });
+  });
+
   it('HYDRATE_CHAT_STATE restores messages and active streaming state', () => {
     const messages = [makeMessage([makeTextBlock('from popout')], { id: 'msg-1' })];
     const state = appReducer(withActiveMind, {

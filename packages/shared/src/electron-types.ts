@@ -42,6 +42,7 @@ import type {
   ChatEvent,
   ChatImageAttachment,
   ChatReplayEvent,
+  ConversationEventRef,
   ConversationResumeResult,
   ConversationSummary,
   DesktopUpdateActionResult,
@@ -70,6 +71,14 @@ export interface ElectronAPI {
     getEventSequence: () => Promise<number>;
     replayEvents: (afterSequence: number) => Promise<ChatReplayEvent[]>;
     onEvent: (callback: (mindId: string, messageId: string, event: ChatEvent, sequence?: number) => void) => () => void;
+    /** Deletes a turn (and everything after it) from persisted history. Returns the refreshed conversation list. */
+    deleteMessage: (mindId: string, eventId: string) => Promise<ConversationSummary[]>;
+    /** Replaces a user turn (and everything after it) with an edited prompt, streaming a fresh response under `messageId`. */
+    editMessage: (mindId: string, eventId: string, prompt: string, messageId: string, model?: string) => Promise<void>;
+    /** Re-runs the most recent user turn, streaming a fresh response under `messageId`. */
+    regenerate: (mindId: string, messageId: string, model?: string) => Promise<void>;
+    /** Ordered references to persisted user/assistant turns, for reconciling live messages with their event ids. */
+    getConversationEvents: (mindId: string) => Promise<ConversationEventRef[]>;
   };
   conversationHistory: {
     list: (mindId: string) => Promise<ConversationSummary[]>;

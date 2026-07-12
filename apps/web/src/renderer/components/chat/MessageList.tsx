@@ -1,8 +1,11 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
-import { MessageActions } from './MessageActions';
+import { MessageActions, type RowAction } from './MessageActions';
 import { useAppState, getPlainContent } from '../../lib/store';
+import { useChatStreaming } from '../../hooks/useChatStreaming';
+import { useConversationActions } from '../../hooks/useConversationActions';
 import { StreamingMessage } from './StreamingMessage';
+import { hasImageBlocks } from './messageContent';
 import { cn, formatTime, parseSkillContextInjection } from '../../lib/utils';
 import type { ChatMessage, MindContext } from '@chamber/shared/types';
 import type { AgentProfileSummary } from '../../lib/store/state';
@@ -10,6 +13,9 @@ import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
 import { useUserProfile } from '../../hooks/useUserProfile';
 import { agentColor, readableTextColor } from './agentColors';
+
+const EDIT_IMAGE_REASON = "Editing isn't available for messages with images yet";
+const REGENERATE_IMAGE_REASON = "Regenerating isn't available for turns with images yet";
 
 function displayName(name: string, fallback: string): string {
   const trimmed = name.trim();
@@ -63,6 +69,17 @@ export function MessageList() {
   const profileByMindId = useMindProfiles(minds);
   const userProfile = useUserProfile();
   const messages = activeMindId ? (messagesByMind[activeMindId] ?? []) : [];
+  const { regenerate, editAndResubmit, isStreaming } = useChatStreaming();
+  const { deleteMessage } = useConversationActions();
+  // Regenerate re-runs the most recent user turn, so its availability depends on
+  // that turn: it must be persisted (has an event id — false in browser mode,
+  // which never reconciles ids) and must not contain images (which cannot be
+  // replayed yet).
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+  const regenerateSupported = Boolean(lastUserMessage?.eventId);
+  const regenerateDisabledReason = lastUserMessage && hasImageBlocks(lastUserMessage)
+    ? REGENERATE_IMAGE_REASON
+    : undefined;
   const activeMind = minds.find(m => m.mindId === activeMindId);
   const activeProfile = activeMind ? profileByMindId[activeMind.mindId] : undefined;
   const agentName = activeMind ? profileName(activeProfile, activeMind.identity.name) : 'Agent';
@@ -123,13 +140,14 @@ export function MessageList() {
         className="flex-1 overflow-y-auto px-4 py-4"
       >
         <div className="max-w-3xl mx-auto space-y-6">
-          {messages.map((message) => {
+          {messages.map((message, index) => {
             const presenter = messagePresenter(message, agentName, minds, profileByMindId);
             const avatarDataUrl = message.role === 'assistant'
               ? activeProfile?.avatarDataUrl
               : presenter.isAgentSender
                 ? presenter.avatarDataUrl
                 : userProfile?.avatarDataUrl;
+            const isLastMessage = index === messages.length - 1;
 
             return (
               <MessageRow
@@ -137,8 +155,15 @@ export function MessageList() {
                 message={message}
                 presenter={presenter}
                 avatarDataUrl={avatarDataUrl}
-                animate={message.id === messages[messages.length - 1]?.id}
-                launch={message.id === messages[messages.length - 1]?.id && message.role === 'user'}
+                animate={isLastMessage}
+                launch={isLastMessage && message.role === 'user'}
+                isStreaming={isStreaming}
+                onRegenerate={regenerate}
+                onDelete={deleteMessage}
+                onEditSubmit={editAndResubmit}
+                regenerateSupported={isLastMessage && message.role === 'assistant' && regenerateSupported}
+                regenerateDisabledReason={regenerateDisabledReason}
+                followingTurnCount={messages.length - 1 - index}
               />
             );
           })}
@@ -177,13 +202,60 @@ interface MessageRowProps {
   // The newest row when it is the user's just-sent message: plays the launch
   // entrance instead of the generic fade.
   launch: boolean;
+  // A turn is streaming somewhere — mutating actions are held until it settles.
+  isStreaming: boolean;
+  onRegenerate: () => void;
+  onDelete: (message: ChatMessage) => void;
+  onEditSubmit: (message: ChatMessage, text: string) => void;
+  // Whether this row may offer Regenerate (newest assistant turn whose target
+  // user turn is persisted). Computed by the parent so the memoized row keeps
+  // receiving primitives.
+  regenerateSupported: boolean;
+  regenerateDisabledReason: string | undefined;
+  // Number of turns after this one. Editing a user turn resubmits it and drops
+  // everything after, so the editor warns when this is non-zero.
+  followingTurnCount: number;
 }
 
 // Memoized so an inbound message at the end of a long transcript doesn't force
 // every prior message subtree (markdown + rehype-highlight + work-group cells)
 // to re-render. content-visibility hint lets the browser skip layout/paint
 // work for off-screen rows.
-const MessageRow = memo(function MessageRow({ message, presenter, avatarDataUrl, animate, launch }: MessageRowProps) {
+const MessageRow = memo(function MessageRow({
+  message,
+  presenter,
+  avatarDataUrl,
+  animate,
+  launch,
+  isStreaming,
+  onRegenerate,
+  onDelete,
+  onEditSubmit,
+  regenerateSupported,
+  regenerateDisabledReason,
+  followingTurnCount,
+}: MessageRowProps) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  // A turn can be mutated only once it is persisted (has a backing event id).
+  // Browser mode never reconciles ids, so these actions stay hidden there; on
+  // desktop they appear a moment after the turn settles.
+  const canMutate = Boolean(message.eventId);
+  const handleDelete = useCallback(() => onDelete(message), [onDelete, message]);
+  const deleteAction = canMutate ? handleDelete : undefined;
+
+  const regenerate = useMemo<RowAction | undefined>(
+    () => regenerateSupported ? { onRun: onRegenerate, disabledReason: regenerateDisabledReason } : undefined,
+    [regenerateSupported, onRegenerate, regenerateDisabledReason],
+  );
+
+  const edit = useMemo<RowAction | undefined>(
+    () => canMutate
+      ? { onRun: () => setIsEditing(true), disabledReason: hasImageBlocks(message) ? EDIT_IMAGE_REASON : undefined }
+      : undefined,
+    [canMutate, message],
+  );
+
   return (
     <div
       className={cn('group flex gap-3', launch ? 'chamber-launch' : animate && 'chamber-fade-in')}
@@ -219,9 +291,25 @@ const MessageRow = memo(function MessageRow({ message, presenter, avatarDataUrl,
               isStreaming={message.isStreaming}
             />
             {!message.isStreaming && getPlainContent(message).trim() && (
-              <MessageActions content={getPlainContent(message)} />
+              <MessageActions
+                message={message}
+                isStreaming={isStreaming}
+                regenerate={regenerate}
+                onDelete={deleteAction}
+              />
             )}
           </>
+        ) : isEditing ? (
+          <MessageEditor
+            initialText={getPlainContent(message)}
+            disabled={isStreaming}
+            followingTurnCount={followingTurnCount}
+            onCancel={() => setIsEditing(false)}
+            onSubmit={(text) => {
+              setIsEditing(false);
+              onEditSubmit(message, text);
+            }}
+          />
         ) : (
           <div className="space-y-2">
             {message.blocks
@@ -247,12 +335,88 @@ const MessageRow = memo(function MessageRow({ message, presenter, avatarDataUrl,
                 </p>
               );
             })()}
+            {!message.isStreaming && (
+              <MessageActions
+                message={message}
+                isStreaming={isStreaming}
+                edit={edit}
+                onDelete={deleteAction}
+              />
+            )}
           </div>
         )}
       </div>
     </div>
   );
 });
+
+/**
+ * Inline editor for a user turn. Submitting resends the edited prompt, which
+ * replaces this turn and everything after it; Escape or Cancel discards. Cmd/Ctrl
+ * plus Enter submits for keyboard users. When later turns exist, it warns that
+ * they will be removed so the resubmit is never a silent multi-turn delete.
+ */
+function MessageEditor({
+  initialText,
+  disabled,
+  followingTurnCount,
+  onSubmit,
+  onCancel,
+}: {
+  initialText: string;
+  disabled: boolean;
+  followingTurnCount: number;
+  onSubmit: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initialText);
+  const trimmed = text.trim();
+  const rows = Math.min(10, Math.max(2, text.split('\n').length));
+
+  return (
+    <div className="space-y-2">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && trimmed) {
+            e.preventDefault();
+            onSubmit(trimmed);
+          }
+        }}
+        rows={rows}
+        autoFocus
+        aria-label="Edit message"
+        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      {followingTurnCount > 0 && (
+        <p className="text-[11px] text-muted-foreground" role="note">
+          Resubmitting removes the {followingTurnCount === 1 ? 'turn' : `${followingTurnCount} turns`} after this one.
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => trimmed && onSubmit(trimmed)}
+          disabled={disabled || !trimmed}
+          className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Save and submit
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Collapsed marker for a Copilot SDK skill-context injection. The SDK injects

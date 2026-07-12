@@ -64,7 +64,7 @@ export function useAppSubscriptions() {
           }
         }
         for (const mindId of terminalMindIds) {
-          void refreshConversationHistory(mindId);
+          onTurnSettled(mindId);
         }
       } catch (err) {
         log.error('Failed to replay missed chat events:', err);
@@ -80,6 +80,25 @@ export function useAppSubscriptions() {
       } catch (err) {
         log.warn('Failed to refresh conversation history after chat event:', err);
       }
+    };
+
+    // After a turn settles, annotate live messages with their backing SDK event
+    // ids so message actions (edit/delete) can address the persisted turn even
+    // before the conversation is reloaded.
+    const reconcileEventIds = async (mindId: string) => {
+      try {
+        const events = await window.electronAPI.chat.getConversationEvents(mindId);
+        if (!cancelled) {
+          dispatch({ type: 'RECONCILE_EVENT_IDS', payload: { mindId, events } });
+        }
+      } catch (err) {
+        log.warn('Failed to reconcile conversation event ids after chat event:', err);
+      }
+    };
+
+    const onTurnSettled = (mindId: string) => {
+      void refreshConversationHistory(mindId);
+      void reconcileEventIds(mindId);
     };
 
     void window.electronAPI.chat.getEventSequence()
@@ -99,7 +118,7 @@ export function useAppSubscriptions() {
       }
       dispatch({ type: 'CHAT_EVENT', payload: { mindId, messageId, event } });
       if (isTerminalChatEvent(event.type)) {
-        void refreshConversationHistory(mindId);
+        onTurnSettled(mindId);
       }
     });
 

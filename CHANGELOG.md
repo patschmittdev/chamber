@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add theme-aware update chrome** — Adds a dismissible ready-to-install banner and update-status indicator with accessible light and dark theme colors.
 - **Expose bounded per-mind skill discovery** — Adds renderer-safe on-disk skill metadata IPC with asynchronous bounded reads, deterministic limits, and path/link safeguards without conflating managed provenance or integrity.
 - **Add insiders-gated local voice dictation** — Adds local Foundry/Nemotron dictation with a dedicated Settings page, chat mic and push-to-talk controls, explicit runtime capability gating, and insiders-only prepared runtime packaging. (#385) (#385)
+- **Add chat message actions** — Adds hover-revealed message actions to single-agent chat: regenerate the newest assistant turn, edit and resubmit a user turn, delete from a turn onward (Delete from here), and copy as raw markdown alongside plain text. Edits and deletes truncate persisted SDK session history so they survive reload; edit and regenerate are disabled for turns containing images, and the actions are hidden where history mutation is unsupported (browser mode).
 
 ### Refactor
 

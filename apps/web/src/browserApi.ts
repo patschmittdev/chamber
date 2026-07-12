@@ -149,6 +149,14 @@ export function installBrowserApi(): void {
           chatEventHandlers.delete(callback);
         };
       },
+      // Message actions (edit/delete/regenerate) are wired for the desktop
+      // (Electron IPC) surface. Browser mode has no server route for history
+      // mutation yet, so these stay unavailable; the reconcile read is a safe
+      // no-op so it never throws after a turn completes.
+      deleteMessage: async () => unavailable('deleting messages'),
+      editMessage: async () => unavailable('editing messages'),
+      regenerate: async () => unavailable('regenerating messages'),
+      getConversationEvents: async () => [],
     },
     conversationHistory: {
       list: async () => [],

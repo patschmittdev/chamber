@@ -65,6 +65,28 @@ export function setupChatIPC(chatService: ChatService, mindManager: MindManager)
     return chatService.newConversation(mindId);
   });
 
+  ipcMain.handle(IPC.CHAT.DELETE_MESSAGE, async (_event, mindId: string, eventId: string) => {
+    return chatService.deleteMessage(mindId, eventId);
+  });
+
+  ipcMain.handle(IPC.CHAT.EDIT_MESSAGE, async (event, mindId: string, eventId: string, prompt: string, messageId: string, model?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const emit = (evt: ChatEvent) => sendChatEvent(win, mindId, messageId, evt);
+    await chatService.editMessage(mindId, eventId, prompt, messageId, emit, model);
+  });
+
+  ipcMain.handle(IPC.CHAT.REGENERATE, async (event, mindId: string, messageId: string, model?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const emit = (evt: ChatEvent) => sendChatEvent(win, mindId, messageId, evt);
+    await chatService.regenerate(mindId, messageId, emit, model);
+  });
+
+  ipcMain.handle(IPC.CHAT.GET_CONVERSATION_EVENTS, async (_event, mindId: string) => {
+    return chatService.getConversationEvents(mindId);
+  });
+
   ipcMain.handle(IPC.CHAT.GET_EVENT_SEQUENCE, () => chatEventSequence);
 
   ipcMain.handle(IPC.CHAT.REPLAY_EVENTS, (_event, afterSequence: number) => {

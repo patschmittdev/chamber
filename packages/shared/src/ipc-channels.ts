@@ -20,6 +20,10 @@ export const IPC = {
     GET_EVENT_SEQUENCE: 'chat:getEventSequence',
     REPLAY_EVENTS: 'chat:replayEvents',
     EVENT: 'chat:event',
+    DELETE_MESSAGE: 'chat:deleteMessage',
+    EDIT_MESSAGE: 'chat:editMessage',
+    REGENERATE: 'chat:regenerate',
+    GET_CONVERSATION_EVENTS: 'chat:getConversationEvents',
   },
   CONVERSATION_HISTORY: {
     LIST: 'conversationHistory:list',
