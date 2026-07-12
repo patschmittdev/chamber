@@ -103,6 +103,30 @@ describe('ConfigService', () => {
       }));
     });
 
+    it('preserves normalized disabled Lens view keys', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [],
+        activeMindId: null,
+        activeLogin: null,
+        theme: 'dark',
+        disabledLensViewKeys: [
+          'mind-a:briefing',
+          'mind-a:briefing',
+          'bad-key',
+          42,
+          ' mind-b:briefing ',
+          'team%3Aalpha:daily%3Abriefing',
+          'team:alpha:daily:briefing',
+        ],
+      }));
+
+      expect(svc.load()).toEqual({
+        ...DEFAULT_CONFIG,
+        disabledLensViewKeys: ['mind-a:briefing', 'mind-b:briefing', 'team%3Aalpha:daily%3Abriefing'],
+      });
+    });
+
     it('drops the legacy chamber-copilot user config flag', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         version: 2,

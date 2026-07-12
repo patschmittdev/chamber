@@ -20,7 +20,9 @@ describe('ElectronAPI contract', () => {
     expectTypeOf<ElectronAPI['mind']['onMindChanged']>().toBeFunction();
 
     expectTypeOf<ElectronAPI['lens']['getViews']>().toBeFunction();
+    expectTypeOf<ElectronAPI['lens']['setViewEnabled']>().toBeFunction();
     expectTypeOf<ElectronAPI['lens']['onViewsChanged']>().toBeFunction();
+    expectTypeOf<ElectronAPI['lens']['onVisibilityChanged']>().toBeFunction();
 
     expectTypeOf<ElectronAPI['auth']['startLogin']>().toBeFunction();
     expectTypeOf<ElectronAPI['auth']['onProgress']>().toBeFunction();

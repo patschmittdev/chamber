@@ -63,6 +63,7 @@ describe('ActivityBar', () => {
   it('surfaces Lens descriptions as accessible ActivityBar text', () => {
     const description = 'Summarizes open work items.';
     renderActivityBar({
+      activeMindId: 'mind-a',
       discoveredViews: [
         makeLensViewManifest({
           id: 'work-summary',
@@ -80,8 +81,21 @@ describe('ActivityBar', () => {
     expect(document.getElementById(descriptionId!)?.textContent).toBe(description);
   });
 
+  it('hides disabled Lens views from the ActivityBar', () => {
+    renderActivityBar({
+      activeMindId: 'mind-a',
+      discoveredViews: [
+        makeLensViewManifest({ id: 'briefing', name: 'Briefing' }),
+      ],
+      disabledLensViewKeys: ['mind-a:briefing'],
+    });
+
+    expect(screen.queryByLabelText('Briefing')).toBeNull();
+  });
+
   it('does not expose empty Lens descriptions in the ActivityBar', () => {
     renderActivityBar({
+      activeMindId: 'mind-a',
       discoveredViews: [
         makeLensViewManifest({
           id: 'work-summary',

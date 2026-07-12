@@ -14,9 +14,12 @@ describe('CanvasLensView', () => {
         getCanvasUrl: vi.fn(async () => 'http://127.0.0.1:4312/mind-1/lens-abc.html'),
         getViewData: vi.fn(),
         getViews: vi.fn(),
+        getDisabledViewIds: vi.fn(),
         onViewsChanged: vi.fn(),
+        onVisibilityChanged: vi.fn(),
         refreshView: vi.fn(),
         sendAction: vi.fn(),
+        setViewEnabled: vi.fn(),
       },
     } as unknown as ElectronAPI;
   });

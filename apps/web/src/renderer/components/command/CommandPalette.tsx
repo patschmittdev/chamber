@@ -13,6 +13,7 @@ import type { LensViewManifest, MindContext } from '@chamber/shared/types';
 import type { ElectronAPI } from '@chamber/shared/electron-types';
 import { useAppDispatch, useAppState } from '../../lib/store';
 import type { AppAction, LensView } from '../../lib/store';
+import { getVisibleLensViews } from '../../lib/lensVisibility';
 import { Logger } from '../../lib/logger';
 import {
   CommandDialog,
@@ -60,6 +61,7 @@ export interface CreationGuard {
 export interface CommandPaletteDeps {
   minds: MindContext[];
   discoveredViews: LensViewManifest[];
+  disabledLensViewKeys: string[];
   activeMindId: string | null;
   /** True while the active mind is streaming or switching models; blocks conversation resets. */
   isActiveMindBusy: boolean;
@@ -117,7 +119,7 @@ async function startNewConversation(
  * Adding a future view is a one-line push, keeping the list trivially extensible.
  */
 export function buildCommandItems(deps: CommandPaletteDeps): PaletteCommand[] {
-  const { minds, discoveredViews, activeMindId, isActiveMindBusy, creationGuard, dispatch, electronAPI } = deps;
+  const { minds, discoveredViews, disabledLensViewKeys, activeMindId, isActiveMindBusy, creationGuard, dispatch, electronAPI } = deps;
   const commands: PaletteCommand[] = [];
 
   for (const view of STATIC_VIEWS) {
@@ -130,7 +132,7 @@ export function buildCommandItems(deps: CommandPaletteDeps): PaletteCommand[] {
     });
   }
 
-  for (const view of discoveredViews) {
+  for (const view of getVisibleLensViews(discoveredViews, disabledLensViewKeys, activeMindId)) {
     commands.push({
       // Namespace discovered views under `lens:` so a Lens declaring a reserved
       // id (chat/chatroom/settings) cannot collide with a STATIC_VIEWS command.
@@ -208,7 +210,7 @@ function groupCommands(commands: PaletteCommand[]): CommandGroupView[] {
  * once by AppShell; it self-registers the global shortcut and cleans it up on unmount.
  */
 export function CommandPalette() {
-  const { minds, discoveredViews, activeMindId, streamingByMind, conversationViewByMind } = useAppState();
+  const { minds, discoveredViews, disabledLensViewKeys, activeMindId, streamingByMind, conversationViewByMind } = useAppState();
   const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
   const creationGuard = useRef(false);
@@ -235,13 +237,14 @@ export function CommandPalette() {
     () => buildCommandItems({
       minds,
       discoveredViews,
+      disabledLensViewKeys,
       activeMindId,
       isActiveMindBusy,
       creationGuard,
       dispatch,
       electronAPI: window.electronAPI,
     }),
-    [minds, discoveredViews, activeMindId, isActiveMindBusy, dispatch],
+    [minds, discoveredViews, disabledLensViewKeys, activeMindId, isActiveMindBusy, dispatch],
   );
   const groups = useMemo(() => groupCommands(commands), [commands]);
 

@@ -1,4 +1,5 @@
 import type { AppState, AppAction } from '../state';
+import { lensViewVisibilityKey, isLensViewVisibilityKeyForMind } from '@chamber/shared';
 import { isReservedViewId } from '../../reservedViewIds';
 
 type Handler<T extends AppAction['type']> = (
@@ -24,6 +25,39 @@ function setDiscoveredViews(
   // Drop any discovered view that collides with a built-in route id so it can
   // neither shadow nor be shadowed by Chamber's own views (e.g. extensions).
   return { discoveredViews: action.payload.filter((view) => !isReservedViewId(view.id)) };
+}
+
+function setDisabledLensViewIds(
+  state: AppState,
+  action: Extract<AppAction, { type: 'SET_DISABLED_LENS_VIEW_IDS' }>,
+): Partial<AppState> {
+  const otherMindKeys = state.disabledLensViewKeys.filter((key) =>
+    !isLensViewVisibilityKeyForMind(key, action.payload.mindId),
+  );
+  const mindKeys = action.payload.viewIds.map((viewId) =>
+    lensViewVisibilityKey(action.payload.mindId, viewId),
+  );
+  return { disabledLensViewKeys: [...new Set([...otherMindKeys, ...mindKeys])].sort() };
+}
+
+function setLensViewEnabled(
+  state: AppState,
+  action: Extract<AppAction, { type: 'SET_LENS_VIEW_ENABLED' }>,
+): Partial<AppState> {
+  const key = lensViewVisibilityKey(action.payload.mindId, action.payload.viewId);
+  const keys = new Set(state.disabledLensViewKeys);
+  if (action.payload.enabled) {
+    keys.delete(key);
+  } else {
+    keys.add(key);
+  }
+  const fallbackToChat = !action.payload.enabled
+    && state.activeMindId === action.payload.mindId
+    && state.activeView === action.payload.viewId;
+  return {
+    disabledLensViewKeys: [...keys].sort(),
+    ...(fallbackToChat ? { activeView: 'chat' } : {}),
+  };
 }
 
 function showLanding(): Partial<AppState> {
@@ -63,6 +97,8 @@ export const lifecycleHandlers: {
   SET_ACTIVE_VIEW: Handler<'SET_ACTIVE_VIEW'>;
   SET_FEATURE_FLAGS: Handler<'SET_FEATURE_FLAGS'>;
   SET_DISCOVERED_VIEWS: Handler<'SET_DISCOVERED_VIEWS'>;
+  SET_DISABLED_LENS_VIEW_IDS: Handler<'SET_DISABLED_LENS_VIEW_IDS'>;
+  SET_LENS_VIEW_ENABLED: Handler<'SET_LENS_VIEW_ENABLED'>;
   SHOW_LANDING: Handler<'SHOW_LANDING'>;
   HIDE_LANDING: Handler<'HIDE_LANDING'>;
   ACCOUNT_SWITCH_STARTED: Handler<'ACCOUNT_SWITCH_STARTED'>;
@@ -72,6 +108,8 @@ export const lifecycleHandlers: {
   SET_ACTIVE_VIEW: setActiveView,
   SET_FEATURE_FLAGS: setFeatureFlags,
   SET_DISCOVERED_VIEWS: setDiscoveredViews,
+  SET_DISABLED_LENS_VIEW_IDS: setDisabledLensViewIds,
+  SET_LENS_VIEW_ENABLED: setLensViewEnabled,
   SHOW_LANDING: showLanding,
   HIDE_LANDING: hideLanding,
   ACCOUNT_SWITCH_STARTED: accountSwitchStarted,

@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { installElectronAPI, makeLensViewManifest } from '../../../test/helpers';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { installElectronAPI, makeLensViewManifest, mockElectronAPI } from '../../../test/helpers';
 import { AppStateProvider } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
 import { LensViewsTab } from './LensViewsTab';
@@ -26,6 +26,7 @@ describe('LensViewsTab', () => {
 
   it('lists the discovered views from the store', () => {
     renderTab({
+      activeMindId: 'mind-a',
       discoveredViews: [
         makeLensViewManifest({ id: 'daily', name: 'Daily Briefing', view: 'briefing', description: 'Morning digest' }),
       ],
@@ -34,5 +35,53 @@ describe('LensViewsTab', () => {
     expect(screen.getByText('Daily Briefing')).toBeTruthy();
     expect(screen.getByText('briefing')).toBeTruthy();
     expect(screen.getByText('Morning digest')).toBeTruthy();
+  });
+
+  it('disables a Lens view without removing it from the catalog', async () => {
+    const api = mockElectronAPI();
+    api.lens.setViewEnabled = vi.fn().mockResolvedValue({ mindId: 'mind-a', viewId: 'daily', enabled: false });
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{
+        activeMindId: 'mind-a',
+        discoveredViews: [
+          makeLensViewManifest({ id: 'daily', name: 'Daily Briefing', view: 'briefing' }),
+        ],
+      }}>
+        <LensViewsTab />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Disable Daily Briefing' }));
+
+    await waitFor(() => {
+      expect(api.lens.setViewEnabled).toHaveBeenCalledWith('daily', false, 'mind-a');
+      expect(screen.getByText('Daily Briefing')).toBeTruthy();
+      expect(screen.getByText('Disabled')).toBeTruthy();
+    });
+  });
+
+  it('re-enables a disabled Lens view', async () => {
+    const api = mockElectronAPI();
+    api.lens.setViewEnabled = vi.fn().mockResolvedValue({ mindId: 'mind-a', viewId: 'daily', enabled: true });
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{
+        activeMindId: 'mind-a',
+        disabledLensViewKeys: ['mind-a:daily'],
+        discoveredViews: [
+          makeLensViewManifest({ id: 'daily', name: 'Daily Briefing', view: 'briefing' }),
+        ],
+      }}>
+        <LensViewsTab />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable Daily Briefing' }));
+
+    await waitFor(() => {
+      expect(api.lens.setViewEnabled).toHaveBeenCalledWith('daily', true, 'mind-a');
+      expect(screen.getByText('Enabled')).toBeTruthy();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, ModelInfo, LensViewManifest, MindContext, ImageBlock } from '@chamber/shared/types';
+import type { ChatMessage, ChatEvent, ConversationEventRef, ConversationSummary, ModelInfo, LensViewManifest, LensViewVisibility, MindContext, ImageBlock } from '@chamber/shared/types';
 import type { Message, Task, TaskStatusUpdateEvent, TaskArtifactUpdateEvent } from '@chamber/shared/a2a-types';
 import type { ChatroomMessage, ChatroomStreamEvent, OrchestrationMode, GroupChatConfig, HandoffConfig, MagenticConfig, TaskLedgerItem } from '@chamber/shared/chatroom-types';
 import { DEFAULT_APP_FEATURE_FLAGS, type AppFeatureFlags } from '@chamber/shared/feature-flags';
@@ -50,6 +50,7 @@ export interface AppState {
   activeView: LensView;
   featureFlags: AppFeatureFlags;
   discoveredViews: LensViewManifest[];
+  disabledLensViewKeys: string[];
   showLanding: boolean;
   mindsChecked: boolean;
   tasksByMind: Record<string, Task[]>;
@@ -91,6 +92,8 @@ export type AppAction =
   | { type: 'SET_ACTIVE_VIEW'; payload: LensView }
   | { type: 'SET_FEATURE_FLAGS'; payload: AppFeatureFlags }
   | { type: 'SET_DISCOVERED_VIEWS'; payload: LensViewManifest[] }
+  | { type: 'SET_DISABLED_LENS_VIEW_IDS'; payload: { mindId: string; viewIds: string[] } }
+  | { type: 'SET_LENS_VIEW_ENABLED'; payload: LensViewVisibility }
   | { type: 'SHOW_LANDING' }
   | { type: 'HIDE_LANDING' }
   | { type: 'ACCOUNT_SWITCH_STARTED'; payload: { login: string } }
@@ -135,6 +138,7 @@ export const initialState: AppState = {
   activeView: 'chat',
   featureFlags: DEFAULT_APP_FEATURE_FLAGS,
   discoveredViews: [],
+  disabledLensViewKeys: [],
   showLanding: false,
   mindsChecked: false,
   tasksByMind: {},

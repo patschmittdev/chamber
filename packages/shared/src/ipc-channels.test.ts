@@ -32,6 +32,9 @@ describe('IPC channel constants', () => {
     expect(IPC.LENS.REFRESH_VIEW).toBe('lens:refreshView');
     expect(IPC.LENS.SEND_ACTION).toBe('lens:sendAction');
     expect(IPC.LENS.GET_CANVAS_URL).toBe('lens:getCanvasUrl');
+    expect(IPC.LENS.GET_DISABLED_VIEW_IDS).toBe('lens:getDisabledViewIds');
+    expect(IPC.LENS.SET_VIEW_ENABLED).toBe('lens:setViewEnabled');
+    expect(IPC.LENS.VISIBILITY_CHANGED).toBe('lens:visibilityChanged');
     expect(IPC.LENS.VIEWS_CHANGED).toBe('lens:viewsChanged');
 
     expect(IPC.AUTH.GET_STATUS).toBe('auth:getStatus');
