@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, powerMonitor, session, shell, Notification, type MessageBoxOptions, type NativeImage, type Tray as ElectronTray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, powerMonitor, session, shell, Notification, type MessageBoxOptions, type NativeImage, type Tray as ElectronTray } from 'electron';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -125,13 +125,15 @@ import { setupUserProfileIPC } from './main/ipc/userProfile';
 import { setupSkillsIPC } from './main/ipc/skills';
 import { setupMcpIPC } from './main/ipc/mcp';
 import { setupVoiceIPC } from './main/ipc/voice';
+import { setupAppearanceIPC } from './main/ipc/appearance';
 
 import { EventEmitter } from 'events';
 import { wireLifecycleEvents } from './main/wireLifecycleEvents';
-import { applyTitleBarTheme, titleBarOverlayFor } from './main/titleBarTheme';
+import { applyTitleBarTheme, titleBarOverlayFor, windowBackgroundColorFor } from './main/titleBarTheme';
 import { cleanupLegacySquirrelInstall } from './main/squirrelMigration';
 import { runUpdaterSmoke } from './main/updaterSmoke';
 import { UpdaterService } from './main/updater/UpdaterService';
+import { AppearanceService } from './main/services/appearance';
 import { SharpAvatarNormalizer } from './main/services/mindProfile/SharpAvatarNormalizer';
 import { DEV_FEATURE_FLAGS } from './main/devFeatureFlags';
 import { FeatureFlagService } from './main/services/featureFlags/FeatureFlagService';
@@ -234,6 +236,7 @@ let appFeatureFlags: AppFeatureFlags = DEFAULT_APP_FEATURE_FLAGS;
 let credentialStore: CredentialStore;
 let sharp: typeof sharpModule;
 let configService: ConfigService;
+let appearanceService: AppearanceService;
 let scaffold: MindScaffold;
 let genesisTemplateCatalog: GenesisMindTemplateMarketplaceCatalog;
 let genesisTemplateInstaller: GenesisMindTemplateInstaller;
@@ -346,6 +349,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   });
 
   configService = new ConfigService();
+  appearanceService = new AppearanceService(configService, nativeTheme);
   const identityLoader = new IdentityLoader(
     () => configService.load().installedTools ?? [],
     () => configService.load().userProfile?.customInstructions ?? '',
@@ -600,6 +604,7 @@ const requestQuit = () => {
 
   mindManager.shutdown()
     .then(() => {
+      appearanceService.dispose();
       updaterService.stop();
       return Promise.allSettled([
         a2aRelayModeService.disconnect(),
@@ -790,15 +795,16 @@ const drainPendingProtocolUrls = (): void => {
 };
 
 const createWindow = () => {
+  const appearance = appearanceService.getSnapshot();
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 600,
     minHeight: 400,
     titleBarStyle: 'hiddenInset',
-    titleBarOverlay: process.platform === 'win32' ? titleBarOverlayFor('dark') : undefined,
+    titleBarOverlay: process.platform === 'win32' ? titleBarOverlayFor(appearance.resolvedTheme) : undefined,
     icon: windowIcon,
-    backgroundColor: '#09090b',
+    backgroundColor: windowBackgroundColorFor(appearance.resolvedTheme),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -892,6 +898,7 @@ app.on('ready', async () => {
 
   // --- IPC adapters (thin, parameter-injected) ---
   const skillDiscovery = new MindSkillDiscovery();
+  setupAppearanceIPC(appearanceService);
   setupChatIPC(chatService, mindManager);
   setupConversationHistoryIPC(chatService);
   setupMindIPC(mindManager, chatService, {
@@ -899,6 +906,7 @@ app.on('ready', async () => {
     devServerUrl: MAIN_WINDOW_VITE_DEV_SERVER_URL || undefined,
     rendererPath: MAIN_WINDOW_VITE_DEV_SERVER_URL ? undefined : path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     windowIcon,
+    getAppearanceSnapshot: () => appearanceService.getSnapshot(),
   });
   setupMindProfileIPC(mindProfileService, mindManager, sharp);
   setupUserProfileIPC(userProfileService, microsoftGraphProfileImporter, {

@@ -19,6 +19,16 @@ describe('security boundary invariants', () => {
     expect(webPreferences).toMatch(/\bsandbox:\s*false\b/);
   });
 
+  it('first-paint appearance bootstrap stays external and CSP-compatible', () => {
+    const indexHtml = fs.readFileSync(path.join(repoRoot, 'apps', 'web', 'index.html'), 'utf8');
+    const bootstrap = fs.readFileSync(path.join(repoRoot, 'apps', 'web', 'public', 'appearance-bootstrap.js'), 'utf8');
+
+    expect(indexHtml).toContain('<script src="/appearance-bootstrap.js"></script>');
+    expect(indexHtml).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
+    expect(bootstrap).not.toContain('require(');
+    expect(bootstrap).not.toContain('ipcRenderer');
+  });
+
   it('side-effect tools are default-denied when no approval handler is registered', async () => {
     const gate = new ApprovalGate();
 

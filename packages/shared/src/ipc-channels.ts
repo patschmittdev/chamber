@@ -161,6 +161,12 @@ export const IPC = {
     CONFIRM: 'desktop:confirm',
     SET_THEME: 'desktop:setTheme',
   },
+  APPEARANCE: {
+    GET_INITIAL_SNAPSHOT: 'appearance:getInitialSnapshot',
+    GET: 'appearance:get',
+    SET: 'appearance:set',
+    CHANGED: 'appearance:changed',
+  },
   E2E: {
     IS_ENABLED: 'e2e:is-enabled',
     A2A_INCOMING: 'e2e:a2a:incoming',

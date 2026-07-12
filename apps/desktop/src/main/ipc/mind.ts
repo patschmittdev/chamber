@@ -6,9 +6,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { IPC } from '@chamber/shared';
 import type { ChatService, MindManager } from '@chamber/services';
 import { Logger } from '@chamber/services';
+import type { AppearanceSnapshot } from '@chamber/shared/appearance-types';
 import type { MindContext } from '@chamber/shared/types';
 import { installExternalNavigationGuard } from '../navigationGuard';
-import { titleBarOverlayFor } from '../titleBarTheme';
+import { titleBarOverlayFor, windowBackgroundColorFor } from '../titleBarTheme';
 
 const log = Logger.create('mind-ipc');
 
@@ -17,6 +18,7 @@ export interface MindIPCConfig {
   devServerUrl?: string;
   rendererPath?: string;
   windowIcon?: NativeImage;
+  getAppearanceSnapshot: () => AppearanceSnapshot;
 }
 
 export function setupMindIPC(mindManager: MindManager, chatService: ChatService, config: MindIPCConfig): void {
@@ -84,6 +86,7 @@ export function setupMindIPC(mindManager: MindManager, chatService: ChatService,
     const mind = mindManager.getMind(mindId);
     if (!mind) return;
 
+    const appearance = config.getAppearanceSnapshot();
     // Create popout window
     const win = new BrowserWindow({
       width: 900,
@@ -92,9 +95,9 @@ export function setupMindIPC(mindManager: MindManager, chatService: ChatService,
       minHeight: 400,
       title: `${mind.identity.name} — Chamber`,
       titleBarStyle: 'hiddenInset',
-      titleBarOverlay: process.platform === 'win32' ? titleBarOverlayFor('dark') : undefined,
+      titleBarOverlay: process.platform === 'win32' ? titleBarOverlayFor(appearance.resolvedTheme) : undefined,
       icon: config.windowIcon,
-      backgroundColor: '#09090b',
+      backgroundColor: windowBackgroundColorFor(appearance.resolvedTheme),
       webPreferences: {
         preload: config.preloadPath,
         contextIsolation: true,

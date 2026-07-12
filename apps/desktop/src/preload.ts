@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { createIpcListener, IPC } from '@chamber/shared';
 import type { A2AIncomingPayload } from '@chamber/shared/types';
-import type { ElectronAPI } from '@chamber/shared/electron-types';
+import type { AppearanceBridge, ElectronAPI } from '@chamber/shared/electron-types';
+import type { AppearanceSnapshot } from '@chamber/shared/appearance-types';
 import type { Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent } from '@chamber/shared/a2a-types';
+
+const initialAppearanceSnapshot = ipcRenderer.sendSync(IPC.APPEARANCE.GET_INITIAL_SNAPSHOT) as AppearanceSnapshot;
 
 const electronAPI: ElectronAPI = {
   chat: {
@@ -210,6 +213,15 @@ if (ipcRenderer.sendSync(IPC.E2E.IS_ENABLED) === true) {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+
+const chamberAppearance: AppearanceBridge = {
+  getInitialSnapshot: () => initialAppearanceSnapshot,
+  get: () => ipcRenderer.invoke(IPC.APPEARANCE.GET),
+  set: (preferences) => ipcRenderer.invoke(IPC.APPEARANCE.SET, preferences),
+  onChanged: (callback) => createIpcListener(ipcRenderer, IPC.APPEARANCE.CHANGED, callback),
+};
+
+contextBridge.exposeInMainWorld('chamberAppearance', chamberAppearance);
 
 contextBridge.exposeInMainWorld('desktop', {
   pickFolder: () => ipcRenderer.invoke(IPC.MIND.SELECT_DIRECTORY),

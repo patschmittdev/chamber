@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,7 +9,18 @@
     />
     <link rel="icon" type="image/svg+xml" href="/assets/app.svg" />
     <title>Chamber</title>
+    <script src="/appearance-bootstrap.js"></script>
     <style>
+      :root {
+        --chamber-first-paint-background: #ffffff;
+        color-scheme: light;
+      }
+
+      :root.dark {
+        --chamber-first-paint-background: #09090b;
+        color-scheme: dark;
+      }
+
       html,
       body,
       #root {
@@ -18,7 +29,7 @@
 
       body {
         margin: 0;
-        background: #09090b;
+        background: var(--chamber-first-paint-background);
       }
     </style>
   </head>

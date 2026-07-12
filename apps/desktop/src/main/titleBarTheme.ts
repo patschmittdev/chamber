@@ -26,6 +26,11 @@ const OVERLAY_COLORS: Record<TitleBarTheme, TitleBarOverlayColors> = {
   light: { color: '#ffffff', symbolColor: '#0a0a0a' },
 };
 
+/** Background color used before the renderer paints. */
+export function windowBackgroundColorFor(theme: TitleBarTheme): string {
+  return OVERLAY_COLORS[theme].color;
+}
+
 /** Build the `titleBarOverlay` window option for a theme. */
 export function titleBarOverlayFor(theme: TitleBarTheme): TitleBarOverlay {
   return { ...OVERLAY_COLORS[theme], height: TITLE_BAR_OVERLAY_HEIGHT };
