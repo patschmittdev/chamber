@@ -9,6 +9,7 @@ import type { ChatEvent, ChatMessage } from '@chamber/shared/types';
 import { applyChatEventToMessage } from '@chamber/shared';
 import { Logger } from '../logger';
 import { stripInjectedCurrentDateTimeContext } from './currentDateTimeContext';
+import { attachmentBlockFromManifest, parseAttachmentManifestContext } from './attachmentContext';
 import {
   mapSdkPermissionCompleted,
   mapSdkPermissionRequested,
@@ -39,13 +40,19 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
   const messages: ChatMessage[] = [];
   let assistant: ChatMessage | null = null;
   let assistantIdOverride: string | null = null;
+  let assistantEventIdOverride: string | null = null;
 
   const flushAssistant = (): void => {
     if (assistant && assistant.blocks.length > 0) {
-      messages.push(assistantIdOverride ? { ...assistant, id: assistantIdOverride } : assistant);
+      messages.push({
+        ...assistant,
+        ...(assistantIdOverride ? { id: assistantIdOverride } : {}),
+        ...(assistantEventIdOverride ? { eventId: assistantEventIdOverride } : {}),
+      });
     }
     assistant = null;
     assistantIdOverride = null;
+    assistantEventIdOverride = null;
   };
 
   const foldIntoAssistant = (event: RawSessionEvent, index: number, chatEvent: ChatEvent | null): void => {
@@ -56,6 +63,7 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         role: 'assistant',
         blocks: [],
         timestamp: toTimestamp(event.timestamp),
+        ...(typeof event.id === 'string' ? { eventId: event.id } : {}),
       };
     }
     assistant = applyChatEventToMessage(assistant, chatEvent);
@@ -71,11 +79,18 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         flushAssistant();
         const content = extractTextContent(data);
         if (!content) return;
+        const parsed = parseAttachmentManifestContext(stripInjectedCurrentDateTimeContext(content));
+        const blocks = [
+          ...parsed.attachments.map(attachmentBlockFromManifest),
+          ...(parsed.text ? [{ type: 'text' as const, content: parsed.text }] : []),
+        ];
+        if (blocks.length === 0) return;
         messages.push({
           id: messageId(data, event, index, 'user'),
           role: 'user',
-          blocks: [{ type: 'text', content: stripInjectedCurrentDateTimeContext(content) }],
+          blocks,
           timestamp: toTimestamp(event.timestamp),
+          ...(typeof event.id === 'string' ? { eventId: event.id } : {}),
         });
         return;
       }
@@ -97,6 +112,9 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         // opened the accumulator earlier with a synthesized id.
         if (assistantIdOverride === null && typeof data.messageId === 'string') {
           assistantIdOverride = data.messageId;
+        }
+        if (assistantEventIdOverride === null && typeof event.id === 'string') {
+          assistantEventIdOverride = event.id;
         }
         foldIntoAssistant(event, index, { type: 'message_final', sdkMessageId, content });
         return;

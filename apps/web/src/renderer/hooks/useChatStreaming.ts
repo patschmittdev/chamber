@@ -1,8 +1,8 @@
 import { useCallback, useEffect } from 'react';
 import { useAppState, useAppDispatch, getPlainContent } from '../lib/store';
 import { generateId } from '../lib/utils';
-import type { ChatImageAttachment, ChatMessage, ImageBlock } from '@chamber/shared/types';
-import { hasImageBlocks } from '../components/chat/messageContent';
+import type { AttachmentBlock, ChatAttachment, ChatMessage, ImageBlock } from '@chamber/shared/types';
+import { hasAttachmentBlocks } from '../components/chat/messageContent';
 import { Logger } from '../lib/logger';
 
 const log = Logger.create('useChatStreaming');
@@ -36,21 +36,34 @@ export function useChatStreaming() {
     return assistantId;
   }, [dispatch]);
 
-  const sendMessage = useCallback(async (content: string, attachments?: ChatImageAttachment[]) => {
+  const sendMessage = useCallback(async (content: string, attachments?: ChatAttachment[]) => {
     const hasText = content.trim().length > 0;
     const hasAttachments = !!attachments && attachments.length > 0;
     if (isStreaming || (!hasText && !hasAttachments) || !activeMindId) return;
 
-    const images: ImageBlock[] | undefined = attachments?.map((a) => ({
-      type: 'image',
-      name: a.name,
-      mimeType: a.mimeType,
-      dataUrl: `data:${a.mimeType};base64,${a.data}`,
-    }));
+    const images: ImageBlock[] | undefined = attachments
+      ?.filter((attachment) => attachment.kind === 'image')
+      .map((attachment) => ({
+        type: 'image',
+        name: attachment.displayName,
+        mimeType: attachment.mimeType,
+        dataUrl: `data:${attachment.mimeType};base64,${attachment.data}`,
+      }));
+    const documents: AttachmentBlock[] | undefined = attachments
+      ?.filter((attachment) => attachment.kind === 'document')
+      .map((attachment) => ({
+        type: 'attachment',
+        id: attachment.clientId,
+        kind: 'document',
+        displayName: attachment.displayName,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        ...(attachment.metadata ? { metadata: attachment.metadata } : {}),
+      }));
 
     dispatch({
       type: 'ADD_USER_MESSAGE',
-      payload: { id: generateId(), content: content.trim(), timestamp: Date.now(), images },
+      payload: { id: generateId(), content: content.trim(), timestamp: Date.now(), images, documents },
     });
 
     const mindId = activeMindId;
@@ -67,10 +80,10 @@ export function useChatStreaming() {
     const messages = messagesByMind[activeMindId] ?? [];
     const lastUser = [...messages].reverse().find((message) => message.role === 'user');
     if (!lastUser) return;
-    // Images cannot be replayed yet (only the text prompt is resent), and an
+    // Attachments cannot be replayed yet (only the text prompt is resent), and an
     // unsaved turn has no backing event id for the main process to truncate.
     // The UI already hides Regenerate in these cases; guard here too.
-    if (!lastUser.eventId || hasImageBlocks(lastUser)) return;
+    if (!lastUser.eventId || hasAttachmentBlocks(lastUser)) return;
 
     const mindId = activeMindId;
     const prompt = getPlainContent(lastUser);
@@ -86,9 +99,9 @@ export function useChatStreaming() {
   // exchange) before streaming the new response.
   const editAndResubmit = useCallback(async (message: ChatMessage, newText: string) => {
     if (isStreaming || !activeMindId || message.role !== 'user' || !message.eventId) return;
-    // Images cannot be reconstructed and resent yet; refuse rather than silently
+    // Attachments cannot be reconstructed and resent yet; refuse rather than silently
     // dropping them (the UI disables Edit for these turns as well).
-    if (hasImageBlocks(message)) return;
+    if (hasAttachmentBlocks(message)) return;
     const text = newText.trim();
     if (!text) return;
 

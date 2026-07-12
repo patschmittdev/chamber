@@ -1,10 +1,10 @@
-import type { MindContext } from '@chamber/shared/types';
+import type { ChatDocumentAttachment, MindContext } from '@chamber/shared/types';
 
 // ---------------------------------------------------------------------------
 // Composer power-ups — pure helpers shared by ChatInput and its tests.
 //
 // Everything here is DOM-free and side-effect-free so the detection, filtering
-// and prompt-folding logic can be unit tested in isolation. ChatInput owns the
+// and attachment-manifest logic can be unit tested in isolation. ChatInput owns the
 // stateful/DOM concerns (FileReader, caret math, React state).
 // ---------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ import type { MindContext } from '@chamber/shared/types';
 // otherwise break token parsing or let one token bleed into the next. The
 // display label is sanitized of those characters so the token is always
 // well-formed, while the real filename is preserved on the attachment payload
-// for sending and for folded-file headers.
+// for sending.
 
 /** Marker prefix for pasted/attached images (carried to the SDK as blobs). */
 export const IMAGE_TOKEN_EMOJI = '📷';
@@ -157,7 +157,7 @@ export function filterSlashCommands(commands: readonly SlashCommand[], query: st
   return commands.filter((command) => command.id.startsWith(q));
 }
 
-// File classification + prompt folding --------------------------------------
+// File classification + document attachment manifests -----------------------
 
 /** Max size we will inline as text; larger text files are skipped. */
 export const MAX_TEXT_FILE_BYTES = 256 * 1024;
@@ -210,42 +210,27 @@ export function isTextLikeFile(file: { name: string; mimeType: string }): boolea
   return TEXT_LIKE_EXT.has(extensionOf(file.name));
 }
 
-export interface TextFileAttachment {
+export interface DocumentFileAttachment {
   id: number;
-  name: string;
+  displayName: string;
   mimeType: string;
+  size: number;
   content: string;
 }
 
-/**
- * Choose a backtick fence longer than any backtick run in `content`, so folded
- * file bodies that themselves contain ``` fences cannot terminate the block
- * early. Never shorter than the standard three backticks.
- */
-export function safeFenceFor(content: string): string {
-  let longestRun = 0;
-  const matches = content.match(/`+/g);
-  if (matches) {
-    for (const run of matches) longestRun = Math.max(longestRun, run.length);
-  }
-  return '`'.repeat(Math.max(3, longestRun + 1));
-}
-
-/**
- * Fold the contents of any text attachments whose token still appears in
- * `input` into the outgoing prompt as labelled fenced blocks. Image tokens are
- * left untouched (their payload rides along as a separate blob attachment).
- * Attachments are matched by opaque id, never by filename.
- */
-export function buildMessageWithTextAttachments(input: string, files: readonly TextFileAttachment[]): string {
-  if (files.length === 0) return input;
+export function buildDocumentAttachments(
+  input: string,
+  files: readonly DocumentFileAttachment[],
+): ChatDocumentAttachment[] {
+  if (files.length === 0) return [];
   const presentIds = collectFileIds(input);
   const kept = files.filter((file) => presentIds.has(file.id));
-  if (kept.length === 0) return input;
-  const blocks = kept.map((file) => {
-    const fence = safeFenceFor(file.content);
-    return `Attached file ${file.name}:\n${fence}\n${file.content}\n${fence}`;
-  });
-  const base = input.trimEnd();
-  return `${base}${base.length > 0 ? '\n\n' : ''}${blocks.join('\n\n')}`;
+  return kept.map((file) => ({
+    kind: 'document',
+    clientId: `draft-${file.id}`,
+    displayName: file.displayName,
+    mimeType: file.mimeType,
+    size: file.size,
+    content: file.content,
+  }));
 }

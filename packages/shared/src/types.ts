@@ -38,6 +38,28 @@ export interface ImageBlock {
   dataUrl: string;
 }
 
+export type ChatAttachmentKind = 'document' | 'image';
+
+export type ChatAttachmentMetadataValue = string | number | boolean | null;
+
+export interface ChatAttachmentMetadata {
+  readonly [key: string]: ChatAttachmentMetadataValue;
+}
+
+export interface ChatAttachmentManifest {
+  readonly id: string;
+  readonly kind: ChatAttachmentKind;
+  readonly displayName: string;
+  readonly mimeType: string;
+  readonly size: number;
+  readonly metadata?: ChatAttachmentMetadata;
+  readonly createdAt?: string;
+}
+
+export interface AttachmentBlock extends ChatAttachmentManifest {
+  type: 'attachment';
+}
+
 // Permission request/outcome surfaced inline in the chat stream so users
 // can see what the agent asked the SDK to do and how it was resolved.
 // Issue #131 checklist 5 — wired from the SDK's `permission.requested` /
@@ -78,7 +100,7 @@ export interface PermissionBlock {
   toolCallId?: string;
 }
 
-export type ContentBlock = TextBlock | ToolCallBlock | ReasoningBlock | ImageBlock | PermissionBlock;
+export type ContentBlock = TextBlock | ToolCallBlock | ReasoningBlock | ImageBlock | AttachmentBlock | PermissionBlock;
 
 // ---------------------------------------------------------------------------
 // Chat events — single sequenced IPC channel
@@ -476,16 +498,30 @@ export interface CanvasLensAction {
 }
 
 // ---------------------------------------------------------------------------
-// Chat attachments (renderer → main → SDK)
+// Chat attachments (renderer to main to storage or SDK)
 // ---------------------------------------------------------------------------
 
-/** A pasted/attached image carried over IPC to ChatService → SDK blob attachment */
 export interface ChatImageAttachment {
-  name: string;
+  kind: 'image';
+  displayName: string;
   mimeType: string;
+  size: number;
   /** base64-encoded payload without data URL prefix */
   data: string;
 }
+
+export interface ChatDocumentAttachment {
+  kind: 'document';
+  clientId: string;
+  displayName: string;
+  mimeType: string;
+  size: number;
+  /** UTF-8 text payload captured by the renderer from a bounded text-like file. */
+  content: string;
+  metadata?: ChatAttachmentMetadata;
+}
+
+export type ChatAttachment = ChatImageAttachment | ChatDocumentAttachment;
 
 export type DesktopUpdateStatus =
   | 'disabled'

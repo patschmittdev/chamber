@@ -39,8 +39,8 @@ import type {
   ByoLlmConfig,
   ByoLlmProbeResult,
   ByoLlmSaveResult,
+  ChatAttachment,
   ChatEvent,
-  ChatImageAttachment,
   ChatMessage,
   ChatReplayEvent,
   ConversationEventRef,
@@ -68,7 +68,7 @@ import type { McpServerEntry } from './mcp-types';
 
 export interface ElectronAPI {
   chat: {
-    send: (mindId: string, message: string, messageId: string, model?: string, attachments?: ChatImageAttachment[]) => Promise<void>;
+    send: (mindId: string, message: string, messageId: string, model?: string, attachments?: ChatAttachment[]) => Promise<void>;
     stop: (mindId: string, messageId: string) => Promise<void>;
     newConversation: (mindId: string) => Promise<ConversationResumeResult>;
     listModels: (mindId?: string) => Promise<ModelInfo[]>;

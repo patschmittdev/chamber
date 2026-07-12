@@ -130,6 +130,34 @@ describe('MessageList', () => {
     expect(screen.getByText('Blank sender.')).toBeTruthy();
   });
 
+  it('renders document attachment chips without exposing payload content', () => {
+    renderMessages([
+      {
+        id: 'user-doc',
+        role: 'user',
+        blocks: [
+          {
+            type: 'attachment',
+            id: 'att-1',
+            kind: 'document',
+            displayName: 'notes.txt',
+            mimeType: 'text/plain',
+            size: 11,
+          },
+          { type: 'text', content: 'Summarize this.' },
+        ],
+        timestamp: 1000,
+      },
+    ]);
+
+    expect(screen.getByText('notes.txt')).toBeTruthy();
+    expect(screen.getByText('text/plain')).toBeTruthy();
+    expect(screen.getByText('11 B')).toBeTruthy();
+    expect(screen.getByText('Summarize this.')).toBeTruthy();
+    expect(screen.queryByText('hello world')).toBeNull();
+  });
+
+
   it('renders the active agent profile avatar for assistant messages', async () => {
     const api = installElectronAPI();
     (api.mindProfile.get as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -291,7 +319,34 @@ describe('MessageList', () => {
       const edit = query('Edit message');
       expect(edit).not.toBeNull();
       expect(edit?.disabled).toBe(true);
-      expect(edit?.title).toMatch(/images/i);
+      expect(edit?.title).toMatch(/attachments/i);
+    });
+
+    it('disables Edit for a saved user turn with a document attachment', () => {
+      renderMessages([
+        {
+          id: 'u-doc',
+          role: 'user',
+          eventId: 'evt-doc',
+          blocks: [
+            {
+              type: 'attachment',
+              id: 'att-1',
+              kind: 'document',
+              displayName: 'notes.txt',
+              mimeType: 'text/plain',
+              size: 11,
+            },
+            { type: 'text', content: 'What is this?' },
+          ],
+          timestamp: 1000,
+        },
+      ]);
+
+      const edit = query('Edit message');
+      expect(edit).not.toBeNull();
+      expect(edit?.disabled).toBe(true);
+      expect(edit?.title).toMatch(/attachments/i);
     });
 
     it('disables Edit for a saved image-only user turn', () => {
@@ -331,7 +386,7 @@ describe('MessageList', () => {
       const regen = query('Regenerate response');
       expect(regen).not.toBeNull();
       expect(regen?.disabled).toBe(true);
-      expect(regen?.title).toMatch(/images/i);
+      expect(regen?.title).toMatch(/attachments/i);
     });
 
     it('hides Edit, Delete, and Regenerate for turns not yet persisted (no event id, e.g. browser mode)', () => {

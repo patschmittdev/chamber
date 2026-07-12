@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage } from '@chamber/shared/types';
-import { hasImageBlocks, stripMarkdown, toMarkdown, toPlainText } from './messageContent';
+import { hasAttachmentBlocks, hasImageBlocks, stripMarkdown, toMarkdown, toPlainText } from './messageContent';
 
 function assistant(content: string): ChatMessage {
   return { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content }], timestamp: 1 };
@@ -25,6 +25,28 @@ describe('messageContent', () => {
         ],
       };
       expect(toMarkdown(message)).toBe('First. Second.');
+    });
+
+    it('includes document attachment placeholders without payload content', () => {
+      const message: ChatMessage = {
+        id: 'u1',
+        role: 'user',
+        timestamp: 1,
+        blocks: [
+          {
+            type: 'attachment',
+            id: 'att-1',
+            kind: 'document',
+            displayName: 'notes.txt',
+            mimeType: 'text/plain',
+            size: 11,
+          },
+          { type: 'text', content: 'Summarize this.' },
+        ],
+      };
+
+      expect(toMarkdown(message)).toBe('[attachment: notes.txt (text/plain, 11 B)]\n\nSummarize this.');
+      expect(toMarkdown(message)).not.toContain('hello world');
     });
   });
 
@@ -86,6 +108,33 @@ describe('messageContent', () => {
         blocks: [{ type: 'image', name: 'only.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,bbb' }],
       };
       expect(hasImageBlocks(message)).toBe(true);
+    });
+
+    describe('hasAttachmentBlocks', () => {
+      it('is false for a text-only message', () => {
+        expect(hasAttachmentBlocks(assistant('just text'))).toBe(false);
+      });
+
+      it('is true when a document attachment block is present', () => {
+        const message: ChatMessage = {
+          id: 'u1',
+          role: 'user',
+          timestamp: 1,
+          blocks: [
+            {
+              type: 'attachment',
+              id: 'att-1',
+              kind: 'document',
+              displayName: 'notes.txt',
+              mimeType: 'text/plain',
+              size: 11,
+            },
+            { type: 'text', content: 'what is this?' },
+          ],
+        };
+
+        expect(hasAttachmentBlocks(message)).toBe(true);
+      });
     });
   });
 });

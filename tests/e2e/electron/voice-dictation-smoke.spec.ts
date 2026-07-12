@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { VOICE_DICTATION_MODEL_ID, type VoiceDictationConfig, type VoiceModelStatus, type VoicePermissionState } from '@chamber/shared/voice-types';
-import type { ChatImageAttachment, MindContext } from '@chamber/shared/types';
+import type { ChatAttachment, MindContext } from '@chamber/shared/types';
 import { findRendererPage, launchElectronApp, type LaunchedElectronApp } from './electronApp';
 
 const cdpPort = Number(process.env.CHAMBER_E2E_VOICE_CDP_PORT ?? 9351);
@@ -388,7 +388,7 @@ async function installChatSendSpy(page: Page): Promise<{ messages: () => Promise
       message: string,
       _messageId: string,
       _model?: string,
-      _attachments?: ChatImageAttachment[],
+      _attachments?: ChatAttachment[],
     ) => {
       void _messageId;
       void _model;

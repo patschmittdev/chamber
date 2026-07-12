@@ -789,13 +789,13 @@ describe('ChatInput file attachments', () => {
     const [message, attachments] = onSend.mock.calls[0];
     expect(message).toMatch(/\[📷#\d+ photo\.png\]/);
     expect(attachments).toEqual([
-      expect.objectContaining({ name: 'photo.png', mimeType: 'image/png' }),
+      expect.objectContaining({ kind: 'image', displayName: 'photo.png', mimeType: 'image/png' }),
     ]);
     // The opaque id is stripped before the payload reaches the send path.
     expect(attachments[0]).not.toHaveProperty('id');
   });
 
-  it('attaches a text file by folding its contents into the outgoing prompt', async () => {
+  it('attaches a text file as a document payload without folding its contents into the prompt', async () => {
     const onSend = vi.fn();
     render(<ChatInput {...defaultProps} onSend={onSend} />);
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
@@ -808,9 +808,19 @@ describe('ChatInput file attachments', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' });
     expect(onSend).toHaveBeenCalledTimes(1);
     const [message, attachments] = onSend.mock.calls[0];
-    expect(message).toContain('Attached file notes.txt:');
-    expect(message).toContain('hello world');
-    expect(attachments).toBeUndefined();
+    expect(message).toMatch(/\[📄#\d+ notes\.txt\]/);
+    expect(message).not.toContain('Attached file notes.txt:');
+    expect(message).not.toContain('hello world');
+    expect(attachments).toEqual([
+      {
+        kind: 'document',
+        clientId: expect.stringMatching(/^draft-\d+$/),
+        displayName: 'notes.txt',
+        mimeType: 'text/plain',
+        size: 11,
+        content: 'hello world',
+      },
+    ]);
   });
 
   it('skips unsupported binary files with a clear notice', async () => {
@@ -852,7 +862,7 @@ describe('ChatInput file attachments', () => {
     expect(attachments).toHaveLength(1);
     // The real filename is preserved on the payload even though the token label
     // is sanitized of brackets.
-    expect(attachments[0].name).toBe('weird]name].png');
+    expect(attachments[0].displayName).toBe('weird]name].png');
   });
 });
 
@@ -901,10 +911,12 @@ describe('ChatInput attachment scoping (per-mind)', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' });
     expect(onSend).toHaveBeenCalledTimes(1);
     const [message, attachments] = onSend.mock.calls[0];
-    expect(attachments).toHaveLength(1);
-    expect(attachments[0].name).toBe('a.png');
-    expect(message).toContain('Attached file notes.txt:');
-    expect(message).toContain('secret text');
+    expect(attachments).toHaveLength(2);
+    expect(attachments[0]).toMatchObject({ kind: 'image', displayName: 'a.png' });
+    expect(attachments[1]).toMatchObject({ kind: 'document', displayName: 'notes.txt', content: 'secret text' });
+    expect(message).toMatch(/\[📄#\d+ notes\.txt\]/);
+    expect(message).not.toContain('Attached file notes.txt:');
+    expect(message).not.toContain('secret text');
   });
 
   it('does not corrupt the origin mind draft when a file read resolves after switching minds', async () => {
@@ -936,7 +948,7 @@ describe('ChatInput attachment scoping (per-mind)', () => {
     expect(onSend).toHaveBeenCalledTimes(1);
     const [, attachments] = onSend.mock.calls[0];
     expect(attachments).toHaveLength(1);
-    expect(attachments[0].name).toBe('a.png');
+    expect(attachments[0].displayName).toBe('a.png');
   });
 });
 
@@ -1079,4 +1091,3 @@ describe('ChatInput slash commands', () => {
     await waitFor(() => expect(trigger?.getAttribute('aria-expanded')).toBe('true'));
   });
 });
-

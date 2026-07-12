@@ -3,7 +3,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { IPC } from '@chamber/shared';
 import { Logger } from '@chamber/services';
 import type { ChatService, MindManager } from '@chamber/services';
-import type { ChatEvent, ChatImageAttachment, ChatReplayEvent } from '@chamber/shared/types';
+import type { ChatAttachment, ChatEvent, ChatReplayEvent } from '@chamber/shared/types';
 
 const log = Logger.create('ChatIPC');
 const MAX_REPLAY_EVENTS = 500;
@@ -40,7 +40,7 @@ function sendChatEvent(win: BrowserWindow | null, mindId: string, messageId: str
 }
 
 export function setupChatIPC(chatService: ChatService, mindManager: MindManager): void {
-  ipcMain.handle(IPC.CHAT.SEND, async (event, mindId: string, message: string, messageId: string, model?: string, attachments?: ChatImageAttachment[]) => {
+  ipcMain.handle(IPC.CHAT.SEND, async (event, mindId: string, message: string, messageId: string, model?: string, attachments?: ChatAttachment[]) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;
 

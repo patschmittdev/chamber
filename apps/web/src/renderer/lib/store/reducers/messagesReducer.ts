@@ -12,9 +12,14 @@ function addUserMessage(state: AppState, action: Extract<AppAction, { type: 'ADD
   if (!activeMindId) return state;
 
   const textBlock: ContentBlock = { type: 'text', content: action.payload.content };
-  const blocks: ContentBlock[] = action.payload.images && action.payload.images.length > 0
-    ? [...action.payload.images, textBlock]
-    : [textBlock];
+  const mediaBlocks: ContentBlock[] = [
+    ...(action.payload.images ?? []),
+    ...(action.payload.documents ?? []),
+  ];
+  const blocks: ContentBlock[] = [
+    ...mediaBlocks,
+    ...(action.payload.content ? [textBlock] : []),
+  ];
 
   const composeDraftByMind = state.composeDraftByMind[activeMindId]
     ? (() => {

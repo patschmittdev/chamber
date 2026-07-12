@@ -8,6 +8,8 @@ import {
   A2ARelayModeService,
   ActiveA2AResolver,
   AgentCardRegistry,
+  AttachmentStore,
+  AttachmentToolProvider,
   AuthService,
   ChatService,
   ConfigService,
@@ -86,9 +88,15 @@ const mindManager = new MindManager(
   viewDiscovery,
 );
 const taskManager = new TaskManager(mindManager, agentCardRegistry);
-const chatService = new ChatService(mindManager, new TurnQueue());
+const attachmentStore = new AttachmentStore({
+  storageRoot: path.join(configService.getConfigDir(), 'chat-attachments'),
+});
+const chatService = new ChatService(mindManager, new TurnQueue(), undefined, undefined, attachmentStore);
 const messageRouter = new MessageRouter(chatService, activeA2AResolver, a2aEventBus);
-mindManager.setProviders([new A2aToolProvider(messageRouter, activeA2AResolver, taskManager)]);
+mindManager.setProviders([
+  new A2aToolProvider(messageRouter, activeA2AResolver, taskManager),
+  new AttachmentToolProvider(attachmentStore),
+]);
 mindManager.on('mind:loaded', (mind) => {
   agentCardRegistry.register(mind);
   a2aRelayModeService.publishLocalCard(mind.mindId).catch((error: unknown) => {

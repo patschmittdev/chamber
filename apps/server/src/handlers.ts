@@ -148,9 +148,34 @@ function isChatAttachment(value: unknown): value is ChatAttachmentDto {
     return false;
   }
   const attachment = value as Record<string, unknown>;
-  return (
-    typeof attachment.name === 'string' &&
-    typeof attachment.mimeType === 'string' &&
-    typeof attachment.data === 'string'
-  );
+  if (
+    typeof attachment.kind !== 'string' ||
+    typeof attachment.displayName !== 'string' ||
+    typeof attachment.mimeType !== 'string' ||
+    typeof attachment.size !== 'number'
+  ) {
+    return false;
+  }
+  if (attachment.kind === 'image') {
+    return typeof attachment.data === 'string';
+  }
+  if (attachment.kind === 'document') {
+    return (
+      typeof attachment.clientId === 'string' &&
+      typeof attachment.content === 'string' &&
+      isChatAttachmentMetadata(attachment.metadata)
+    );
+  }
+  return false;
+}
+
+function isChatAttachmentMetadata(value: unknown): value is Record<string, string | number | boolean | null> | undefined {
+  if (value === undefined) return true;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every((item) => (
+    typeof item === 'string' ||
+    typeof item === 'number' ||
+    typeof item === 'boolean' ||
+    item === null
+  ));
 }

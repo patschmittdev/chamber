@@ -68,7 +68,37 @@ describe('server handlers', () => {
 
   it('passes valid chat attachments through the server context', async () => {
     const sendChat = vi.fn(async () => undefined);
-    const attachment = { name: 'image.png', mimeType: 'image/png', data: 'abc123' };
+    const attachment = { kind: 'image', displayName: 'image.png', mimeType: 'image/png', size: 6, data: 'abc123' };
+
+    const response = await sendChatHandler({
+      method: 'POST',
+      path: '/api/chat/send',
+      headers: new Headers(),
+      body: {
+        mindId: 'dude-1234',
+        message: 'Hello',
+        messageId: 'assistant-1',
+        attachments: [attachment],
+      },
+    }, makeContext({ sendChat }));
+
+    expect(response.status).toBe(200);
+    expect(sendChat).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: [attachment],
+    }));
+  });
+
+  it('passes valid chat document attachments through the server context', async () => {
+    const sendChat = vi.fn(async () => undefined);
+    const attachment = {
+      kind: 'document',
+      clientId: 'draft-1',
+      displayName: 'notes.txt',
+      mimeType: 'text/plain',
+      size: 11,
+      content: 'hello world',
+      metadata: { source: 'browser' },
+    };
 
     const response = await sendChatHandler({
       method: 'POST',

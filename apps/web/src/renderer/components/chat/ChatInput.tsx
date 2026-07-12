@@ -4,7 +4,7 @@ import { Mic, Paperclip, Smile } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import { VOICE_DICTATION_MODEL_ID, type VoiceDictationConfig, type VoiceModelStatus } from '@chamber/shared/voice-types';
-import type { ModelInfo, ChatImageAttachment } from '@chamber/shared/types';
+import type { ChatAttachment, ChatImageAttachment, ModelInfo } from '@chamber/shared/types';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { useNewConversation } from '../../hooks/useNewConversation';
@@ -43,7 +43,7 @@ import {
   filterSlashCommands,
   isImageFile,
   isTextLikeFile,
-  buildMessageWithTextAttachments,
+  buildDocumentAttachments,
   SLASH_COMMANDS,
   MAX_TEXT_FILE_BYTES,
   MAX_IMAGE_FILE_BYTES,
@@ -51,7 +51,7 @@ import {
   type MentionMatch,
   type SlashMatch,
   type SlashCommandId,
-  type TextFileAttachment,
+  type DocumentFileAttachment,
 } from '../../lib/composer';
 
 // Composer attachment payload state, scoped per conversation. Image payloads
@@ -62,10 +62,10 @@ interface ComposerImageAttachment extends ChatImageAttachment {
 
 interface AttachmentBucket {
   images: ComposerImageAttachment[];
-  texts: TextFileAttachment[];
+  documents: DocumentFileAttachment[];
 }
 
-const EMPTY_BUCKET: AttachmentBucket = { images: [], texts: [] };
+const EMPTY_BUCKET: AttachmentBucket = { images: [], documents: [] };
 // Bucket keys for the controlled (single-agent, per-mind) and uncontrolled
 // (chatroom) hosts. Draft text is already per-mind; payloads must follow it so
 // switching agents never leaks one mind's attachments into another's compose.
@@ -79,7 +79,7 @@ const EmojiPickerLazy = React.lazy(() =>
 );
 
 interface Props {
-  onSend: (message: string, attachments?: ChatImageAttachment[]) => void;
+  onSend: (message: string, attachments?: ChatAttachment[]) => void;
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
@@ -345,7 +345,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
   conversationKeyRef.current = conversationKey;
   const activeBucket = attachmentsByKey[conversationKey] ?? EMPTY_BUCKET;
   const activeImages = activeBucket.images;
-  const activeTexts = activeBucket.texts;
+  const activeDocuments = activeBucket.documents;
 
   const updateBucket = useCallback((key: string, fn: (bucket: AttachmentBucket) => AttachmentBucket) => {
     setAttachmentsByKey((prev) => {
@@ -411,9 +411,9 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     const fileIds = collectFileIds(next);
     updateBucket(conversationKey, (bucket) => {
       const images = bucket.images.filter((a) => imageIds.has(a.id));
-      const texts = bucket.texts.filter((a) => fileIds.has(a.id));
-      if (images.length === bucket.images.length && texts.length === bucket.texts.length) return bucket;
-      return { images, texts };
+      const documents = bucket.documents.filter((a) => fileIds.has(a.id));
+      if (images.length === bucket.images.length && documents.length === bucket.documents.length) return bucket;
+      return { images, documents };
     });
   }, [conversationKey, updateBucket]);
 
@@ -485,11 +485,11 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     base: string,
     caret: number,
     images: ComposerImageAttachment[],
-    texts: TextFileAttachment[],
+    documents: DocumentFileAttachment[],
     tokens: string[],
   ) => {
-    if (images.length === 0 && texts.length === 0) return;
-    updateBucket(key, (b) => ({ images: [...b.images, ...images], texts: [...b.texts, ...texts] }));
+    if (images.length === 0 && documents.length === 0) return;
+    updateBucket(key, (b) => ({ images: [...b.images, ...images], documents: [...b.documents, ...documents] }));
     let draft = base;
     let pos = Math.max(0, Math.min(caret, base.length));
     for (const token of tokens) {
@@ -516,7 +516,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     const key = conversationKey;
     const { base, caret } = captureDraft();
     const images: ComposerImageAttachment[] = [];
-    const texts: TextFileAttachment[] = [];
+    const documents: DocumentFileAttachment[] = [];
     const tokens: string[] = [];
     const skipped: string[] = [];
     const oversized: string[] = [];
@@ -529,7 +529,14 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
         try {
           const data = await readAsBase64(file);
           const id = ++attachmentIdRef.current;
-          images.push({ id, name: file.name, mimeType: file.type || 'image/png', data });
+          images.push({
+            id,
+            kind: 'image',
+            displayName: file.name,
+            mimeType: file.type || 'image/png',
+            size: file.size,
+            data,
+          });
           tokens.push(imageToken(id, file.name));
         } catch {
           skipped.push(file.name);
@@ -542,7 +549,13 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
         try {
           const content = await readAsText(file);
           const id = ++attachmentIdRef.current;
-          texts.push({ id, name: file.name, mimeType: file.type || 'text/plain', content });
+          documents.push({
+            id,
+            displayName: file.name,
+            mimeType: file.type || 'text/plain',
+            size: file.size,
+            content,
+          });
           tokens.push(fileToken(id, file.name));
         } catch {
           skipped.push(file.name);
@@ -551,7 +564,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
         skipped.push(file.name);
       }
     }
-    commitAttachments(key, base, caret, images, texts, tokens);
+    commitAttachments(key, base, caret, images, documents, tokens);
     setAttachmentNotice(buildSkipNotice(skipped, oversized));
   }, [conversationKey, captureDraft, commitAttachments]);
 
@@ -691,7 +704,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
       try {
         const data = await readAsBase64(file);
         const id = ++attachmentIdRef.current;
-        images.push({ id, name, mimeType, data });
+        images.push({ id, kind: 'image', displayName: name, mimeType, size: file.size, data });
         tokens.push(imageToken(id, name));
       } catch {
         // ignore unreadable clipboard entries
@@ -712,15 +725,20 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     const keptImageIds = collectImageIds(input);
     const keptImages: ChatImageAttachment[] = bucket.images
       .filter((a) => keptImageIds.has(a.id))
-      .map((a) => ({ name: a.name, mimeType: a.mimeType, data: a.data }));
+      .map((a) => ({
+        kind: 'image',
+        displayName: a.displayName,
+        mimeType: a.mimeType,
+        size: a.size,
+        data: a.data,
+      }));
+    const keptDocuments = buildDocumentAttachments(input, bucket.documents);
     const hasText = input.trim().length > 0;
-    const hasAttachments = keptImages.length > 0 || collectFileIds(input).size > 0;
+    const hasAttachments = keptImages.length > 0 || keptDocuments.length > 0;
     if ((!hasText && !hasAttachments) || disabled) return;
 
-    // Fold any text-file contents into the outgoing prompt; images ride along
-    // as blob attachments and keep their inline marker token.
-    const message = buildMessageWithTextAttachments(input, bucket.texts);
-    onSend(message, keptImages.length > 0 ? keptImages : undefined);
+    const attachments: ChatAttachment[] = [...keptImages, ...keptDocuments];
+    onSend(input, attachments.length > 0 ? attachments : undefined);
     resetComposer();
   }, [input, attachmentsByKey, conversationKey, slashMatch, isStreaming, disabled, onSend, resetComposer]);
 
@@ -900,7 +918,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
   };
 
   const canSubmit = !slashMatch
-    && (input.trim().length > 0 || activeImages.length > 0 || activeTexts.length > 0)
+    && (input.trim().length > 0 || activeImages.length > 0 || activeDocuments.length > 0)
     && !disabled;
 
   return (

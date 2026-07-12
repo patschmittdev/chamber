@@ -1,4 +1,5 @@
 import type { ChatMessage, ContentBlock } from '@chamber/shared/types';
+import { formatAttachmentSize } from '@chamber/shared';
 
 /**
  * Copy helpers for a chat message. Two distinct clipboard payloads:
@@ -13,6 +14,12 @@ function textBlocks(message: ChatMessage): string[] {
     .map((block) => block.content);
 }
 
+function attachmentPlaceholders(message: ChatMessage): string[] {
+  return message.blocks
+    .filter((block): block is Extract<ContentBlock, { type: 'attachment' }> => block.type === 'attachment')
+    .map((block) => `[attachment: ${block.displayName} (${block.mimeType}, ${formatAttachmentSize(block.size)})]`);
+}
+
 /**
  * True when a message carries image content. Edit and regenerate resend only
  * the text prompt, so turns with images cannot be safely replayed yet; callers
@@ -22,9 +29,16 @@ export function hasImageBlocks(message: ChatMessage): boolean {
   return message.blocks.some((block) => block.type === 'image');
 }
 
+export function hasAttachmentBlocks(message: ChatMessage): boolean {
+  return message.blocks.some((block) => block.type === 'image' || block.type === 'attachment');
+}
+
 /** Raw markdown source of a message: its text blocks joined verbatim. */
 export function toMarkdown(message: ChatMessage): string {
-  return textBlocks(message).join('').trim();
+  return [...attachmentPlaceholders(message), textBlocks(message).join('')]
+    .filter((part) => part.length > 0)
+    .join('\n\n')
+    .trim();
 }
 
 /** Human-readable plain text: the message's markdown with formatting removed. */

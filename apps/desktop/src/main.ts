@@ -34,6 +34,8 @@ import {
   ActiveA2AResolver,
   AgentCardRegistry,
   ApprovalGate,
+  AttachmentStore,
+  AttachmentToolProvider,
   AuthService,
   CanvasService,
   ChamberCopilotService,
@@ -436,7 +438,11 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
       log.warn(`BYO LLM models provider probe failed (baseUrl=${redactUrlCredentials(config.baseUrl)}):`, err);
     },
   });
-  chatService = new ChatService(mindManager, turnQueue, undefined, byoLlmModelsProvider);
+  const attachmentStore = new AttachmentStore({
+    storageRoot: path.join(appPaths.userData, 'chat-attachments'),
+    idGenerator: { nextId: randomUUID },
+  });
+  chatService = new ChatService(mindManager, turnQueue, undefined, byoLlmModelsProvider, attachmentStore);
   const messageRouter = new MessageRouter(chatService, activeA2AResolver, a2aEventBus);
   a2aRelayModeService = new A2ARelayModeService(agentCardRegistry, activeA2AResolver, undefined, messageRouter);
   const chatroomApprovalGate = new ApprovalGate();
@@ -522,7 +528,8 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     createCronRunStore: undefined,
   });
   const a2aToolProvider = new A2aToolProvider(messageRouter, activeA2AResolver, taskManager);
-  const mindToolProviders: ChamberToolProvider[] = [cronService, canvasService, a2aToolProvider];
+  const attachmentToolProvider = new AttachmentToolProvider(attachmentStore);
+  const mindToolProviders: ChamberToolProvider[] = [cronService, canvasService, attachmentToolProvider, a2aToolProvider];
   chamberCopilotService = createChamberCopilotService(mindToolProviders, createTaskLedger);
   mindManager.setProviders(mindToolProviders);
   wireLifecycleEvents({ mindManager, agentCardRegistry, a2aRelayModeService, taskManager, a2aEventBus });
