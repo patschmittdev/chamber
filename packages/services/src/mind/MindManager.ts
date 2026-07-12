@@ -603,6 +603,43 @@ export class MindManager extends EventEmitter {
     };
   }
 
+  /**
+   * Read a conversation's messages without changing the mind's active session.
+   * The active conversation is read from its live session; any other
+   * conversation is resumed into a throwaway session that is disconnected
+   * immediately after its transcript is read, so the user's current chat is
+   * never disturbed. Used by history search (content lookup) and export.
+   */
+  async getConversationMessages(mindId: string, sessionId: string): Promise<ChatMessage[]> {
+    const context = this.minds.get(mindId);
+    if (!context) throw new Error(`Mind ${mindId} not found`);
+    const record = this.knownMindRecords.get(mindId);
+    if (!record?.conversations?.some((conversation) => conversation.sessionId === sessionId)) {
+      throw new Error(`Conversation ${sessionId} not found for mind ${mindId}`);
+    }
+
+    if (context.activeSessionId === sessionId && context.session) {
+      return this.getMessagesForSession(context.session);
+    }
+
+    const sessionTools = this.getSessionTools(mindId, context.mindPath);
+    const readOnlySession = await this.loadConversationSession(
+      context.client,
+      'conversation',
+      context.mindPath,
+      context.identity.systemMessage,
+      sessionTools,
+      sessionId,
+      context.selectedModel,
+      context.selectedModelProvider,
+    );
+    try {
+      return await this.getMessagesForSession(readOnlySession);
+    } finally {
+      await readOnlySession.disconnect().catch(() => { /* session already disconnected */ });
+    }
+  }
+
   listConversationHistory(mindId: string): ConversationSummary[] {
     const context = this.minds.get(mindId);
     const record = this.knownMindRecords.get(mindId);

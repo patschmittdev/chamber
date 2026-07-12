@@ -26,6 +26,8 @@ export const IPC = {
     RESUME: 'conversationHistory:resume',
     RENAME: 'conversationHistory:rename',
     DELETE: 'conversationHistory:delete',
+    MESSAGES: 'conversationHistory:messages',
+    EXPORT: 'conversationHistory:export',
   },
   MIND: {
     ADD: 'mind:add',

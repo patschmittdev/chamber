@@ -182,6 +182,120 @@ describe('ConversationHistoryPanel', () => {
       expect(api.conversationHistory.delete).toHaveBeenCalledWith(mind.mindId, conversation.sessionId);
     });
   });
+
+  it('filters the conversation list by title as the user types', async () => {
+    const roadmap = makeConversation({ sessionId: 's-roadmap', title: 'Q3 Roadmap', active: false });
+    const standup = makeConversation({ sessionId: 's-standup', title: 'Daily standup', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [roadmap, standup] },
+    });
+
+    expect(screen.getByText('Q3 Roadmap')).toBeTruthy();
+    expect(screen.getByText('Daily standup')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), { target: { value: 'roadmap' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Daily standup')).toBeNull();
+    });
+    expect(screen.getByText('Q3 Roadmap')).toBeTruthy();
+  });
+
+  it('shows an empty state and restores the list when the search is cleared', async () => {
+    const roadmap = makeConversation({ sessionId: 's-roadmap', title: 'Q3 Roadmap', active: false });
+    const standup = makeConversation({ sessionId: 's-standup', title: 'Daily standup', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [roadmap, standup] },
+    });
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), { target: { value: 'zzz no match' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('No conversations match your search')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('Clear search'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Daily standup')).toBeTruthy();
+    });
+    expect(screen.getByText('Q3 Roadmap')).toBeTruthy();
+  });
+
+  it('matches conversations by message content when the title does not match', async () => {
+    const roadmap = makeConversation({ sessionId: 's-roadmap', title: 'Q3 Roadmap', active: false });
+    const untitled = makeConversation({ sessionId: 's-bugfix', title: 'Untitled thread', active: false });
+    (api.conversationHistory.messages as ReturnType<typeof vi.fn>).mockImplementation(
+      (_mindId: string, sessionId: string) => Promise.resolve(
+        sessionId === 's-bugfix'
+          ? [{ id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'SAML SSO login fails' }], timestamp: 1 }]
+          : [],
+      ),
+    );
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [roadmap, untitled] },
+    });
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), { target: { value: 'saml' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Q3 Roadmap')).toBeNull();
+      expect(screen.getByText('Untitled thread')).toBeTruthy();
+    });
+    expect(api.conversationHistory.messages).toHaveBeenCalledWith(mind.mindId, 's-bugfix');
+  });
+
+  it('exports the selected conversation as Markdown through the save-dialog IPC', async () => {
+    const conversation = makeConversation({ title: 'Planning thread' });
+    (api.conversationHistory.export as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: 'saved',
+      path: 'C:/tmp/planning.md',
+      format: 'markdown',
+    });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+      activeConversationByMind: { [mind.mindId]: conversation.sessionId },
+      conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Planning thread' }));
+    fireEvent.click(await screen.findByText('Export as Markdown'));
+
+    await waitFor(() => {
+      expect(api.conversationHistory.export).toHaveBeenCalledWith(mind.mindId, conversation.sessionId, 'markdown');
+    });
+  });
+
+  it('exports the selected conversation as JSON through the save-dialog IPC', async () => {
+    const conversation = makeConversation({ title: 'Planning thread' });
+    (api.conversationHistory.export as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: 'saved',
+      path: 'C:/tmp/planning.json',
+      format: 'json',
+    });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+      activeConversationByMind: { [mind.mindId]: conversation.sessionId },
+      conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export Planning thread' }));
+    fireEvent.click(await screen.findByText('Export as JSON'));
+
+    await waitFor(() => {
+      expect(api.conversationHistory.export).toHaveBeenCalledWith(mind.mindId, conversation.sessionId, 'json');
+    });
+  });
 });
 
 function renderHistoryPanel(testInitialState?: Partial<AppState>) {

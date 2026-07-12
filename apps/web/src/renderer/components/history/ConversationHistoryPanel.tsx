@@ -1,10 +1,11 @@
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationSummary } from '@chamber/shared/types';
+import type { ConversationExportFormat, ConversationSummary } from '@chamber/shared/types';
 import { useAppDispatch, useAppState } from '../../lib/store';
 import { Logger } from '../../lib/logger';
 import { cn } from '../../lib/utils';
+import { conversationSearchText, filterConversations, normalizeSearchQuery } from './conversationSearch';
 import {
   Dialog,
   DialogContent,
@@ -13,9 +14,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 const log = Logger.create('ConversationHistoryPanel');
 const HISTORY_COLLAPSED_STORAGE_KEY = 'chamber:conversation-history-collapsed';
+const SEARCH_DEBOUNCE_MS = 180;
+const CONTENT_SEARCH_MIN_QUERY_LENGTH = 2;
 
 export function ConversationHistoryPanel() {
   const { activeMindId, conversationHistoryByMind, activeConversationByMind, conversationViewByMind, streamingByMind } = useAppState();
@@ -27,14 +31,27 @@ export function ConversationHistoryPanel() {
   const [pendingDeleteConversation, setPendingDeleteConversation] = useState<ConversationSummary | null>(null);
   const [loadingMindId, setLoadingMindId] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem(HISTORY_COLLAPSED_STORAGE_KEY) === 'true');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [exportMenuId, setExportMenuId] = useState<string | null>(null);
+  const [contentIndexVersion, setContentIndexVersion] = useState(0);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const creatingConversationRef = useRef(false);
+  const contentIndexByMind = useRef<Map<string, Map<string, string>>>(new Map());
+  const contentLoadsInFlight = useRef<Set<string>>(new Set());
 
   const conversations = useMemo<ConversationSummary[] | undefined>(() => {
     if (!activeMindId) return undefined;
     return conversationHistoryByMind[activeMindId];
   }, [activeMindId, conversationHistoryByMind]);
   const visibleConversations = conversations ?? [];
+  const filteredConversations = useMemo(() => {
+    const contentIndex = activeMindId ? contentIndexByMind.current.get(activeMindId) : undefined;
+    // contentIndexVersion forces recompute when best-effort content loads resolve.
+    void contentIndexVersion;
+    return filterConversations(visibleConversations, debouncedQuery, contentIndex);
+  }, [visibleConversations, debouncedQuery, activeMindId, contentIndexVersion]);
   const selectedConversationId = activeMindId ? activeConversationByMind[activeMindId] : undefined;
   const activeConversationView = activeMindId ? conversationViewByMind[activeMindId] : undefined;
   const isActiveMindStreaming = activeMindId
@@ -92,6 +109,63 @@ export function ConversationHistoryPanel() {
       cancelled = true;
     };
   }, [activeMindId, dispatch]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedQuery(searchQuery), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setSearchQuery('');
+    setDebouncedQuery('');
+    setExportMenuId(null);
+  }, [activeMindId]);
+
+  // Best-effort content index for search: lazily load each conversation's
+  // transcript once (read-only, cached) while a query is active, so search can
+  // match message bodies without disturbing the active chat. Title matching
+  // still works if a transcript fails to load.
+  useEffect(() => {
+    if (!activeMindId) return;
+    const normalized = normalizeSearchQuery(debouncedQuery);
+    if (normalized.length < CONTENT_SEARCH_MIN_QUERY_LENGTH) return;
+
+    const mindId = activeMindId;
+    let mindIndex = contentIndexByMind.current.get(mindId);
+    if (!mindIndex) {
+      mindIndex = new Map<string, string>();
+      contentIndexByMind.current.set(mindId, mindIndex);
+    }
+    const index = mindIndex;
+
+    const pending = visibleConversations.filter((conversation) => {
+      if (conversation.hasMessages === false) return false;
+      if (index.has(conversation.sessionId)) return false;
+      return !contentLoadsInFlight.current.has(`${mindId}:${conversation.sessionId}`);
+    });
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(pending.map(async (conversation) => {
+      const key = `${mindId}:${conversation.sessionId}`;
+      contentLoadsInFlight.current.add(key);
+      try {
+        const messages = await window.electronAPI.conversationHistory.messages(mindId, conversation.sessionId);
+        index.set(conversation.sessionId, conversationSearchText(messages));
+      } catch (error) {
+        index.set(conversation.sessionId, '');
+        log.warn('Failed to load conversation content for search:', error);
+      } finally {
+        contentLoadsInFlight.current.delete(key);
+      }
+    })).then(() => {
+      if (!cancelled) setContentIndexVersion((version) => version + 1);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMindId, debouncedQuery, visibleConversations]);
 
   useEffect(() => {
     if (!activeMindId || !selectedConversationId || isActiveMindBusy || creatingConversationRef.current) return;
@@ -224,6 +298,19 @@ export function ConversationHistoryPanel() {
     void performDeleteConversation(conversation);
   };
 
+  const exportConversation = async (conversation: ConversationSummary, format: ConversationExportFormat) => {
+    if (!activeMindId || exportingId) return;
+    setExportMenuId(null);
+    setExportingId(conversation.sessionId);
+    try {
+      await window.electronAPI.conversationHistory.export(activeMindId, conversation.sessionId, format);
+    } catch (error) {
+      log.error('Failed to export conversation:', error);
+    } finally {
+      setExportingId(null);
+    }
+  };
+
   return (
     <aside
       aria-label="Conversation history"
@@ -268,6 +355,32 @@ export function ConversationHistoryPanel() {
             </button>
           </div>
 
+          {activeMindId ? (
+            <div className="border-b border-border px-2 py-2">
+              <div className="relative">
+                <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search conversations"
+                  aria-label="Search conversations"
+                  className="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-7 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                  >
+                    <X size={13} />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex-1 overflow-y-auto p-2">
             {!activeMindId ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">Select an agent to see history</p>
@@ -275,13 +388,15 @@ export function ConversationHistoryPanel() {
               <p className="px-2 py-3 text-xs text-muted-foreground">Loading history...</p>
             ) : visibleConversations.length === 0 ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">No conversations yet</p>
+            ) : filteredConversations.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-muted-foreground">No conversations match your search</p>
             ) : null}
             {selectedConversationError ? (
               <p role="alert" className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-2 text-xs text-destructive">
                 {selectedConversationError}
               </p>
             ) : null}
-            {visibleConversations.map((conversation) => {
+            {filteredConversations.map((conversation) => {
               const isSelected = conversation.sessionId === selectedConversationId || conversation.active;
 
               return (
@@ -322,6 +437,37 @@ export function ConversationHistoryPanel() {
                   </button>
 
                   <div className="flex items-center">
+                    <Popover
+                      open={exportMenuId === conversation.sessionId}
+                      onOpenChange={(open) => setExportMenuId(open ? conversation.sessionId : null)}
+                    >
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={exportingId !== null}
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`Export ${conversation.title}`}
+                        >
+                          <Download size={13} />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-44 p-1">
+                        <button
+                          type="button"
+                          onClick={() => { void exportConversation(conversation, 'markdown'); }}
+                          className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
+                        >
+                          Export as Markdown
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void exportConversation(conversation, 'json'); }}
+                          className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
+                        >
+                          Export as JSON
+                        </button>
+                      </PopoverContent>
+                    </Popover>
                     <button
                       type="button"
                       onClick={() => startRename(conversation)}

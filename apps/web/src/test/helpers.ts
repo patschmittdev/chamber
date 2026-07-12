@@ -120,6 +120,8 @@ export function mockElectronAPI(): ElectronAPI {
       resume: vi.fn().mockResolvedValue({ sessionId: '', messages: [], conversations: [] }),
       rename: vi.fn().mockResolvedValue([]),
       delete: vi.fn().mockResolvedValue({ sessionId: '', messages: [], conversations: [] }),
+      messages: vi.fn().mockResolvedValue([]),
+      export: vi.fn().mockResolvedValue({ status: 'canceled' }),
     },
     mind: {
       add: vi.fn().mockResolvedValue({ mindId: 'test-1234', mindPath: 'C:\\test', identity: { name: 'Test', systemMessage: '' }, status: 'ready' }),

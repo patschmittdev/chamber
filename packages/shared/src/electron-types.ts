@@ -41,7 +41,10 @@ import type {
   ByoLlmSaveResult,
   ChatEvent,
   ChatImageAttachment,
+  ChatMessage,
   ChatReplayEvent,
+  ConversationExportFormat,
+  ConversationExportResult,
   ConversationResumeResult,
   ConversationSummary,
   DesktopUpdateActionResult,
@@ -76,6 +79,8 @@ export interface ElectronAPI {
     resume: (mindId: string, sessionId: string) => Promise<ConversationResumeResult>;
     rename: (mindId: string, sessionId: string, title: string) => Promise<ConversationSummary[]>;
     delete: (mindId: string, sessionId: string) => Promise<ConversationResumeResult>;
+    messages: (mindId: string, sessionId: string) => Promise<ChatMessage[]>;
+    export: (mindId: string, sessionId: string, format: ConversationExportFormat) => Promise<ConversationExportResult>;
   };
   mind: {
     add: (mindPath: string) => Promise<MindContext>;

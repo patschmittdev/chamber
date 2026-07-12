@@ -22,6 +22,8 @@ const electronAPI: ElectronAPI = {
     resume: (mindId, sessionId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.RESUME, mindId, sessionId),
     rename: (mindId, sessionId, title) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.RENAME, mindId, sessionId, title),
     delete: (mindId, sessionId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.DELETE, mindId, sessionId),
+    messages: (mindId, sessionId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.MESSAGES, mindId, sessionId),
+    export: (mindId, sessionId, format) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.EXPORT, mindId, sessionId, format),
   },
   mind: {
     add: (mindPath) => ipcRenderer.invoke(IPC.MIND.ADD, mindPath),
