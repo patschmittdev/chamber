@@ -3,6 +3,7 @@ export * from './mcp-types';
 export * from './model-selection';
 export * from './feature-flags';
 export * from './voice-types';
+export * from './operator-activity-types';
 export * from './ledger';
 export { createIpcListener } from './createIpcListener';
 export { IPC, type IpcChannel } from './ipc-channels';

@@ -4,6 +4,7 @@ import type { LensViewManifest, MindContext, ModelInfo } from '@chamber/shared/t
 import type { ElectronAPI } from '@chamber/shared/electron-types';
 import type { AgentCard, ListTasksResponse, Task } from '@chamber/shared/a2a-types';
 import type { ChatroomAPI, ChatroomMessage, TaskLedgerItem } from '@chamber/shared/chatroom-types';
+import type { OperatorActivitySnapshot } from '@chamber/shared/operator-activity-types';
 
 const noopUnsubscribe = () => undefined;
 const SUBSCRIPTION_TIMEOUT_MS = 10_000;
@@ -34,6 +35,19 @@ function createBrowserChatroomApi(): ChatroomAPI {
     setMindEnabled: async () => unavailable('chatroom participant toggles'),
     getDisabledMindIds: async (): Promise<string[]> => [],
     onStateChanged: () => noopUnsubscribe,
+  };
+}
+
+function createBrowserOperatorActivitySnapshot(): OperatorActivitySnapshot {
+  const updatedAt = new Date(0).toISOString();
+  return {
+    version: 1,
+    updatedAt,
+    mindActivities: [],
+    chatroom: { runId: null, state: 'idle', updatedAt },
+    usageSamples: [],
+    usageRollups: [],
+    budgetWarnings: [],
   };
 }
 
@@ -335,6 +349,10 @@ export function installBrowserApi(): void {
       }),
     },
     chatroom: createBrowserChatroomApi(),
+    operatorActivity: {
+      getSnapshot: async () => createBrowserOperatorActivitySnapshot(),
+      onChanged: () => noopUnsubscribe,
+    },
     updater: {
       getState: async () => ({
         enabled: false,

@@ -68,6 +68,8 @@ import {
   TaskLedger,
   ChildProcessRunner,
   ManagedSkillService,
+  OperatorActivityFileStore,
+  OperatorActivityService,
   ToolInstaller,
   ToolsService,
   TurnQueue,
@@ -119,6 +121,7 @@ import { setupAuthIPC } from './main/ipc/auth';
 import { setupByoLlmIPC } from './main/ipc/byoLlm';
 import { setupA2AIPC } from './main/ipc/a2a';
 import { setupChatroomIPC } from './main/ipc/chatroom';
+import { setupOperatorActivityIPC } from './main/ipc/operatorActivity';
 import { setupConversationHistoryIPC } from './main/ipc/conversationHistory';
 import { setupUpdaterIPC } from './main/ipc/updater';
 import { setupUserProfileIPC } from './main/ipc/userProfile';
@@ -253,6 +256,7 @@ let microsoftGraphProfileImporter: MicrosoftGraphProfileImporter;
 let chatService: ChatService;
 let a2aRelayModeService: A2ARelayModeService;
 let chatroomService: ChatroomService;
+let operatorActivityService: OperatorActivityService;
 let canvasService: CanvasService;
 let cronService: CronService;
 let automationBridgeStop: (() => Promise<void>) | null = null;
@@ -448,6 +452,11 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     reason: 'Chatroom approval UI is not wired yet; side-effect tools are blocked.',
   }));
   chatroomService = new ChatroomService(mindManager, appPaths, chatroomApprovalGate);
+  operatorActivityService = new OperatorActivityService({
+    store: new OperatorActivityFileStore({
+      filePath: path.join(appPaths.userData, 'operator-activity.json'),
+    }),
+  });
   canvasService = new CanvasService({
     onAction: (action) => {
       if (!action.lensViewId) {
@@ -990,6 +999,7 @@ app.on('ready', async () => {
     credentialStore,
   });
   setupChatroomIPC(chatroomService);
+  setupOperatorActivityIPC(operatorActivityService);
   setupUpdaterIPC(updaterService);
 
   // Fire-and-forget tool reconciliation: install any new marketplace tools.

@@ -131,6 +131,10 @@ export const IPC = {
     GET_DISABLED_MIND_IDS: 'chatroom:get-disabled-mind-ids',
     STATE_CHANGED: 'chatroom:state-changed',
   },
+  OPERATOR_ACTIVITY: {
+    GET_SNAPSHOT: 'operatorActivity:getSnapshot',
+    CHANGED: 'operatorActivity:changed',
+  },
   UPDATER: {
     GET_STATE: 'updater:get-state',
     CHECK: 'updater:check',

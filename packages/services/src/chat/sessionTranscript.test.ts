@@ -83,6 +83,22 @@ describe('mapSessionEventsToChatMessages', () => {
     warn.mockRestore();
   });
 
+  it('uses the first assistant-side event id as the persisted turn event id', () => {
+    const events = [
+      { id: 'evt-user', type: 'user.message', timestamp: '2026-05-05T22:00:00.000Z', data: { messageId: 'u1', content: 'go' } },
+      { id: 'evt-reasoning', type: 'assistant.reasoning', timestamp: '2026-05-05T22:00:01.000Z', data: { reasoningId: 'r1', content: 'Check first.' } },
+      { id: 'evt-final', type: 'assistant.message', timestamp: '2026-05-05T22:00:02.000Z', data: { messageId: 'a1', content: 'done' } },
+    ];
+
+    const messages = mapSessionEventsToChatMessages(events);
+
+    expect(messages[1]).toMatchObject({
+      id: 'a1',
+      role: 'assistant',
+      eventId: 'evt-reasoning',
+    });
+  });
+
   it('marks a failed tool call as error with its message', () => {
     const events = [
       { type: 'tool.execution_start', timestamp: '2026-05-05T22:00:00.000Z', data: { toolCallId: 't1', toolName: 'grep', arguments: {} } },

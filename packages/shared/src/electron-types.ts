@@ -21,6 +21,7 @@ import type {
 import type { ChatroomAPI } from './chatroom-types';
 import type { AppFeatureFlags } from './feature-flags';
 import type { CancelOutcome, LedgerRecord, LedgerStatus } from './ledger';
+import type { OperatorActivityAPI } from './operator-activity-types';
 import type {
   TranscriptionEvent,
   VoiceDictationConfig,
@@ -165,6 +166,7 @@ export interface ElectronAPI {
     }>;
   };
   chatroom: ChatroomAPI;
+  operatorActivity: OperatorActivityAPI;
   updater: {
     getState: () => Promise<DesktopUpdateState>;
     check: () => Promise<DesktopUpdateActionResult>;
