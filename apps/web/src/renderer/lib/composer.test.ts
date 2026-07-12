@@ -10,6 +10,8 @@ import {
   detectMention,
   toMentionables,
   filterMentionables,
+  hasMentionText,
+  pruneMentionTargets,
   detectSlash,
   filterSlashCommands,
   SLASH_COMMANDS,
@@ -123,6 +125,23 @@ describe('mentionables', () => {
   it('honours the result limit', () => {
     const many = Array.from({ length: 20 }, (_, i) => makeMind(`m${i}`, `Agent${i}`));
     expect(filterMentionables(toMentionables(many), 'agent', 5)).toHaveLength(5);
+  });
+});
+
+describe('mention target metadata', () => {
+  it('keeps selected mention targets whose exact token remains in the text', () => {
+    const targets = [
+      { mindId: 'm1', name: 'Ada' },
+      { mindId: 'm2', name: 'Alan' },
+    ];
+
+    expect(pruneMentionTargets('Please ask @Ada about this', targets)).toEqual([
+      { mindId: 'm1', name: 'Ada' },
+    ]);
+  });
+
+  it('does not treat a shorter selected name as present inside a longer mention', () => {
+    expect(hasMentionText('Please ask @Anna', 'Ann')).toBe(false);
   });
 });
 

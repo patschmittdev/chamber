@@ -39,13 +39,19 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
   const messages: ChatMessage[] = [];
   let assistant: ChatMessage | null = null;
   let assistantIdOverride: string | null = null;
+  let assistantEventIdOverride: string | null = null;
 
   const flushAssistant = (): void => {
     if (assistant && assistant.blocks.length > 0) {
-      messages.push(assistantIdOverride ? { ...assistant, id: assistantIdOverride } : assistant);
+      messages.push({
+        ...assistant,
+        ...(assistantIdOverride ? { id: assistantIdOverride } : {}),
+        ...(assistantEventIdOverride ? { eventId: assistantEventIdOverride } : {}),
+      });
     }
     assistant = null;
     assistantIdOverride = null;
+    assistantEventIdOverride = null;
   };
 
   const foldIntoAssistant = (event: RawSessionEvent, index: number, chatEvent: ChatEvent | null): void => {
@@ -57,6 +63,9 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
         blocks: [],
         timestamp: toTimestamp(event.timestamp),
       };
+      if (typeof event.id === 'string') {
+        assistantEventIdOverride = event.id;
+      }
     }
     assistant = applyChatEventToMessage(assistant, chatEvent);
   };
@@ -76,6 +85,7 @@ export function mapSessionEventsToChatMessages(events: readonly unknown[]): Chat
           role: 'user',
           blocks: [{ type: 'text', content: stripInjectedCurrentDateTimeContext(content) }],
           timestamp: toTimestamp(event.timestamp),
+          ...(typeof event.id === 'string' ? { eventId: event.id } : {}),
         });
         return;
       }

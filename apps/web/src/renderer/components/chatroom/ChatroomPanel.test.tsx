@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { ChatroomPanel } from './ChatroomPanel';
@@ -13,6 +13,21 @@ import {
   installElectronAPI,
   makeChatroomMessage,
 } from '../../../test/helpers';
+
+class MockResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+(globalThis as unknown as { ResizeObserver: typeof MockResizeObserver }).ResizeObserver =
+  MockResizeObserver;
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {};
+}
+
+vi.mock('../../lib/textarea-caret', () => ({
+  getTextareaCaretCoords: () => ({ top: 100, left: 50, height: 16 }),
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -171,6 +186,27 @@ describe('ChatroomPanel', () => {
     });
 
     expect(api.chatroom.send).toHaveBeenCalledWith('hello all', undefined, expect.any(String));
+  });
+
+  it('passes selected mention targets through chatroom.send()', async () => {
+    renderPanel({ minds: [MIND_A, MIND_B] }, api);
+
+    const textarea = screen.getByPlaceholderText('Message the chatroom…') as HTMLTextAreaElement;
+    Object.defineProperty(textarea, 'selectionStart', { configurable: true, value: 'hello @jar'.length });
+    Object.defineProperty(textarea, 'selectionEnd', { configurable: true, value: 'hello @jar'.length });
+    fireEvent.change(textarea, { target: { value: 'hello @jar' } });
+    await screen.findByTestId('mention-popover');
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+    await waitFor(() => expect(textarea.value).toBe('hello @Jarvis '));
+
+    await act(async () => {
+      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+    });
+
+    expect(api.chatroom.send).toHaveBeenCalledWith('hello @Jarvis ', undefined, expect.any(String), {
+      targetMindIds: ['mind-b'],
+      routingText: 'hello @Jarvis ',
+    });
   });
 
   // 7. Disabled when no agents

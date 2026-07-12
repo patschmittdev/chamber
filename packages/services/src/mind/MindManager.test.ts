@@ -728,7 +728,7 @@ describe('MindManager', () => {
 
       expect(messages).toEqual([
         { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'Hi' }], timestamp: 1, eventId: 'evt-1' },
-        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: 'Hello' }], timestamp: 2, eventId: 'evt-2' },
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', sdkMessageId: 'a1', content: 'Hello' }], timestamp: 2, eventId: 'evt-2' },
       ]);
     });
 

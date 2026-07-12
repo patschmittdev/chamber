@@ -167,12 +167,21 @@ export interface ChatroomStateChange {
   disabledMindIds: string[];
 }
 
+export interface ChatroomSendOptions {
+  targetMindIds?: string[];
+  /**
+   * The visible composer text before generated attachment blocks are folded
+   * into the prompt. Used only for raw @Name fallback routing.
+   */
+  routingText?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Chatroom ElectronAPI surface
 // ---------------------------------------------------------------------------
 
 export interface ChatroomAPI {
-  send: (message: string, model?: string, roundId?: string) => Promise<void>;
+  send: (message: string, model?: string, roundId?: string, options?: ChatroomSendOptions) => Promise<void>;
   history: () => Promise<ChatroomMessage[]>;
   taskLedger: () => Promise<TaskLedgerItem[]>;
   clear: () => Promise<void>;

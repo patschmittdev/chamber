@@ -170,6 +170,153 @@ describe('ChatroomService', () => {
     });
   });
 
+  describe('mention target routing', () => {
+    it('routes explicit selected target ids only to those ready enabled minds', async () => {
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      autoIdle(dudeSess);
+      autoIdle(jarvisSess);
+
+      await svc.broadcast('Hello @Jarvis', undefined, undefined, { targetMindIds: ['jarvis'] });
+
+      expect(dudeSess.send).not.toHaveBeenCalled();
+      expect(jarvisSess.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes raw @Name mentions to exact unique display-name matches', async () => {
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      autoIdle(dudeSess);
+      autoIdle(jarvisSess);
+
+      await svc.broadcast('Jarvis, please handle this: @Jarvis');
+
+      expect(dudeSess.send).not.toHaveBeenCalled();
+      expect(jarvisSess.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves broadcast behavior for ambiguous raw mention names', async () => {
+      minds.length = 0;
+      minds.push(makeMind('ada-1', 'Ada'), makeMind('ada-2', 'Ada'));
+      const adaOne = createMockSession();
+      const adaTwo = createMockSession();
+      sessions.set('ada-1', adaOne);
+      sessions.set('ada-2', adaTwo);
+      autoIdle(adaOne);
+      autoIdle(adaTwo);
+
+      await svc.broadcast('Can @Ada review this?');
+
+      expect(adaOne.send).toHaveBeenCalledTimes(1);
+      expect(adaTwo.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('emits a persisted system message when selected targets are disabled', async () => {
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      svc.setMindEnabled('jarvis', false);
+
+      await svc.broadcast('Hello @Jarvis', undefined, undefined, { targetMindIds: ['jarvis'] });
+
+      expect(dudeSess.send).not.toHaveBeenCalled();
+      expect(jarvisSess.send).not.toHaveBeenCalled();
+      const history = svc.getHistory();
+      expect(history).toHaveLength(2);
+      expect(history[1].sender.mindId).toBe('system');
+      expect(history[1].blocks[0]).toMatchObject({ type: 'text' });
+    });
+
+    it('does not let folded text attachment contents or token labels drive raw mention fallback', async () => {
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      autoIdle(dudeSess);
+      autoIdle(jarvisSess);
+      const token = '[\u{1F4C4}#1 @Jarvis-notes.txt]';
+
+      await svc.broadcast(
+        `Please review ${token}\n\nAttached file @Jarvis-notes.txt:\n\`\`\`\nhello @Jarvis\n\`\`\``,
+        undefined,
+        undefined,
+        { routingText: `Please review ${token}` },
+      );
+
+      expect(dudeSess.send).toHaveBeenCalledTimes(1);
+      expect(jarvisSess.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('emits a persisted system message when raw mentions resolve only to unavailable minds', async () => {
+      minds.length = 0;
+      minds.push(makeMind('dude', 'The Dude', 'ready'), makeMind('jarvis', 'Jarvis', 'loading'));
+      const dudeSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      autoIdle(dudeSess);
+
+      await svc.broadcast('Can @Jarvis take this?');
+
+      expect(dudeSess.send).not.toHaveBeenCalled();
+      const history = svc.getHistory();
+      expect(history).toHaveLength(2);
+      expect(history[1].sender.mindId).toBe('system');
+    });
+
+    it('preserves broadcast behavior when no mention resolves', async () => {
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      autoIdle(dudeSess);
+      autoIdle(jarvisSess);
+
+      await svc.broadcast('Can @Ghost review this?');
+
+      expect(dudeSess.send).toHaveBeenCalledTimes(1);
+      expect(jarvisSess.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes group-chat targeted mentions directly without requiring the moderator', async () => {
+      svc.setOrchestration('group-chat', {
+        moderatorMindId: 'dude',
+        maxTurns: 3,
+        minRounds: 1,
+        maxSpeakerRepeats: 3,
+      });
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      autoIdle(dudeSess);
+      autoIdle(jarvisSess);
+
+      await svc.broadcast('Can @Jarvis answer?', undefined, undefined, { targetMindIds: ['jarvis'] });
+
+      expect(dudeSess.send).not.toHaveBeenCalled();
+      expect(jarvisSess.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes magentic targeted mentions directly without requiring the manager', async () => {
+      svc.setOrchestration('magentic', { managerMindId: 'dude', maxSteps: 3 });
+      const dudeSess = createMockSession();
+      const jarvisSess = createMockSession();
+      sessions.set('dude', dudeSess);
+      sessions.set('jarvis', jarvisSess);
+      autoIdle(dudeSess);
+      autoIdle(jarvisSess);
+
+      await svc.broadcast('Can @Jarvis answer?', undefined, undefined, { targetMindIds: ['jarvis'] });
+
+      expect(dudeSess.send).not.toHaveBeenCalled();
+      expect(jarvisSess.send).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // 2. Session isolation
   describe('session isolation', () => {
     it('uses createChatroomSession, not primary sessions', async () => {

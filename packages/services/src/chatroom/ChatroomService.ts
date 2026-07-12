@@ -7,6 +7,7 @@ import { Logger } from '../logger';
 
 const log = Logger.create('Chatroom');
 import type {
+  ChatroomSendOptions,
   ChatroomMessage,
   ChatroomTranscript,
   ChatroomStreamEvent,
@@ -41,6 +42,17 @@ export interface ChatroomSessionFactory {
   listMinds(): MindContext[];
   on?(event: string, listener: (...args: unknown[]) => void): unknown;
   removeListener?(event: string, listener: (...args: unknown[]) => void): unknown;
+}
+
+interface MentionTargetResolution {
+  requestedMindIds: Set<string>;
+  source: 'explicit' | 'raw';
+}
+
+interface MentionNameEntry {
+  name: string;
+  lowerName: string;
+  minds: MindContext[];
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +117,12 @@ export class ChatroomService extends EventEmitter {
   // Public API
   // -------------------------------------------------------------------------
 
-  async broadcast(userMessage: string, suppliedRoundId?: string, selectedModel?: string): Promise<void> {
+  async broadcast(
+    userMessage: string,
+    suppliedRoundId?: string,
+    selectedModel?: string,
+    options?: ChatroomSendOptions,
+  ): Promise<void> {
     // Cancel any in-flight agents from previous round
     this.stopAll();
 
@@ -122,10 +139,14 @@ export class ChatroomService extends EventEmitter {
     // Snapshot participants (only ready minds) and apply the user-managed
     // disabled set. Snapshotted once at the top of the round so a toggle
     // mid-round does not affect the in-flight broadcast.
-    const readyMinds = this.sessionFactory
-      .listMinds()
-      .filter((m) => m.status === 'ready');
-    const participants = readyMinds.filter((m) => !this.disabledMindIds.has(m.mindId));
+    const allMinds = this.sessionFactory.listMinds();
+    const targetResolution = this.resolveMentionTargets(userMessage, options, allMinds);
+    const readyMinds = allMinds.filter((m) => m.status === 'ready');
+    const enabledReadyMinds = readyMinds.filter((m) => !this.disabledMindIds.has(m.mindId));
+    const participants = targetResolution
+      ? enabledReadyMinds.filter((m) => targetResolution.requestedMindIds.has(m.mindId))
+      : enabledReadyMinds;
+    const effectiveOrchestrationMode: OrchestrationMode = targetResolution ? 'concurrent' : this.orchestrationMode;
     if (selectedModel && this.sessionFactory.setMindModel) {
       await Promise.all(participants.map((participant) => this.sessionFactory.setMindModel?.(participant.mindId, selectedModel)));
     }
@@ -140,7 +161,9 @@ export class ChatroomService extends EventEmitter {
     if (participants.length === 0) {
       this.emitSystemMessage(
         roundId,
-        readyMinds.length === 0
+        targetResolution
+          ? this.mentionTargetsUnavailableMessage(targetResolution)
+          : readyMinds.length === 0
           ? 'No agents are loaded. Add an agent to start chatting.'
           : 'No agents are enabled. Click an agent at the top to re-enable it.',
       );
@@ -150,13 +173,15 @@ export class ChatroomService extends EventEmitter {
     // Validate orchestration prerequisites against the *enabled* set.
     // Without this, disabling the moderator/manager produces a confusing
     // silent no-op or partial behavior inside the strategy.
-    const orchestrationError = this.validateOrchestrationPrerequisites(participants);
-    if (orchestrationError) {
-      this.emitSystemMessage(roundId, orchestrationError);
-      return;
+    if (!targetResolution) {
+      const orchestrationError = this.validateOrchestrationPrerequisites(participants);
+      if (orchestrationError) {
+        this.emitSystemMessage(roundId, orchestrationError);
+        return;
+      }
     }
 
-    log.info(`broadcast mode="${this.orchestrationMode}" participants=${participants.length} disabled=${this.disabledMindIds.size} handoffConfig=${JSON.stringify(this.handoffConfig)} magneticConfig=${JSON.stringify(this.magneticConfig)}`);
+    log.info(`broadcast mode="${effectiveOrchestrationMode}" configuredMode="${this.orchestrationMode}" participants=${participants.length} disabled=${this.disabledMindIds.size} targeted=${targetResolution ? targetResolution.source : 'none'} handoffConfig=${JSON.stringify(this.handoffConfig)} magneticConfig=${JSON.stringify(this.magneticConfig)}`);
 
     // Warm session pool — pre-create sessions for all participants in parallel
     // to eliminate cold-start delays when workers begin their turns.
@@ -168,10 +193,10 @@ export class ChatroomService extends EventEmitter {
     let orchestrator;
     try {
       const strategy = createStrategy(
-        this.orchestrationMode,
-        this.groupChatConfig ?? undefined,
-        this.handoffConfig ?? undefined,
-        this.magneticConfig ?? undefined,
+        effectiveOrchestrationMode,
+        targetResolution ? undefined : this.groupChatConfig ?? undefined,
+        targetResolution ? undefined : this.handoffConfig ?? undefined,
+        targetResolution ? undefined : this.magneticConfig ?? undefined,
       );
       orchestrator = wrapStrategy(strategy);
     } catch (err) {
@@ -380,6 +405,99 @@ export class ChatroomService extends EventEmitter {
       return randomUUID();
     }
     return supplied;
+  }
+
+  private resolveMentionTargets(
+    userMessage: string,
+    options: ChatroomSendOptions | undefined,
+    minds: readonly MindContext[],
+  ): MentionTargetResolution | null {
+    const explicit = new Set((options?.targetMindIds ?? []).filter((id) => id.trim().length > 0));
+    if (explicit.size > 0) {
+      return { requestedMindIds: explicit, source: 'explicit' };
+    }
+
+    return this.resolveRawMentionTargets(options?.routingText ?? userMessage, minds);
+  }
+
+  private resolveRawMentionTargets(userMessage: string, minds: readonly MindContext[]): MentionTargetResolution | null {
+    const entries = this.buildMentionNameEntries(minds);
+    if (entries.length === 0) return null;
+
+    const searchableMessage = this.stripComposerAttachmentTokens(userMessage);
+    const lowerMessage = searchableMessage.toLowerCase();
+    const requestedMindIds = new Set<string>();
+    let atIndex = lowerMessage.indexOf('@');
+    while (atIndex !== -1) {
+      if (!this.isMentionBoundaryBefore(searchableMessage[atIndex - 1])) {
+        atIndex = lowerMessage.indexOf('@', atIndex + 1);
+        continue;
+      }
+
+      const nameStart = atIndex + 1;
+      let bestEntry: MentionNameEntry | null = null;
+      let bestLength = 0;
+      let ambiguousBest = false;
+      for (const entry of entries) {
+        const length = entry.lowerName.length;
+        if (length < bestLength) continue;
+        if (!lowerMessage.startsWith(entry.lowerName, nameStart)) continue;
+        if (!this.isMentionBoundaryAfter(searchableMessage[nameStart + length])) continue;
+
+        if (length > bestLength) {
+          bestEntry = entry;
+          bestLength = length;
+          ambiguousBest = false;
+        } else if (length === bestLength) {
+          ambiguousBest = true;
+        }
+      }
+
+      if (bestEntry && !ambiguousBest && bestEntry.minds.length === 1) {
+        requestedMindIds.add(bestEntry.minds[0].mindId);
+        atIndex = lowerMessage.indexOf('@', nameStart + bestLength);
+      } else {
+        atIndex = lowerMessage.indexOf('@', atIndex + 1);
+      }
+    }
+
+    return requestedMindIds.size > 0
+      ? { requestedMindIds, source: 'raw' }
+      : null;
+  }
+
+  private stripComposerAttachmentTokens(text: string): string {
+    return text.replace(/\[(?:\u{1F4F7}|\u{1F4C4})#\d+ [^\][\n]*\]/gu, ' ');
+  }
+
+  private buildMentionNameEntries(minds: readonly MindContext[]): MentionNameEntry[] {
+    const byName = new Map<string, MentionNameEntry>();
+    for (const mind of minds) {
+      const name = mind.identity.name.trim();
+      if (name.length === 0) continue;
+      const lowerName = name.toLowerCase();
+      const existing = byName.get(lowerName);
+      if (existing) {
+        existing.minds.push(mind);
+      } else {
+        byName.set(lowerName, { name, lowerName, minds: [mind] });
+      }
+    }
+    return [...byName.values()].sort((a, b) => b.lowerName.length - a.lowerName.length);
+  }
+
+  private isMentionBoundaryBefore(char: string | undefined): boolean {
+    return char === undefined || /[\s([{,]/.test(char);
+  }
+
+  private isMentionBoundaryAfter(char: string | undefined): boolean {
+    return char === undefined || /[\s)\]},.!?;:]/.test(char);
+  }
+
+  private mentionTargetsUnavailableMessage(resolution: MentionTargetResolution): string {
+    return resolution.source === 'explicit'
+      ? 'The selected mention targets are disabled, still loading, or unavailable. Re-enable or reload them before sending a targeted chatroom message.'
+      : 'The mentioned agents are disabled, still loading, or unavailable. Re-enable or reload them before sending a targeted chatroom message.';
   }
 
   // -------------------------------------------------------------------------

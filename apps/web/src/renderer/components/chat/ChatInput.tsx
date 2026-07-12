@@ -44,11 +44,14 @@ import {
   isImageFile,
   isTextLikeFile,
   buildMessageWithTextAttachments,
+  pruneMentionTargets,
   SLASH_COMMANDS,
   MAX_TEXT_FILE_BYTES,
   MAX_IMAGE_FILE_BYTES,
+  type ComposerSendMetadata,
   type Mentionable,
   type MentionMatch,
+  type MentionTarget,
   type SlashMatch,
   type SlashCommandId,
   type TextFileAttachment,
@@ -79,7 +82,7 @@ const EmojiPickerLazy = React.lazy(() =>
 );
 
 interface Props {
-  onSend: (message: string, attachments?: ChatImageAttachment[]) => void;
+  onSend: (message: string, attachments?: ChatImageAttachment[], metadata?: ComposerSendMetadata) => void;
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
@@ -95,6 +98,7 @@ interface Props {
    */
   value?: string;
   onValueChange?: (next: string) => void;
+  includeComposerMetadata?: boolean;
 }
 
 const MENU_POPOVER_GAP = 4;
@@ -298,7 +302,7 @@ function CaretPopover({
   );
 }
 
-export function ChatInput({ onSend, onStop, isStreaming, disabled, availableModels, selectedModel, onModelChange, placeholder, value, onValueChange }: Props) {
+export function ChatInput({ onSend, onStop, isStreaming, disabled, availableModels, selectedModel, onModelChange, placeholder, value, onValueChange, includeComposerMetadata = false }: Props) {
   const { featureFlags, minds, activeMindId } = useAppState();
   const dispatch = useAppDispatch();
   const newConversation = useNewConversation();
@@ -319,6 +323,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
   const [shortcodeIndex, setShortcodeIndex] = useState(0);
   const [shortcodeAnchor, setShortcodeAnchor] = useState<MenuAnchor | null>(null);
   const [mentionMatch, setMentionMatch] = useState<MentionMatch | null>(null);
+  const [selectedMentionTargets, setSelectedMentionTargets] = useState<MentionTarget[]>([]);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionAnchor, setMentionAnchor] = useState<MenuAnchor | null>(null);
   const [slashMatch, setSlashMatch] = useState<SlashMatch | null>(null);
@@ -419,6 +424,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
 
   const resetComposer = useCallback(() => {
     setInput('');
+    setSelectedMentionTargets([]);
     updateBucket(conversationKey, (bucket) => (bucket === EMPTY_BUCKET ? bucket : EMPTY_BUCKET));
     setAttachmentNotice(null);
     closeAllMenus();
@@ -565,6 +571,11 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     const token = `@${item.name} `;
     const next = before + token + after;
     setInput(next);
+    setSelectedMentionTargets((targets) => {
+      const pruned = pruneMentionTargets(next, targets);
+      if (pruned.some((target) => target.mindId === item.mindId)) return pruned;
+      return [...pruned, { mindId: item.mindId, name: item.name }];
+    });
     const caret = before.length + token.length;
     selectionRef.current = { start: caret, end: caret };
     closeMention();
@@ -720,9 +731,21 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     // Fold any text-file contents into the outgoing prompt; images ride along
     // as blob attachments and keep their inline marker token.
     const message = buildMessageWithTextAttachments(input, bucket.texts);
-    onSend(message, keptImages.length > 0 ? keptImages : undefined);
+    const mentionTargets = pruneMentionTargets(input, selectedMentionTargets);
+    const metadata = mentionTargets.length > 0 || (includeComposerMetadata && (input.includes('@') || input !== message))
+      ? {
+        mentionTargets,
+        ...(includeComposerMetadata ? { visibleText: input } : {}),
+      }
+      : undefined;
+    const imageAttachments = keptImages.length > 0 ? keptImages : undefined;
+    if (metadata) {
+      onSend(message, imageAttachments, metadata);
+    } else {
+      onSend(message, imageAttachments);
+    }
     resetComposer();
-  }, [input, attachmentsByKey, conversationKey, slashMatch, isStreaming, disabled, onSend, resetComposer]);
+  }, [input, attachmentsByKey, conversationKey, slashMatch, isStreaming, disabled, onSend, resetComposer, selectedMentionTargets, includeComposerMetadata]);
 
   const acceptShortcode = useCallback(
     (record: EmojiRecord) => {
@@ -857,6 +880,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     resize(e.target);
     // Drop attachments whose tokens were removed by the user.
     pruneAttachments(next);
+    setSelectedMentionTargets((targets) => pruneMentionTargets(next, targets));
     // Menu detection — suppressed during IME composition.
     if (isComposingRef.current) {
       closeAllMenus();

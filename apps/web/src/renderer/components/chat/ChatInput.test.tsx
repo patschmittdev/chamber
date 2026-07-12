@@ -241,7 +241,7 @@ describe('ChatInput', () => {
     it('shows an enabled mic button when the flag is on, permission is granted, and the model is ready', async () => {
       const mic = await renderWithMic();
 
-      expect((mic as HTMLButtonElement).disabled).toBe(false);
+      await waitFor(() => expect((mic as HTMLButtonElement).disabled).toBe(false));
       expect(mic.getAttribute('title')).toBe('Click to start dictation · Alt+Shift+V');
       expect(screen.queryByText('Listening…')).toBeNull();
       fireEvent.click(mic);
@@ -813,6 +813,28 @@ describe('ChatInput file attachments', () => {
     expect(attachments).toBeUndefined();
   });
 
+  it('can include visible composer text metadata before text attachments are folded', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput {...defaultProps} onSend={onSend} includeComposerMetadata />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const fileInput = screen.getByTestId('composer-file-input') as HTMLInputElement;
+    const file = new File(['hello @Jarvis'], 'notes.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => expect(textarea.value).toMatch(/\[📄#\d+ notes\.txt\]/));
+    const visibleText = textarea.value;
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    const [message, attachments, metadata] = onSend.mock.calls[0];
+    expect(message).toContain('hello @Jarvis');
+    expect(attachments).toBeUndefined();
+    expect(metadata).toEqual({
+      mentionTargets: [],
+      visibleText,
+    });
+  });
+
   it('skips unsupported binary files with a clear notice', async () => {
     render(<ChatInput {...defaultProps} />);
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
@@ -929,8 +951,10 @@ describe('ChatInput attachment scoping (per-mind)', () => {
     appStateMock.current.activeMindId = 'mindA';
     rerender(<ControlledHarness onSend={onSend} mindId="mindA" />);
     textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-    await waitFor(() => expect(textarea.value).toContain('please review this'));
-    expect(textarea.value).toMatch(/\[📷#\d+ a\.png\]/);
+    await waitFor(() => {
+      expect(textarea.value).toContain('please review this');
+      expect(textarea.value).toMatch(/\[📷#\d+ a\.png\]/);
+    });
 
     fireEvent.keyDown(textarea, { key: 'Enter' });
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -969,6 +993,23 @@ describe('ChatInput @-mentions', () => {
     await screen.findByTestId('mention-popover');
     fireEvent.keyDown(textarea, { key: 'Enter' });
     await waitFor(() => expect(textarea.value).toBe('hey @Alan '));
+  });
+
+  it('sends selected mention metadata with stable mind ids', async () => {
+    const onSend = vi.fn();
+    appStateMock.current.minds = [makeMind('m1', 'Ada'), makeMind('m2', 'Alan')];
+    render(<ChatInput {...defaultProps} onSend={onSend} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    typeAtEnd(textarea, 'hey @al');
+    await screen.findByTestId('mention-popover');
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() => expect(textarea.value).toBe('hey @Alan '));
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(onSend).toHaveBeenCalledWith('hey @Alan ', undefined, {
+      mentionTargets: [{ mindId: 'm2', name: 'Alan' }],
+    });
   });
 
   it('does not open a mention menu when no minds are loaded', () => {
@@ -1079,4 +1120,3 @@ describe('ChatInput slash commands', () => {
     await waitFor(() => expect(trigger?.getAttribute('aria-expanded')).toBe('true'));
   });
 });
-

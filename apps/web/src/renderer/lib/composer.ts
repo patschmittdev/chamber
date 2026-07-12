@@ -108,6 +108,16 @@ export interface Mentionable {
   name: string;
 }
 
+export interface MentionTarget {
+  mindId: string;
+  name: string;
+}
+
+export interface ComposerSendMetadata {
+  mentionTargets: MentionTarget[];
+  visibleText?: string;
+}
+
 export function toMentionables(minds: readonly MindContext[]): Mentionable[] {
   return minds.map((mind) => ({ mindId: mind.mindId, name: mind.identity.name }));
 }
@@ -116,6 +126,32 @@ export function filterMentionables(items: readonly Mentionable[], query: string,
   const q = query.toLowerCase();
   const matched = q.length === 0 ? items : items.filter((item) => item.name.toLowerCase().includes(q));
   return matched.slice(0, limit);
+}
+
+function isMentionBoundaryBefore(char: string | undefined): boolean {
+  return char === undefined || /[\s([{,]/.test(char);
+}
+
+function isMentionBoundaryAfter(char: string | undefined): boolean {
+  return char === undefined || /[\s)\]},.!?;:]/.test(char);
+}
+
+export function hasMentionText(text: string, name: string): boolean {
+  const token = `@${name}`;
+  let index = text.indexOf(token);
+  while (index !== -1) {
+    const before = text[index - 1];
+    const after = text[index + token.length];
+    if (isMentionBoundaryBefore(before) && isMentionBoundaryAfter(after)) {
+      return true;
+    }
+    index = text.indexOf(token, index + token.length);
+  }
+  return false;
+}
+
+export function pruneMentionTargets(text: string, targets: readonly MentionTarget[]): MentionTarget[] {
+  return targets.filter((target) => hasMentionText(text, target.name));
 }
 
 // Slash commands ------------------------------------------------------------
