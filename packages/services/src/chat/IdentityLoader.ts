@@ -60,10 +60,13 @@ export class IdentityLoader {
     const parts = [...identityParts, ...memoryParts];
     if (parts.length === 0) return null;
 
-    parts.push(buildChamberSection());
-
+    // Custom instructions are user-authored preferences. Emit them before the
+    // Chamber operating/safety guidance so that guidance keeps the final word
+    // and user text cannot override Chamber or A2A safety rules.
     const customInstructionsSection = buildCustomInstructionsSection(this.getCustomInstructions());
     if (customInstructionsSection) parts.push(customInstructionsSection);
+
+    parts.push(buildChamberSection());
 
     const toolsSection = buildToolsSection(this.getInstalledTools());
     if (toolsSection) parts.push(toolsSection);

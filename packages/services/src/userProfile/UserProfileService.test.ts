@@ -68,6 +68,40 @@ describe('UserProfileService', () => {
     }
   });
 
+  it('preserves an imported Microsoft source on a custom-instructions-only save', () => {
+    const fixture = createFixture();
+    try {
+      fixture.service.saveMicrosoftProfile({
+        displayName: 'Ian Philpot',
+        microsoftAccount: 'ianphil@microsoft.com',
+      });
+
+      const profile = fixture.service.saveProfile({ customInstructions: 'Prefer TypeScript examples.' });
+
+      expect(profile.source).toBe('microsoft');
+      expect(profile.microsoftAccount).toBe('ianphil@microsoft.com');
+      expect(profile.customInstructions).toBe('Prefer TypeScript examples.');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  it('marks the profile local when identity fields are edited', () => {
+    const fixture = createFixture();
+    try {
+      fixture.service.saveMicrosoftProfile({
+        displayName: 'Ian Philpot',
+        microsoftAccount: 'ianphil@microsoft.com',
+      });
+
+      const profile = fixture.service.saveProfile({ displayName: 'Ian P.' });
+
+      expect(profile.source).toBe('local');
+    } finally {
+      fixture.dispose();
+    }
+  });
+
   it('persists global custom instructions', () => {
     const fixture = createFixture();
     try {

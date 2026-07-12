@@ -1508,6 +1508,90 @@ describe('MindManager', () => {
     });
   });
 
+  describe('refreshLoadedMindIdentities', () => {
+    const defaultIdentityImpl = (mindPath: string) => ({
+      name: mindPath.split('/').pop() ?? 'unknown',
+      systemMessage: `Identity for ${mindPath}`,
+    });
+    const withCustomInstructions = (mindPath: string) => ({
+      name: mindPath.split('/').pop() ?? 'unknown',
+      systemMessage: `Identity for ${mindPath}\n\n## Custom Instructions\nBe concise.`,
+    });
+    afterEach(() => {
+      mockIdentityLoader.load.mockImplementation(defaultIdentityImpl);
+    });
+
+    const expectFreshTaskSystemMessage = () => {
+      expect(mockCreateSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          systemMessage: expect.objectContaining({
+            sections: expect.objectContaining({
+              identity: { action: 'replace', content: expect.stringContaining('Be concise.') },
+            }),
+          }),
+        }),
+      );
+    };
+
+    it('refreshes the cached identity so the next task session uses fresh instructions', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      mockIdentityLoader.load.mockImplementation(withCustomInstructions);
+
+      const result = await manager.refreshLoadedMindIdentities();
+      expect(result.refreshedCount).toBe(1);
+
+      mockCreateSession.mockClear();
+      await manager.createTaskSession(mind.mindId, 'task-1');
+      expectFreshTaskSystemMessage();
+    });
+
+    it('refreshes the cached identity so the next chatroom session uses fresh instructions', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      mockIdentityLoader.load.mockImplementation(withCustomInstructions);
+
+      await manager.refreshLoadedMindIdentities();
+
+      mockCreateSession.mockClear();
+      await manager.createChatroomSession(mind.mindId);
+      expectFreshTaskSystemMessage();
+    });
+
+    it('recreates an empty active chat session so it adopts fresh instructions', async () => {
+      await manager.loadMind('/tmp/agents/q');
+      mockIdentityLoader.load.mockImplementation(withCustomInstructions);
+      mockCreateSession.mockClear();
+
+      await manager.refreshLoadedMindIdentities();
+
+      expectFreshTaskSystemMessage();
+    });
+
+    it('does not recreate an active chat session that already has messages', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'hello there');
+      mockIdentityLoader.load.mockImplementation(withCustomInstructions);
+      mockCreateSession.mockClear();
+
+      const result = await manager.refreshLoadedMindIdentities();
+
+      expect(result.refreshedCount).toBe(1);
+      expect(mockCreateSession).not.toHaveBeenCalled();
+
+      await manager.createTaskSession(mind.mindId, 'task-1');
+      expectFreshTaskSystemMessage();
+    });
+
+    it('is a no-op when the identity is unchanged', async () => {
+      await manager.loadMind('/tmp/agents/q');
+      mockCreateSession.mockClear();
+
+      const result = await manager.refreshLoadedMindIdentities();
+
+      expect(result.refreshedCount).toBe(0);
+      expect(mockCreateSession).not.toHaveBeenCalled();
+    });
+  });
+
   describe('concurrent loadMind guard', () => {
     it('returns same promise for concurrent calls with same path', async () => {
       const promise1 = manager.loadMind('/tmp/agents/q');

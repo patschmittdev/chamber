@@ -201,13 +201,37 @@ describe('IdentityLoader', () => {
       expect(result?.systemMessage).not.toContain('## Custom Instructions');
     });
 
-    it('injects custom instructions after the Chamber section', () => {
+    it('injects custom instructions before the Chamber safety section so safety keeps precedence', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
       vi.mocked(fs.readdirSync).mockReturnValue([]);
       const result = new IdentityLoader(() => [], () => 'Be concise.').load('/tmp/test');
       const systemMessage = result?.systemMessage ?? '';
-      expect(systemMessage.indexOf('## Custom Instructions')).toBeGreaterThan(systemMessage.indexOf('## Chamber'));
+      const customIndex = systemMessage.indexOf('## Custom Instructions');
+      const chamberIndex = systemMessage.indexOf('## Chamber');
+      expect(customIndex).toBeGreaterThan(systemMessage.indexOf('# Q'));
+      expect(customIndex).toBeLessThan(chamberIndex);
+    });
+
+    it('places custom instructions before both the Chamber and Tools sections', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue('# Q\nI am an agent.');
+      vi.mocked(fs.readdirSync).mockReturnValue([]);
+      const tools: InstalledTool[] = [{
+        id: 'workiq',
+        package: '@microsoft/workiq',
+        version: 'latest',
+        bin: 'workiq',
+        displayName: 'Microsoft Work IQ',
+        description: 'Query M365 data.',
+        source: { marketplaceId: 'github:ianphil/genesis-minds', pluginId: 'genesis-minds' },
+        installedAt: '2026-05-07T21:00:00.000Z',
+      }];
+      const result = new IdentityLoader(() => tools, () => 'Be concise.').load('/tmp/test');
+      const systemMessage = result?.systemMessage ?? '';
+      const customIndex = systemMessage.indexOf('## Custom Instructions');
+      expect(customIndex).toBeLessThan(systemMessage.indexOf('## Chamber'));
+      expect(customIndex).toBeLessThan(systemMessage.indexOf('## Tools'));
     });
   });
 });

@@ -21,10 +21,14 @@ export class UserProfileService {
 
   saveProfile(request: UserProfileSaveRequest): UserProfile {
     const config = this.configService.load();
+    const existing = config.userProfile ?? DEFAULT_USER_PROFILE;
     const profile: UserProfile = {
-      ...(config.userProfile ?? DEFAULT_USER_PROFILE),
+      ...existing,
       ...definedProfileFields(request),
-      source: 'local',
+      // Editing identity fields marks the profile as locally authored. A
+      // custom-instructions-only save leaves the provenance untouched so an
+      // imported Microsoft profile is not silently downgraded to 'local'.
+      source: editsIdentityFields(request) ? 'local' : existing.source,
       updatedAt: new Date().toISOString(),
     };
     this.configService.save({ ...config, userProfile: profile });
@@ -54,4 +58,12 @@ function definedProfileFields(request: UserProfileSaveRequest): UserProfileSaveR
   if (request.avatarDataUrl !== undefined) fields.avatarDataUrl = request.avatarDataUrl;
   if (request.customInstructions !== undefined) fields.customInstructions = request.customInstructions;
   return fields;
+}
+
+function editsIdentityFields(request: UserProfileSaveRequest): boolean {
+  return request.displayName !== undefined
+    || request.work !== undefined
+    || request.location !== undefined
+    || request.about !== undefined
+    || request.avatarDataUrl !== undefined;
 }
