@@ -70,8 +70,8 @@ export function MessageList() {
   const profileByMindId = useMindProfiles(minds);
   const userProfile = useUserProfile();
   const messages = activeMindId ? (messagesByMind[activeMindId] ?? []) : [];
-  const { regenerate, editAndResubmit, isStreaming } = useChatStreaming();
-  const { deleteMessage } = useConversationActions();
+  const { regenerate, editAndResubmit, isBusy } = useChatStreaming();
+  const { deleteMessage, forkMessage } = useConversationActions();
   // Regenerate re-runs the most recent user turn, so its availability depends on
   // that turn: it must be persisted and must not contain attachments, which
   // cannot be replayed yet.
@@ -157,9 +157,10 @@ export function MessageList() {
                 avatarDataUrl={avatarDataUrl}
                 animate={isLastMessage}
                 launch={isLastMessage && message.role === 'user'}
-                isStreaming={isStreaming}
+                isBusy={isBusy}
                 onRegenerate={regenerate}
                 onDelete={deleteMessage}
+                onFork={forkMessage}
                 onEditSubmit={editAndResubmit}
                 regenerateSupported={isLastMessage && message.role === 'assistant' && regenerateSupported}
                 regenerateDisabledReason={regenerateDisabledReason}
@@ -202,10 +203,11 @@ interface MessageRowProps {
   // The newest row when it is the user's just-sent message: plays the launch
   // entrance instead of the generic fade.
   launch: boolean;
-  // A turn is streaming somewhere — mutating actions are held until it settles.
-  isStreaming: boolean;
+  // The active conversation is streaming, hydrating, or switching models.
+  isBusy: boolean;
   onRegenerate: () => void;
   onDelete: (message: ChatMessage) => void;
+  onFork: (message: ChatMessage) => void;
   onEditSubmit: (message: ChatMessage, text: string) => void;
   // Whether this row may offer Regenerate (newest assistant turn whose target
   // user turn is persisted). Computed by the parent so the memoized row keeps
@@ -227,9 +229,10 @@ const MessageRow = memo(function MessageRow({
   avatarDataUrl,
   animate,
   launch,
-  isStreaming,
+  isBusy,
   onRegenerate,
   onDelete,
+  onFork,
   onEditSubmit,
   regenerateSupported,
   regenerateDisabledReason,
@@ -242,7 +245,12 @@ const MessageRow = memo(function MessageRow({
   // desktop they appear a moment after the turn settles.
   const canMutate = Boolean(message.eventId);
   const handleDelete = useCallback(() => onDelete(message), [onDelete, message]);
+  const handleFork = useCallback(() => onFork(message), [onFork, message]);
   const deleteAction = canMutate ? handleDelete : undefined;
+  const fork = useMemo<RowAction | undefined>(
+    () => canMutate ? { onRun: handleFork } : undefined,
+    [canMutate, handleFork],
+  );
 
   const regenerate = useMemo<RowAction | undefined>(
     () => regenerateSupported ? { onRun: onRegenerate, disabledReason: regenerateDisabledReason } : undefined,
@@ -282,6 +290,11 @@ const MessageRow = memo(function MessageRow({
           <span className="text-xs text-muted-foreground">
             {formatTime(message.timestamp)}
           </span>
+          {message.forkSeed && (
+            <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Prior context
+            </span>
+          )}
         </div>
 
         {message.role === 'assistant' ? (
@@ -289,12 +302,14 @@ const MessageRow = memo(function MessageRow({
             <StreamingMessage
               blocks={message.blocks}
               isStreaming={message.isStreaming}
+              contextOnly={message.forkSeed}
             />
             {!message.isStreaming && getPlainContent(message).trim() && (
               <MessageActions
                 message={message}
-                isStreaming={isStreaming}
+                isBusy={isBusy}
                 regenerate={regenerate}
+                fork={fork}
                 onDelete={deleteAction}
               />
             )}
@@ -302,7 +317,7 @@ const MessageRow = memo(function MessageRow({
         ) : isEditing ? (
           <MessageEditor
             initialText={getPlainContent(message)}
-            disabled={isStreaming}
+            disabled={isBusy}
             followingTurnCount={followingTurnCount}
             onCancel={() => setIsEditing(false)}
             onSubmit={(text) => {
@@ -351,8 +366,9 @@ const MessageRow = memo(function MessageRow({
             {!message.isStreaming && (
               <MessageActions
                 message={message}
-                isStreaming={isStreaming}
+                isBusy={isBusy}
                 edit={edit}
+                fork={fork}
                 onDelete={deleteAction}
               />
             )}

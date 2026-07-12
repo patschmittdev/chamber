@@ -389,7 +389,7 @@ describe('MessageList', () => {
       expect(regen?.title).toMatch(/attachments/i);
     });
 
-    it('hides Edit, Delete, and Regenerate for turns not yet persisted (no event id, e.g. browser mode)', () => {
+    it('hides Edit, Delete, Fork, and Regenerate for turns not yet persisted (no event id, e.g. browser mode)', () => {
       renderMessages([
         {
           id: 'u-unsaved',
@@ -407,12 +407,13 @@ describe('MessageList', () => {
 
       expect(query('Edit message')).toBeNull();
       expect(query('Delete this message and all following messages')).toBeNull();
+      expect(query('Fork conversation from here')).toBeNull();
       expect(query('Regenerate response')).toBeNull();
       // Copy stays available regardless of persistence.
       expect(screen.getAllByRole('button', { name: 'Copy message' }).length).toBeGreaterThan(0);
     });
 
-    it('enables Edit and Delete for a saved text-only user turn', () => {
+    it('enables Edit, Delete, and Fork for a saved text-only user turn', () => {
       renderMessages([
         {
           id: 'u-text',
@@ -425,8 +426,146 @@ describe('MessageList', () => {
 
       const edit = query('Edit message');
       const del = query('Delete this message and all following messages');
+      const fork = query('Fork conversation from here');
       expect(edit?.disabled).toBe(false);
       expect(del?.disabled).toBe(false);
+      expect(fork?.disabled).toBe(false);
+    });
+
+    it('disables row mutations while the active mind is switching models', () => {
+      render(
+        <AppStateProvider
+          testInitialState={{
+            activeMindId: MONEYPENNY.mindId,
+            minds: [Q, MONEYPENNY],
+            conversationViewByMind: {
+              [MONEYPENNY.mindId]: {
+                status: 'ready',
+                sessionId: 'session-1',
+                streaming: false,
+                modelSwitching: true,
+              },
+            },
+            messagesByMind: {
+              [MONEYPENNY.mindId]: [
+                {
+                  id: 'u-text',
+                  role: 'user',
+                  eventId: 'evt-text',
+                  blocks: [{ type: 'text', content: 'plain question' }],
+                  timestamp: 1000,
+                },
+                {
+                  id: 'a-text',
+                  role: 'assistant',
+                  eventId: 'evt-answer',
+                  blocks: [{ type: 'text', content: 'plain answer' }],
+                  timestamp: 1001,
+                },
+              ],
+            },
+          }}
+        >
+          <MessageList />
+        </AppStateProvider>,
+      );
+
+      const edit = screen.getByRole('button', { name: 'Edit message' }) as HTMLButtonElement;
+      const deletes = screen.getAllByRole('button', { name: 'Delete this message and all following messages' }) as HTMLButtonElement[];
+      const forks = screen.getAllByRole('button', { name: 'Fork conversation from here' }) as HTMLButtonElement[];
+      const regenerate = screen.getByRole('button', { name: 'Regenerate response' }) as HTMLButtonElement;
+      const copies = screen.getAllByRole('button', { name: 'Copy message' }) as HTMLButtonElement[];
+      expect(edit.disabled).toBe(true);
+      expect(deletes.every((button) => button.disabled)).toBe(true);
+      expect(forks.every((button) => button.disabled)).toBe(true);
+      expect(regenerate.disabled).toBe(true);
+      expect(copies.some((button) => !button.disabled)).toBe(true);
+    });
+
+    it('loads the active fork returned by Fork from here', async () => {
+      const api = installElectronAPI();
+      (api.chat.forkConversation as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: 'fork-session',
+        messages: [
+          {
+            id: 'fork-seed:source-session:u-text',
+            role: 'user',
+            forkSeed: true,
+            blocks: [{ type: 'text', content: 'seed question' }],
+            timestamp: 1000,
+          },
+          {
+            id: 'fork-new-user',
+            role: 'user',
+            blocks: [{ type: 'text', content: 'new fork question' }],
+            timestamp: 2000,
+          },
+        ],
+        conversations: [{
+          sessionId: 'fork-session',
+          title: 'Fork of Source chat',
+          createdAt: '2026-05-05T22:10:00.000Z',
+          updatedAt: '2026-05-05T22:10:00.000Z',
+          kind: 'chat',
+          active: true,
+          hasMessages: false,
+          forkOf: {
+            sourceSessionId: 'source-session',
+            sourceEventId: 'evt-text',
+            sourceMessageId: 'u-text',
+            sourceTitle: 'Source chat',
+            createdAt: '2026-05-05T22:10:00.000Z',
+          },
+        }],
+      });
+      render(
+        <AppStateProvider
+          testInitialState={{
+            activeMindId: MONEYPENNY.mindId,
+            minds: [Q, MONEYPENNY],
+            activeConversationByMind: { [MONEYPENNY.mindId]: 'source-session' },
+            messagesByMind: {
+              [MONEYPENNY.mindId]: [{
+                id: 'u-text',
+                role: 'user',
+                eventId: 'evt-text',
+                blocks: [{ type: 'text', content: 'plain question' }],
+                timestamp: 1000,
+              }],
+            },
+          }}
+        >
+          <MessageList />
+        </AppStateProvider>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Fork conversation from here' }));
+
+      await waitFor(() => {
+        expect(api.chat.forkConversation).toHaveBeenCalledWith(MONEYPENNY.mindId, 'source-session', 'evt-text');
+      });
+      expect(await screen.findByText('seed question')).toBeTruthy();
+      expect(screen.getByText('new fork question')).toBeTruthy();
+      expect(screen.getByText('Prior context')).toBeTruthy();
+    });
+
+    it('renders fork seed work blocks as prior context instead of active work', () => {
+      renderMessages([
+        {
+          id: 'fork-seed:source-session:a1',
+          role: 'assistant',
+          forkSeed: true,
+          blocks: [
+            { type: 'tool_call', toolCallId: 't1', toolName: 'search', status: 'running', output: 'historical partial output' },
+            { type: 'permission', requestId: 'p1', kind: 'shell', summary: 'run tests', outcome: 'pending' },
+          ],
+          timestamp: 1000,
+        },
+      ]);
+
+      expect(screen.getByText('Prior context')).toBeTruthy();
+      expect(screen.queryByLabelText('running')).toBeNull();
+      expect(screen.queryByLabelText('awaiting permission')).toBeNull();
     });
 
     it('warns that editing an earlier turn removes the turns after it', () => {

@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { generateMindId } from '../mind';
 import { parseLensViewVisibilityKey } from '@chamber/shared';
-import type { AppConfig, AppConfigV1, ChamberConversationRecord, InstalledTool, MarketplaceRegistry, MindRecord, UserProfile } from '@chamber/shared/types';
+import type { AppConfig, AppConfigV1, ChamberConversationRecord, ConversationForkRef, InstalledTool, MarketplaceRegistry, MindRecord, UserProfile } from '@chamber/shared/types';
 import {
   DEFAULT_DENSITY,
   DEFAULT_FONT_SCALE,
@@ -215,6 +215,7 @@ function normalizeConversationRecord(value: unknown): ChamberConversationRecord 
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const kind = record.kind === 'cron' || record.kind === 'task' ? record.kind : 'chat';
+  const forkOf = normalizeConversationForkRef(record.forkOf);
   if (
     typeof record.sessionId !== 'string'
     || typeof record.createdAt !== 'string'
@@ -234,6 +235,28 @@ function normalizeConversationRecord(value: unknown): ChamberConversationRecord 
     ...(typeof record.systemMessage === 'string' && record.systemMessage.trim().length > 0
       ? { systemMessage: record.systemMessage }
       : {}),
+    ...(forkOf ? { forkOf } : {}),
+  };
+}
+
+function normalizeConversationForkRef(value: unknown): ConversationForkRef | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.sourceSessionId !== 'string'
+    || typeof record.sourceEventId !== 'string'
+    || typeof record.sourceMessageId !== 'string'
+    || typeof record.sourceTitle !== 'string'
+    || typeof record.createdAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    sourceSessionId: record.sourceSessionId,
+    sourceEventId: record.sourceEventId,
+    sourceMessageId: record.sourceMessageId,
+    sourceTitle: record.sourceTitle,
+    createdAt: record.createdAt,
   };
 }
 

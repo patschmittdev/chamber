@@ -58,6 +58,36 @@ describe('useChatStreaming', () => {
     expect(result.current.isStreaming).toBe(false);
   });
 
+  it('sendMessage no-ops while the active mind is switching models', async () => {
+    const mind = {
+      mindId: 'monica-1234',
+      mindPath: 'C:\\agents\\monica',
+      identity: { name: 'Monica', systemMessage: '' },
+      status: 'ready' as const,
+    };
+    const { result } = renderHook(() => useChatStreaming(), {
+      wrapper: wrapper({
+        minds: [mind],
+        activeMindId: mind.mindId,
+        conversationViewByMind: {
+          [mind.mindId]: {
+            status: 'ready',
+            sessionId: 'session-1',
+            streaming: false,
+            modelSwitching: true,
+          },
+        },
+      }),
+    });
+
+    await act(async () => {
+      await result.current.sendMessage('Hello');
+    });
+
+    expect(api.chat.send).not.toHaveBeenCalled();
+    expect(result.current.isBusy).toBe(true);
+  });
+
   it('stops the original streaming mind after switching away and back', async () => {
     let resolveSend: () => void = () => undefined;
     (api.chat.send as ReturnType<typeof vi.fn>).mockReturnValue(new Promise<void>((resolve) => {

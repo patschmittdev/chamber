@@ -35,7 +35,7 @@ export function ChatPanel() {
   const isModelSwitching = Boolean(conversationView?.modelSwitching);
   const connected = minds.length > 0;
   const dispatch = useAppDispatch();
-  const { sendMessage, stopStreaming, isStreaming } = useChatStreaming();
+  const { sendMessage, stopStreaming, isStreaming, isBusy } = useChatStreaming();
   // Per-mind unsent compose draft (#221). Reading from the store keeps the
   // textarea in sync when the active mind changes; writing back on every
   // edit preserves drafts for future visits to the same mind.
@@ -93,7 +93,7 @@ export function ChatPanel() {
             onSend={sendMessage}
             onStop={stopStreaming}
             isStreaming={isStreaming}
-            disabled={!connected || isModelSwitching}
+            disabled={!connected || (isBusy && !isStreaming)}
             availableModels={availableModels}
             selectedModel={selectedModel}
             onModelChange={handleModelChange}

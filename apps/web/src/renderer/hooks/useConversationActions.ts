@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useAppState, useAppDispatch } from '../lib/store';
 import type { ChatMessage } from '@chamber/shared/types';
 import { Logger } from '../lib/logger';
+import { useActiveMindBusy } from './useActiveMindBusy';
 
 const log = Logger.create('useConversationActions');
 
@@ -14,11 +15,12 @@ const log = Logger.create('useConversationActions');
  * still holds.
  */
 export function useConversationActions() {
-  const { activeMindId } = useAppState();
+  const { activeMindId, activeConversationByMind } = useAppState();
+  const { isBusy } = useActiveMindBusy();
   const dispatch = useAppDispatch();
 
   const deleteMessage = useCallback(async (message: ChatMessage) => {
-    if (!activeMindId || !message.eventId) return;
+    if (isBusy || !activeMindId || !message.eventId) return;
     const mindId = activeMindId;
     try {
       const conversations = await window.electronAPI.chat.deleteMessage(mindId, message.eventId);
@@ -27,7 +29,28 @@ export function useConversationActions() {
     } catch (error) {
       log.error('Failed to delete message:', error);
     }
-  }, [activeMindId, dispatch]);
+  }, [activeMindId, isBusy, dispatch]);
 
-  return { deleteMessage };
+  const forkMessage = useCallback(async (message: ChatMessage) => {
+    if (isBusy || !activeMindId || !message.eventId) return;
+    const mindId = activeMindId;
+    const sourceSessionId = activeConversationByMind[mindId];
+    if (!sourceSessionId) return;
+    try {
+      const result = await window.electronAPI.chat.forkConversation(mindId, sourceSessionId, message.eventId);
+      dispatch({
+        type: 'RESUME_CONVERSATION',
+        payload: {
+          mindId,
+          sessionId: result.sessionId,
+          messages: result.messages,
+          conversations: result.conversations,
+        },
+      });
+    } catch (error) {
+      log.error('Failed to fork conversation:', error);
+    }
+  }, [activeMindId, activeConversationByMind, isBusy, dispatch]);
+
+  return { deleteMessage, forkMessage, isBusy };
 }

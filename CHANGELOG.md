@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add conversation history search and export** — Search the active mind's conversations by title and message content, and export any conversation as Markdown or JSON via a save dialog. Resumed, exported, and searched transcripts now preserve tool, reasoning, and permission blocks consistent with live chat.
 - **Add Extensions hub** — New Extensions view (activity-bar icon) with four tabs: manage a mind's MCP servers (add/edit/remove written to .mcp.json, reusing the runtime schema so invalid entries are preserved and never normalized, with tools/type preserved across edits and renames), install/uninstall marketplace Tools, and read-only Skills and Lens view lists.
 - **Add first-class chat document attachments**
+- **Add conversation forking from persisted turns** - Adds fork metadata, bounded seed context, first-turn context injection, renderer actions, and history display so a prior user or assistant turn can start a distinct active conversation. Fixes ianphil/chamber#181.
 
 ### Refactor
 

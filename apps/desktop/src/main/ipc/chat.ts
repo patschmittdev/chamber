@@ -87,6 +87,10 @@ export function setupChatIPC(chatService: ChatService, mindManager: MindManager)
     return chatService.getConversationEvents(mindId);
   });
 
+  ipcMain.handle(IPC.CHAT.FORK_CONVERSATION, async (_event, mindId: string, sourceSessionId: string, sourceEventId: string) => {
+    return chatService.forkConversation(mindId, sourceSessionId, sourceEventId);
+  });
+
   ipcMain.handle(IPC.CHAT.GET_EVENT_SEQUENCE, () => chatEventSequence);
 
   ipcMain.handle(IPC.CHAT.REPLAY_EVENTS, (_event, afterSequence: number) => {

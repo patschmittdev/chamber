@@ -129,6 +129,63 @@ describe('mapSessionEventsToChatMessages', () => {
     expect(JSON.stringify(messages[0].blocks)).not.toContain('chamber_attachment_manifest');
   });
 
+  it('strips Chamber fork context wrappers while preserving attachment manifest blocks', () => {
+    const events = [
+      {
+        type: 'user.message',
+        timestamp: '2026-05-05T22:00:00.000Z',
+        data: {
+          messageId: 'u1',
+          content: [
+            'continue from here',
+            '<chamber_attachment_manifest>',
+            JSON.stringify({
+              version: 1,
+              retrieval: 'Use attachment_read.',
+              attachments: [{
+                id: 'att-1',
+                kind: 'document',
+                displayName: 'brief.md',
+                mimeType: 'text/markdown',
+                size: 12,
+              }],
+            }),
+            '</chamber_attachment_manifest>',
+            '<chamber_conversation_fork_context>',
+            JSON.stringify({
+              version: 1,
+              source: {
+                sourceSessionId: 'source-session',
+                sourceEventId: 'evt-2',
+                sourceMessageId: 'a1',
+                sourceTitle: 'Source chat',
+                createdAt: '2026-05-05T22:00:00.000Z',
+              },
+              messages: [{ role: 'assistant', blocks: [{ type: 'text', content: 'prior answer' }] }],
+            }),
+            '</chamber_conversation_fork_context>',
+          ].join('\n'),
+        },
+      },
+    ];
+
+    const messages = mapSessionEventsToChatMessages(events);
+
+    expect(messages[0].blocks).toEqual([
+      {
+        type: 'attachment',
+        id: 'att-1',
+        kind: 'document',
+        displayName: 'brief.md',
+        mimeType: 'text/markdown',
+        size: 12,
+      },
+      { type: 'text', content: 'continue from here' },
+    ]);
+    expect(JSON.stringify(messages[0].blocks)).not.toContain('chamber_conversation_fork_context');
+    expect(JSON.stringify(messages[0].blocks)).not.toContain('prior answer');
+  });
+
   it('skips malformed tool and permission events without throwing and keeps the rest of the turn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const events = [

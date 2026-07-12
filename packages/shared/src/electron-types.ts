@@ -87,6 +87,8 @@ export interface ElectronAPI {
     regenerate: (mindId: string, messageId: string, model?: string) => Promise<void>;
     /** Ordered references to persisted user/assistant turns, for reconciling live messages with their event ids. */
     getConversationEvents: (mindId: string) => Promise<ConversationEventRef[]>;
+    /** Forks a new active conversation from a persisted turn in another conversation. */
+    forkConversation: (mindId: string, sourceSessionId: string, sourceEventId: string) => Promise<ConversationResumeResult>;
   };
   conversationHistory: {
     list: (mindId: string) => Promise<ConversationSummary[]>;

@@ -10,6 +10,8 @@ import type { ViewDiscovery } from '../lens/ViewDiscovery';
 import type { AppConfig, LensViewManifest } from '@chamber/shared/types';
 import { MindScaffold } from '../genesis/MindScaffold';
 import type { ManagedSkillSyncResult } from '../skills';
+import type { ConversationForkSeed } from '../chat/conversationForkContext';
+import { appendAttachmentManifestContext } from '../chat/attachmentContext';
 
 // --- Mocks ---
 
@@ -766,6 +768,140 @@ describe('MindManager', () => {
         { eventId: 'evt-1', messageId: 'u1', role: 'user' },
         { eventId: 'evt-2', messageId: 'a1', role: 'assistant' },
       ]);
+    });
+
+    it('forks a distinct active session with metadata and bounded seed context without truncating the source', async () => {
+      const seeds = new Map<string, ConversationForkSeed>();
+      const forkSeedStore = {
+        save: vi.fn(async (mindId: string, sessionId: string, seed: ConversationForkSeed) => {
+          seeds.set(`${mindId}:${sessionId}`, seed);
+        }),
+        read: vi.fn(async (mindId: string, sessionId: string) => seeds.get(`${mindId}:${sessionId}`) ?? null),
+        delete: vi.fn(async () => undefined),
+      };
+      manager = new MindManager(
+        mockClientFactory as unknown as CopilotClientFactory,
+        mockIdentityLoader as unknown as IdentityLoader,
+        mockConfigService as unknown as ConfigService,
+        mockViewDiscovery as unknown as ViewDiscovery,
+        () => ({ type: 'openai' as const, baseUrl: 'https://x/v1' }),
+        undefined,
+        undefined,
+        forkSeedStore,
+      );
+      manager.setProviders([mockProvider as unknown as ChamberToolProvider]);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sourceSession = liveSessionFor(mind.mindId);
+      const sourceSessionId = mind.activeSessionId;
+      if (!sourceSessionId) throw new Error('Expected active session id');
+      sourceSession.getEvents.mockResolvedValue([
+        { id: 'evt-1', type: 'user.message', timestamp: 1, data: { messageId: 'u1', content: 'Plan the rollout' } },
+        { id: 'evt-2', type: 'assistant.message', timestamp: 2, data: { messageId: 'a1', content: 'Drafted the plan' } },
+      ]);
+      manager.markActiveConversationHasMessages(mind.mindId, 'Plan the rollout');
+
+      const result = await manager.forkConversation(mind.mindId, sourceSessionId, 'evt-2');
+
+      expect(result.sessionId).not.toBe(sourceSessionId);
+      expect(manager.getMind(mind.mindId)?.activeSessionId).toBe(result.sessionId);
+      expect(sourceSession.rpc.history.truncate).not.toHaveBeenCalled();
+      expect(forkSeedStore.save).toHaveBeenCalledWith(
+        mind.mindId,
+        result.sessionId,
+        expect.objectContaining({
+          fork: expect.objectContaining({
+            sourceSessionId,
+            sourceEventId: 'evt-2',
+            sourceMessageId: 'a1',
+            sourceTitle: 'Plan the rollout',
+          }),
+        }),
+      );
+      expect(result.messages).toEqual([
+        expect.objectContaining({ id: `fork-seed:${sourceSessionId}:u1`, forkSeed: true }),
+        expect.objectContaining({ id: `fork-seed:${sourceSessionId}:a1`, forkSeed: true }),
+      ]);
+      expect(result.messages.some((message) => message.eventId)).toBe(false);
+      expect(result.conversations.find((conversation) => conversation.sessionId === result.sessionId)).toMatchObject({
+        title: 'Fork of Plan the rollout',
+        active: true,
+        hasMessages: false,
+        forkOf: expect.objectContaining({
+          sourceSessionId,
+          sourceEventId: 'evt-2',
+          sourceMessageId: 'a1',
+          sourceTitle: 'Plan the rollout',
+        }),
+      });
+      expect(lastSavedConfig().minds[0].conversations).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sessionId: sourceSessionId, hasMessages: true }),
+        expect.objectContaining({ sessionId: result.sessionId, forkOf: expect.objectContaining({ sourceSessionId }) }),
+      ]));
+
+      mockCreateSession.mockClear();
+      await manager.setMindModel(mind.mindId, 'byo:gemma-4-e4b');
+
+      expect((mockCreateSession.mock.calls.at(-1)?.[0] as Record<string, unknown>).sessionId).toBe(result.sessionId);
+      expect(await manager.getActiveConversationForkSeed(mind.mindId)).toBe(seeds.get(`${mind.mindId}:${result.sessionId}`));
+      expect(lastSavedConfig().minds[0].conversations?.find((conversation) => conversation.sessionId === result.sessionId)).toMatchObject({
+        forkOf: expect.objectContaining({ sourceSessionId }),
+        hasMessages: false,
+      });
+    });
+
+    it('carries attachment manifests into fork seed context without attachment file contents', async () => {
+      const seeds = new Map<string, ConversationForkSeed>();
+      const forkSeedStore = {
+        save: vi.fn(async (mindId: string, sessionId: string, seed: ConversationForkSeed) => {
+          seeds.set(`${mindId}:${sessionId}`, seed);
+        }),
+        read: vi.fn(async (mindId: string, sessionId: string) => seeds.get(`${mindId}:${sessionId}`) ?? null),
+        delete: vi.fn(async () => undefined),
+      };
+      manager = new MindManager(
+        mockClientFactory as unknown as CopilotClientFactory,
+        mockIdentityLoader as unknown as IdentityLoader,
+        mockConfigService as unknown as ConfigService,
+        mockViewDiscovery as unknown as ViewDiscovery,
+        undefined,
+        undefined,
+        undefined,
+        forkSeedStore,
+      );
+      manager.setProviders([mockProvider as unknown as ChamberToolProvider]);
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sourceSession = liveSessionFor(mind.mindId);
+      const sourceSessionId = mind.activeSessionId;
+      if (!sourceSessionId) throw new Error('Expected active session id');
+      sourceSession.getEvents.mockResolvedValue([
+        {
+          id: 'evt-1',
+          type: 'user.message',
+          timestamp: 1,
+          data: {
+            messageId: 'u1',
+            content: appendAttachmentManifestContext('Review this document', [{
+              id: 'doc-1',
+              kind: 'document',
+              displayName: 'brief.txt',
+              mimeType: 'text/plain',
+              size: 512,
+              metadata: { source: 'chat-composer' },
+            }]),
+          },
+        },
+      ]);
+      manager.markActiveConversationHasMessages(mind.mindId, 'Review this document');
+
+      const result = await manager.forkConversation(mind.mindId, sourceSessionId, 'evt-1');
+      const seed = seeds.get(`${mind.mindId}:${result.sessionId}`);
+
+      expect(seed?.messages[0].blocks).toEqual([
+        expect.objectContaining({ type: 'attachment', id: 'doc-1', displayName: 'brief.txt' }),
+        { type: 'text', content: 'Review this document' },
+      ]);
+      expect(JSON.stringify(seed)).not.toContain('<chamber_attachment_manifest>');
+      expect(JSON.stringify(seed)).not.toContain('payload');
     });
 
     it('truncates SDK history and keeps hasMessages when turns remain', async () => {

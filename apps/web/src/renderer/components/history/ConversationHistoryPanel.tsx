@@ -442,6 +442,11 @@ export function ConversationHistoryPanel() {
                     ) : (
                       <>
                         <div className="truncate text-sm font-medium">{conversation.title}</div>
+                        {conversation.forkOf && conversation.title !== `Fork of ${conversation.forkOf.sourceTitle}` && (
+                          <div className="truncate text-xs text-muted-foreground">
+                            Fork of {conversation.forkOf.sourceTitle}
+                          </div>
+                        )}
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {formatRelativeTime(conversation.updatedAt)}
                           {conversation.active ? ' · Active' : ''}

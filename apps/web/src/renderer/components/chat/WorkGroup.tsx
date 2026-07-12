@@ -16,9 +16,10 @@ interface Props {
    * the end of the message. Used to auto-expand the last running tool.
    */
   isActive?: boolean;
+  contextOnly?: boolean;
 }
 
-export function WorkGroup({ entries, isActive = false }: Props) {
+export function WorkGroup({ entries, isActive = false, contextOnly = false }: Props) {
   // Match the common chatbot pattern: the work log is expanded while the mind
   // is actively working (so progress is visible) and collapses to a one-line
   // summary once the turn is done. Read isActive once on mount so a group the
@@ -32,8 +33,8 @@ export function WorkGroup({ entries, isActive = false }: Props) {
   // A reasoning block appended after a still-running tool, or a tool whose
   // output is streaming in before the next block arrives, should still show
   // live output.
-  const lastRunningToolId = findLastRunningToolId(entries);
-  const running = hasRunningTool(entries);
+  const lastRunningToolId = contextOnly ? null : findLastRunningToolId(entries);
+  const running = !contextOnly && hasRunningTool(entries);
 
   return (
     <div
@@ -85,6 +86,7 @@ export function WorkGroup({ entries, isActive = false }: Props) {
               key={entry.id}
               entry={entry}
               autoExpand={isActive && entry.id === lastRunningToolId}
+              contextOnly={contextOnly}
             />
           ))}
         </div>

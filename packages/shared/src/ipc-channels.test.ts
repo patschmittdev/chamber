@@ -10,6 +10,11 @@ describe('IPC channel constants', () => {
     expect(IPC.CHAT.GET_EVENT_SEQUENCE).toBe('chat:getEventSequence');
     expect(IPC.CHAT.REPLAY_EVENTS).toBe('chat:replayEvents');
     expect(IPC.CHAT.EVENT).toBe('chat:event');
+    expect(IPC.CHAT.DELETE_MESSAGE).toBe('chat:deleteMessage');
+    expect(IPC.CHAT.EDIT_MESSAGE).toBe('chat:editMessage');
+    expect(IPC.CHAT.REGENERATE).toBe('chat:regenerate');
+    expect(IPC.CHAT.GET_CONVERSATION_EVENTS).toBe('chat:getConversationEvents');
+    expect(IPC.CHAT.FORK_CONVERSATION).toBe('chat:forkConversation');
 
     expect(IPC.CONVERSATION_HISTORY.LIST).toBe('conversationHistory:list');
     expect(IPC.CONVERSATION_HISTORY.RESUME).toBe('conversationHistory:resume');

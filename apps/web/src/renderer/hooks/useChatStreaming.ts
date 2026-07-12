@@ -4,6 +4,7 @@ import { generateId } from '../lib/utils';
 import type { AttachmentBlock, ChatAttachment, ChatMessage, ImageBlock } from '@chamber/shared/types';
 import { hasAttachmentBlocks } from '../components/chat/messageContent';
 import { Logger } from '../lib/logger';
+import { useActiveMindBusy } from './useActiveMindBusy';
 
 const log = Logger.create('useChatStreaming');
 
@@ -14,7 +15,8 @@ const log = Logger.create('useChatStreaming');
 const currentMessageIdByMind: Record<string, string> = {};
 
 export function useChatStreaming() {
-  const { activeMindId, isStreaming, selectedModel, streamingByMind, messagesByMind } = useAppState();
+  const { activeMindId, selectedModel, streamingByMind, messagesByMind } = useAppState();
+  const { isBusy, isStreaming } = useActiveMindBusy();
   const dispatch = useAppDispatch();
 
   const refreshConversationHistory = useCallback(async (mindId: string) => {
@@ -39,7 +41,7 @@ export function useChatStreaming() {
   const sendMessage = useCallback(async (content: string, attachments?: ChatAttachment[]) => {
     const hasText = content.trim().length > 0;
     const hasAttachments = !!attachments && attachments.length > 0;
-    if (isStreaming || (!hasText && !hasAttachments) || !activeMindId) return;
+    if (isBusy || (!hasText && !hasAttachments) || !activeMindId) return;
 
     const images: ImageBlock[] | undefined = attachments
       ?.filter((attachment) => attachment.kind === 'image')
@@ -70,13 +72,13 @@ export function useChatStreaming() {
     const assistantId = beginAssistantTurn(mindId);
     await window.electronAPI.chat.send(mindId, content.trim(), assistantId, selectedModel ?? undefined, attachments);
     await refreshConversationHistory(mindId);
-  }, [activeMindId, isStreaming, selectedModel, dispatch, beginAssistantTurn, refreshConversationHistory]);
+  }, [activeMindId, isBusy, selectedModel, dispatch, beginAssistantTurn, refreshConversationHistory]);
 
   // Re-run the most recent user turn. The main process resolves and truncates
   // the last user turn from persisted history, so the renderer only replaces
   // the last exchange optimistically and streams a fresh response.
   const regenerate = useCallback(async () => {
-    if (isStreaming || !activeMindId) return;
+    if (isBusy || !activeMindId) return;
     const messages = messagesByMind[activeMindId] ?? [];
     const lastUser = [...messages].reverse().find((message) => message.role === 'user');
     if (!lastUser) return;
@@ -92,13 +94,13 @@ export function useChatStreaming() {
     const assistantId = beginAssistantTurn(mindId);
     await window.electronAPI.chat.regenerate(mindId, assistantId, selectedModel ?? undefined);
     await refreshConversationHistory(mindId);
-  }, [activeMindId, isStreaming, selectedModel, messagesByMind, dispatch, beginAssistantTurn, refreshConversationHistory]);
+  }, [activeMindId, isBusy, selectedModel, messagesByMind, dispatch, beginAssistantTurn, refreshConversationHistory]);
 
   // Replace a user turn with edited text. Requires the turn's backing event id
   // so the main process can truncate history back to it (dropping the old
   // exchange) before streaming the new response.
   const editAndResubmit = useCallback(async (message: ChatMessage, newText: string) => {
-    if (isStreaming || !activeMindId || message.role !== 'user' || !message.eventId) return;
+    if (isBusy || !activeMindId || message.role !== 'user' || !message.eventId) return;
     // Attachments cannot be reconstructed and resent yet; refuse rather than silently
     // dropping them (the UI disables Edit for these turns as well).
     if (hasAttachmentBlocks(message)) return;
@@ -112,7 +114,7 @@ export function useChatStreaming() {
     const assistantId = beginAssistantTurn(mindId);
     await window.electronAPI.chat.editMessage(mindId, eventId, text, assistantId, selectedModel ?? undefined);
     await refreshConversationHistory(mindId);
-  }, [activeMindId, isStreaming, selectedModel, dispatch, beginAssistantTurn, refreshConversationHistory]);
+  }, [activeMindId, isBusy, selectedModel, dispatch, beginAssistantTurn, refreshConversationHistory]);
 
   const stopStreaming = useCallback(async () => {
     if (activeMindId && currentMessageIdByMind[activeMindId]) {
@@ -126,5 +128,5 @@ export function useChatStreaming() {
     }
   }, [activeMindId, streamingByMind]);
 
-  return { sendMessage, stopStreaming, regenerate, editAndResubmit, isStreaming };
+  return { sendMessage, stopStreaming, regenerate, editAndResubmit, isStreaming, isBusy };
 }

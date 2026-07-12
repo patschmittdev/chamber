@@ -123,9 +123,10 @@ const MARKDOWN_COMPONENTS: Components = {
 interface Props {
   blocks: ContentBlock[];
   isStreaming?: boolean;
+  contextOnly?: boolean;
 }
 
-export function StreamingMessage({ blocks, isStreaming }: Props) {
+export function StreamingMessage({ blocks, isStreaming, contextOnly = false }: Props) {
   if (blocks.length === 0 && isStreaming) {
     return <ThinkingDots label="Thinking…" />;
   }
@@ -142,7 +143,7 @@ export function StreamingMessage({ blocks, isStreaming }: Props) {
   // is already done (and we're still streaming because more content is
   // expected), keep the dots so the UI doesn't look idle.
   const lastChunkHasRunningTool =
-    !!lastChunk && lastChunk.kind === 'work' && hasRunningTool(lastChunk.entries);
+    !contextOnly && !!lastChunk && lastChunk.kind === 'work' && hasRunningTool(lastChunk.entries);
   const showTrailingIndicator =
     isStreaming &&
     !lastChunkHasRunningTool &&
@@ -166,6 +167,7 @@ export function StreamingMessage({ blocks, isStreaming }: Props) {
             key={chunk.id}
             entries={chunk.entries}
             isActive={Boolean(isStreaming) && isLast}
+            contextOnly={contextOnly}
           />
         );
       })}
