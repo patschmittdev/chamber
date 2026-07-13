@@ -78,11 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Harden npm dependency supply-chain security** — Remediates production and development audit findings, enforces a seven-day minimum package age, and updates affected Electron smoke coverage.
 - **Harden the loopback server surface** — Removes the dead POST /api/privileged keychain oracle that returned OS-keychain passwords in plaintext with zero callers, guards WebSocket message parsing against malformed frames that could crash the loopback server for every session, validates the Host header on HTTP and WebSocket upgrades to blunt DNS-rebind attacks, and documents the single-user WebSocket subscription trust boundary.
 
+### Performance
 
-
-
-
-
+- **Virtualize the chat transcript and make streaming updates O(1)** - Window the transcript and conversation history so only near-viewport rows mount, layered on the existing row memoization and content-visibility hints, and locate per-delta message updates through a cached id-to-index map instead of rescanning the whole array. Removes the long-task and DOM-growth cost measured under live token streaming.
 
 ## [0.64.1] - 2026-06-01
 

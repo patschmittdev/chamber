@@ -268,6 +268,69 @@ describe('handleChatEvent', () => {
     expect(msgs[0].sender).toEqual({ mindId: 'agent-1', name: 'Agent One' });
     expect(msgs[0].roundId).toBe('round-1');
   });
+
+  // perf-D4: a single-message delta must locate its target by id in O(1) and
+  // leave every other row untouched, rather than rebuilding the whole array.
+  describe('id-index locate (perf-D4)', () => {
+    it('updates only the target row and preserves references to the others', () => {
+      const initial = [
+        makeMessage([makeTextBlock('a')], { id: 'm-0' }),
+        makeMessage([makeTextBlock('b')], { id: 'm-1', isStreaming: true }),
+        makeMessage([makeTextBlock('c')], { id: 'm-2' }),
+      ];
+
+      const next = handleChatEvent(initial, 'm-1', makeChatEvent('chunk', { content: 'X' }));
+
+      expect(next).not.toBe(initial);
+      expect(next).toHaveLength(3);
+      expect(next.map((m) => m.id)).toEqual(['m-0', 'm-1', 'm-2']);
+      expect(next[0]).toBe(initial[0]);
+      expect(next[2]).toBe(initial[2]);
+      expect(next[1]).not.toBe(initial[1]);
+      expect(next[1].blocks[0]).toMatchObject({ type: 'text', content: 'bX' });
+    });
+
+    it('returns the same array reference when no message matches the id', () => {
+      const initial = [
+        makeMessage([makeTextBlock('a')], { id: 'm-0' }),
+        makeMessage([], { id: 'm-1', isStreaming: true }),
+      ];
+
+      const next = handleChatEvent(initial, 'absent', makeChatEvent('chunk', { content: 'X' }));
+
+      expect(next).toBe(initial);
+    });
+
+    it('applies a stream of deltas to one target while holding other rows stable', () => {
+      let msgs: ChatMessage[] = [
+        makeMessage([], { id: 'other' }),
+        makeMessage([], { id: 'target', isStreaming: true }),
+      ];
+      const untouched = msgs[0];
+
+      for (const piece of ['He', 'llo', ' wo', 'rld']) {
+        msgs = handleChatEvent(msgs, 'target', makeChatEvent('chunk', { content: piece }));
+      }
+
+      expect(msgs[0]).toBe(untouched);
+      expect(msgs[1].blocks[0]).toMatchObject({ type: 'text', content: 'Hello world' });
+    });
+
+    it('locates by id after rows shift position', () => {
+      const initial = [
+        makeMessage([makeTextBlock('zero')], { id: 'm-0', isStreaming: true }),
+        makeMessage([makeTextBlock('one')], { id: 'm-1', isStreaming: true }),
+      ];
+      const shifted = [makeMessage([], { id: 'inserted' }), ...initial];
+
+      const next = handleChatEvent(shifted, 'm-1', makeChatEvent('chunk', { content: '!' }));
+
+      expect(next[0]).toBe(shifted[0]);
+      expect(next[1]).toBe(shifted[1]);
+      expect(next[2].id).toBe('m-1');
+      expect(next[2].blocks[0]).toMatchObject({ type: 'text', content: 'one!' });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

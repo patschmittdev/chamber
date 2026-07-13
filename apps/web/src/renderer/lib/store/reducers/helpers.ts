@@ -169,6 +169,37 @@ export function reconcileMessageEventIds(
   return changed ? next : messages;
 }
 
+// perf-D4: streaming produces a new messages array on every delta, but ids and
+// positions are stable within a mind's transcript (React already relies on id
+// uniqueness for row keys). Caching an id -> index map per array, keyed weakly
+// by array identity, turns the per-delta "find the one message to update" from
+// an O(N) map/allocation into an amortized O(1) lookup: the map is built once
+// for a fresh array and then carried onto each sliced copy the stream creates.
+const messageIndexCache = new WeakMap<readonly ChatMessage[], Map<string, number>>();
+
+function messageIndexFor(messages: readonly ChatMessage[]): Map<string, number> {
+  const cached = messageIndexCache.get(messages);
+  if (cached) return cached;
+  const index = new Map<string, number>();
+  for (let position = 0; position < messages.length; position += 1) {
+    index.set(messages[position].id, position);
+  }
+  messageIndexCache.set(messages, index);
+  return index;
+}
+
 export function handleChatEvent<T extends ChatMessage>(messages: T[], messageId: string, event: ChatEvent): T[] {
-  return messages.map((m) => (m.id === messageId ? (applyChatEventToMessage(m, event) as T) : m));
+  const index = messageIndexFor(messages);
+  const at = index.get(messageId);
+  if (at === undefined) return messages;
+
+  const updated = applyChatEventToMessage(messages[at], event) as T;
+  if (updated === messages[at]) return messages;
+
+  const next = messages.slice();
+  next[at] = updated;
+  // The copy shares ids and positions with `messages`, so the same index map is
+  // still valid; carry it over so the next delta in the stream reuses it.
+  messageIndexCache.set(next, index);
+  return next;
 }

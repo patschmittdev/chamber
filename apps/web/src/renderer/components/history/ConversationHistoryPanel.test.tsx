@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationSummary, MindContext } from '@chamber/shared/types';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
@@ -453,6 +453,50 @@ describe('ConversationHistoryPanel', () => {
       expect(screen.queryByRole('button', { name: /Archived \(/ })).toBeNull();
     });
     expect(screen.getByText('Active plan')).toBeTruthy();
+  });
+
+  it('virtualizes the regular conversation list past the windowing threshold (rail-H8)', () => {
+    // Drive the windowing hook's rAF-throttled scroll read synchronously.
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    try {
+      const conversations = Array.from({ length: 80 }, (_, i) =>
+        makeConversation({ sessionId: `session-${i}`, title: `Conversation ${i}`, active: false }),
+      );
+
+      const { container } = render(
+        <AppStateProvider
+          testInitialState={{
+            activeMindId: mind.mindId,
+            minds: [mind],
+            conversationHistoryByMind: { [mind.mindId]: conversations },
+          }}
+        >
+          <ConversationHistoryPanel />
+        </AppStateProvider>,
+      );
+
+      const scroller = container.querySelector('.overflow-y-auto') as HTMLDivElement;
+      Object.defineProperty(scroller, 'clientHeight', { value: 600, configurable: true });
+
+      act(() => {
+        scroller.scrollTop = 0;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+
+      const rendered = screen.getAllByRole('button', { name: /^Resume Conversation / });
+      expect(rendered.length).toBeGreaterThan(0);
+      expect(rendered.length).toBeLessThan(40);
+      expect(screen.queryByRole('button', { name: 'Resume Conversation 0' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Resume Conversation 79' })).toBeNull();
+      expect(container.querySelector('[data-window-key="session-0"]')).toBeTruthy();
+      expect(container.querySelector('[data-window-spacer="bottom"]')).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
