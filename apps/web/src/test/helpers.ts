@@ -141,6 +141,8 @@ export function mockElectronAPI(): ElectronAPI {
       list: vi.fn().mockResolvedValue([]),
       resume: vi.fn().mockResolvedValue({ sessionId: '', messages: [], conversations: [] }),
       rename: vi.fn().mockResolvedValue([]),
+      setPinned: vi.fn().mockResolvedValue([]),
+      setArchived: vi.fn().mockResolvedValue([]),
       delete: vi.fn().mockResolvedValue({ sessionId: '', messages: [], conversations: [] }),
       messages: vi.fn().mockResolvedValue([]),
       export: vi.fn().mockResolvedValue({ status: 'canceled' }),

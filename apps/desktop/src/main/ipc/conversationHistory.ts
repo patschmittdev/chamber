@@ -23,6 +23,12 @@ export function setupConversationHistoryIPC(chatService: ChatService): void {
   ipcMain.handle(IPC.CONVERSATION_HISTORY.RENAME, async (_event, mindId: string, sessionId: string, title: string) =>
     chatService.renameConversation(mindId, sessionId, title));
 
+  ipcMain.handle(IPC.CONVERSATION_HISTORY.SET_PINNED, async (_event, mindId: string, sessionId: string, pinned: boolean) =>
+    chatService.setPinnedConversation(mindId, sessionId, pinned));
+
+  ipcMain.handle(IPC.CONVERSATION_HISTORY.SET_ARCHIVED, async (_event, mindId: string, sessionId: string, archived: boolean) =>
+    chatService.setArchivedConversation(mindId, sessionId, archived));
+
   ipcMain.handle(IPC.CONVERSATION_HISTORY.DELETE, async (_event, mindId: string, sessionId: string) =>
     chatService.deleteConversation(mindId, sessionId));
 

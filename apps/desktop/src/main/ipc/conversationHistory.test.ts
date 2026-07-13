@@ -38,6 +38,8 @@ function createChatService(overrides: Partial<ChatService> = {}): ChatService {
     listConversationHistory: vi.fn(() => []),
     resumeConversation: vi.fn(async () => ({ sessionId: '', messages: [], conversations: [] })),
     renameConversation: vi.fn(() => []),
+    setPinnedConversation: vi.fn(() => []),
+    setArchivedConversation: vi.fn(() => []),
     deleteConversation: vi.fn(async () => ({ sessionId: '', messages: [], conversations: [] })),
     getConversationMessages: vi.fn(async () => []),
     getConversationExportFilename: vi.fn(() => markdownExport.filename),
@@ -52,7 +54,7 @@ describe('setupConversationHistoryIPC', () => {
     vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({ id: 1 } as never);
   });
 
-  it('registers list, resume, rename, delete, messages, and export handlers', () => {
+  it('registers list, resume, rename, pin, archive, delete, messages, and export handlers', () => {
     setupConversationHistoryIPC(createChatService());
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map((entry) => entry[0]);
@@ -61,10 +63,34 @@ describe('setupConversationHistoryIPC', () => {
       'conversationHistory:list',
       'conversationHistory:resume',
       'conversationHistory:rename',
+      'conversationHistory:setPinned',
+      'conversationHistory:setArchived',
       'conversationHistory:delete',
       'conversationHistory:messages',
       'conversationHistory:export',
     ]));
+  });
+
+  it('setPinned handler delegates to chatService.setPinnedConversation', async () => {
+    const history = [{ sessionId: 'session-1', title: 'Pinned', createdAt: '', updatedAt: '', kind: 'chat', active: false, hasMessages: true, isPinned: true }];
+    const chatService = createChatService({ setPinnedConversation: vi.fn(() => history) as never });
+    setupConversationHistoryIPC(chatService);
+
+    const result = await handlerFor('conversationHistory:setPinned')(EVT, 'mind-1', 'session-1', true);
+
+    expect(chatService.setPinnedConversation).toHaveBeenCalledWith('mind-1', 'session-1', true);
+    expect(result).toBe(history);
+  });
+
+  it('setArchived handler delegates to chatService.setArchivedConversation', async () => {
+    const history = [{ sessionId: 'session-1', title: 'Archived', createdAt: '', updatedAt: '', kind: 'chat', active: false, hasMessages: true, isArchived: true }];
+    const chatService = createChatService({ setArchivedConversation: vi.fn(() => history) as never });
+    setupConversationHistoryIPC(chatService);
+
+    const result = await handlerFor('conversationHistory:setArchived')(EVT, 'mind-1', 'session-1', true);
+
+    expect(chatService.setArchivedConversation).toHaveBeenCalledWith('mind-1', 'session-1', true);
+    expect(result).toBe(history);
   });
 
   it('messages handler delegates to chatService.getConversationMessages', async () => {

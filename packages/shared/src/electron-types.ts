@@ -110,6 +110,10 @@ export interface ElectronAPI {
     delete: (mindId: string, sessionId: string) => Promise<ConversationResumeResult>;
     messages: (mindId: string, sessionId: string) => Promise<ChatMessage[]>;
     export: (mindId: string, sessionId: string, format: ConversationExportFormat) => Promise<ConversationExportResult>;
+    /** Pins or unpins a conversation, returning the refreshed history (mirrors rename). */
+    setPinned: (mindId: string, sessionId: string, pinned: boolean) => Promise<ConversationSummary[]>;
+    /** Archives or unarchives a conversation, returning the refreshed history (mirrors rename). */
+    setArchived: (mindId: string, sessionId: string, archived: boolean) => Promise<ConversationSummary[]>;
   };
   mind: {
     add: (mindPath: string) => Promise<MindContext>;

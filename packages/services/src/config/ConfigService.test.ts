@@ -237,6 +237,53 @@ describe('ConfigService', () => {
       });
     });
 
+    it('preserves conversation pin and archive flags and omits them when false or absent', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [{
+          id: 'q-a1b2',
+          path: '/tmp/agents/q',
+          conversations: [
+            {
+              sessionId: 'pinned-session',
+              createdAt: '2026-05-05T22:00:00.000Z',
+              updatedAt: '2026-05-05T22:15:00.000Z',
+              kind: 'chat',
+              isPinned: true,
+              isArchived: true,
+            },
+            {
+              sessionId: 'plain-session',
+              createdAt: '2026-05-05T22:00:00.000Z',
+              updatedAt: '2026-05-05T22:15:00.000Z',
+              kind: 'chat',
+              isPinned: false,
+            },
+          ],
+        }],
+        activeMindId: 'q-a1b2',
+        activeLogin: null,
+        theme: 'dark',
+      }));
+
+      expect(svc.load().minds[0].conversations).toEqual([
+        {
+          sessionId: 'pinned-session',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:15:00.000Z',
+          kind: 'chat',
+          isPinned: true,
+          isArchived: true,
+        },
+        {
+          sessionId: 'plain-session',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:15:00.000Z',
+          kind: 'chat',
+        },
+      ]);
+    });
+
     it('preserves only the disabled global custom instructions override on mind records', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         version: 2,

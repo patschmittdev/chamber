@@ -332,6 +332,120 @@ describe('ConversationHistoryPanel', () => {
       expect(api.conversationHistory.export).toHaveBeenCalledWith(mind.mindId, conversation.sessionId, 'json');
     });
   });
+
+  it('pins a conversation to the top and calls the pin IPC', async () => {
+    const alpha = makeConversation({ sessionId: 's-alpha', title: 'Alpha', active: false });
+    const bravo = makeConversation({ sessionId: 's-bravo', title: 'Bravo', active: false });
+    (api.conversationHistory.setPinned as ReturnType<typeof vi.fn>).mockResolvedValue([
+      alpha,
+      { ...bravo, isPinned: true },
+    ]);
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [alpha, bravo] },
+    });
+
+    expect(orderedResumeTitles()).toEqual(['Alpha', 'Bravo']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Bravo' }));
+
+    await waitFor(() => {
+      expect(api.conversationHistory.setPinned).toHaveBeenCalledWith(mind.mindId, 's-bravo', true);
+    });
+    await waitFor(() => {
+      expect(orderedResumeTitles()).toEqual(['Bravo', 'Alpha']);
+    });
+    expect(screen.getByText('Pinned')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Unpin Bravo' })).toBeTruthy();
+  });
+
+  it('archives a conversation into a collapsed section and restores it on unarchive', async () => {
+    const alpha = makeConversation({ sessionId: 's-alpha', title: 'Alpha', active: false });
+    const bravo = makeConversation({ sessionId: 's-bravo', title: 'Bravo', active: false });
+    (api.conversationHistory.setArchived as ReturnType<typeof vi.fn>).mockResolvedValue([
+      alpha,
+      { ...bravo, isArchived: true },
+    ]);
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [alpha, bravo] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Bravo' }));
+
+    await waitFor(() => {
+      expect(api.conversationHistory.setArchived).toHaveBeenCalledWith(mind.mindId, 's-bravo', true);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Archived \(1\)/ })).toBeTruthy();
+    });
+    expect(screen.queryByText('Bravo')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Archived \(1\)/ }));
+
+    expect(screen.getByText('Bravo')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Unarchive Bravo' })).toBeTruthy();
+  });
+
+  it('keeps organization actions available for keyboard focus with honest labels', () => {
+    const conversation = makeConversation({ title: 'Planning thread', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+    });
+
+    const pin = screen.getByRole('button', { name: 'Pin Planning thread' });
+    const archive = screen.getByRole('button', { name: 'Archive Planning thread' });
+
+    expect(pin.className).toContain('group-focus-within:opacity-100');
+    expect(archive.className).toContain('group-focus-within:opacity-100');
+    expect(archive.className).toContain('focus-visible:opacity-100');
+  });
+
+  it('reveals matching archived conversations while searching and restores the collapsed state when cleared', async () => {
+    const active = makeConversation({ sessionId: 's-active', title: 'Active plan', active: false });
+    const archived = makeConversation({ sessionId: 's-archived', title: 'Archived plan', active: false, isArchived: true });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [active, archived] },
+    });
+
+    expect(screen.queryByText('Archived plan')).toBeNull();
+    expect(screen.getByRole('button', { name: /Archived \(1\)/ })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), { target: { value: 'archived' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Archived plan')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText('Clear search'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Archived plan')).toBeNull();
+    });
+  });
+
+  it('hides the archived disclosure when the search matches no archived conversations', async () => {
+    const active = makeConversation({ sessionId: 's-active', title: 'Active plan', active: false });
+    const archived = makeConversation({ sessionId: 's-archived', title: 'Archived plan', active: false, isArchived: true });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [active, archived] },
+    });
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), { target: { value: 'active' } });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Archived \(/ })).toBeNull();
+    });
+    expect(screen.getByText('Active plan')).toBeTruthy();
+  });
 });
 
 function renderHistoryPanel(testInitialState?: Partial<AppState>) {
@@ -340,6 +454,12 @@ function renderHistoryPanel(testInitialState?: Partial<AppState>) {
       <ConversationHistoryPanel />
     </AppStateProvider>,
   );
+}
+
+function orderedResumeTitles(): string[] {
+  return screen
+    .getAllByRole('button', { name: /^Resume / })
+    .map((button) => (button.getAttribute('aria-label') ?? '').replace(/^Resume /, ''));
 }
 
 function makeConversation(overrides?: Partial<ConversationSummary>): ConversationSummary {

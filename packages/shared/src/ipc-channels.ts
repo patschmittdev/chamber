@@ -35,6 +35,8 @@ export const IPC = {
     DELETE: 'conversationHistory:delete',
     MESSAGES: 'conversationHistory:messages',
     EXPORT: 'conversationHistory:export',
+    SET_PINNED: 'conversationHistory:setPinned',
+    SET_ARCHIVED: 'conversationHistory:setArchived',
   },
   MIND: {
     ADD: 'mind:add',

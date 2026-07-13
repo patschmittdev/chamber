@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronLeft, ChevronRight, Download, Pencil, Pin, Plus, Search, Trash2, X } from 'lucide-react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationExportFormat, ConversationSummary } from '@chamber/shared/types';
@@ -8,6 +8,7 @@ import { usePersistedCollapse } from '../../hooks/usePersistedCollapse';
 import { Logger } from '../../lib/logger';
 import { cn } from '../../lib/utils';
 import { conversationSearchText, filterConversations, normalizeSearchQuery } from './conversationSearch';
+import { partitionConversations } from './conversationOrganize';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 const log = Logger.create('ConversationHistoryPanel');
 const HISTORY_COLLAPSED_STORAGE_KEY = 'chamber:conversation-history-collapsed';
+const ARCHIVED_EXPANDED_STORAGE_KEY = 'chamber:conversation-archived-expanded';
 const SEARCH_DEBOUNCE_MS = 180;
 const CONTENT_SEARCH_MIN_QUERY_LENGTH = 2;
 const MAX_CONTENT_LOADS_PER_PASS = 8;
@@ -37,9 +39,11 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
   const [renameValue, setRenameValue] = useState('');
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [organizingId, setOrganizingId] = useState<string | null>(null);
   const [pendingDeleteConversation, setPendingDeleteConversation] = useState<ConversationSummary | null>(null);
   const [loadingMindId, setLoadingMindId] = useState<string | null>(null);
   const [manualCollapsed, setManualCollapsed] = usePersistedCollapse(HISTORY_COLLAPSED_STORAGE_KEY);
+  const [archivedExpandedPref, setArchivedExpandedPref] = usePersistedCollapse(ARCHIVED_EXPANDED_STORAGE_KEY);
   const collapsed = autoCollapsed || manualCollapsed;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -71,6 +75,12 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
       : undefined;
     return filterConversations(visibleConversations, debouncedQuery, freshIndex);
   }, [visibleConversations, debouncedQuery, activeMindId, contentIndexVersion]);
+  const { pinned: pinnedConversations, regular: regularConversations, archived: archivedConversations } = useMemo(
+    () => partitionConversations(filteredConversations),
+    [filteredConversations],
+  );
+  const isSearching = normalizeSearchQuery(debouncedQuery).length > 0;
+  const archivedExpanded = archivedExpandedPref || isSearching;
   const selectedConversationId = activeMindId ? activeConversationByMind[activeMindId] : undefined;
   const activeConversationView = activeMindId ? conversationViewByMind[activeMindId] : undefined;
   const isActiveMindStreaming = activeMindId
@@ -322,6 +332,163 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
     }
   };
 
+  const togglePin = async (conversation: ConversationSummary) => {
+    if (!activeMindId || organizingId) return;
+    setOrganizingId(conversation.sessionId);
+    try {
+      const history = await window.electronAPI.conversationHistory.setPinned(
+        activeMindId,
+        conversation.sessionId,
+        !conversation.isPinned,
+      );
+      dispatch({ type: 'SET_CONVERSATION_HISTORY', payload: { mindId: activeMindId, conversations: history } });
+    } catch (error) {
+      log.error('Failed to update conversation pin state:', error);
+    } finally {
+      setOrganizingId(null);
+    }
+  };
+
+  const toggleArchive = async (conversation: ConversationSummary) => {
+    if (!activeMindId || organizingId) return;
+    setOrganizingId(conversation.sessionId);
+    try {
+      const history = await window.electronAPI.conversationHistory.setArchived(
+        activeMindId,
+        conversation.sessionId,
+        !conversation.isArchived,
+      );
+      dispatch({ type: 'SET_CONVERSATION_HISTORY', payload: { mindId: activeMindId, conversations: history } });
+    } catch (error) {
+      log.error('Failed to update conversation archive state:', error);
+    } finally {
+      setOrganizingId(null);
+    }
+  };
+
+  const renderConversationRow = (conversation: ConversationSummary) => {
+    const isSelected = conversation.sessionId === selectedConversationId || conversation.active;
+
+    return (
+      <div
+        key={conversation.sessionId}
+        className={cn(
+          'group flex items-center gap-2 rounded-lg border-l-2 px-2 py-2 transition-colors',
+          isSelected
+            ? 'border-l-primary bg-accent text-foreground'
+            : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
+        )}
+      >
+        <button
+          type="button"
+          aria-label={`Resume ${conversation.title}`}
+          disabled={isActiveMindBusy}
+          onClick={() => { void resumeConversation(conversation.sessionId); }}
+          className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
+        >
+          {renamingId === conversation.sessionId ? (
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => handleRenameKeyDown(event, conversation.sessionId)}
+              onBlur={() => { void completeRename(conversation.sessionId, renameValue.trim() || null); }}
+              className="w-full rounded border border-primary bg-background px-1.5 py-0.5 text-sm text-foreground outline-none"
+            />
+          ) : (
+            <>
+              <div className="truncate text-sm font-medium">{conversation.title}</div>
+              {conversation.forkOf && conversation.title !== `Fork of ${conversation.forkOf.sourceTitle}` && (
+                <div className="truncate text-xs text-muted-foreground">
+                  Fork of {conversation.forkOf.sourceTitle}
+                </div>
+              )}
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {formatRelativeTime(conversation.updatedAt)}
+                {conversation.active ? ' · Active' : ''}
+              </div>
+            </>
+          )}
+        </button>
+
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => { void togglePin(conversation); }}
+            disabled={organizingId !== null}
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40',
+              conversation.isPinned
+                ? 'text-primary opacity-100'
+                : 'text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+            )}
+            aria-label={conversation.isPinned ? `Unpin ${conversation.title}` : `Pin ${conversation.title}`}
+          >
+            <Pin size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => { void toggleArchive(conversation); }}
+            disabled={organizingId !== null}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={conversation.isArchived ? `Unarchive ${conversation.title}` : `Archive ${conversation.title}`}
+          >
+            {conversation.isArchived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+          </button>
+          <Popover
+            open={exportMenuId === conversation.sessionId}
+            onOpenChange={(open) => setExportMenuId(open ? conversation.sessionId : null)}
+          >
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={exportingId !== null}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={`Export ${conversation.title}`}
+              >
+                <Download size={13} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-44 p-1">
+              <button
+                type="button"
+                onClick={() => { void exportConversation(conversation, 'markdown'); }}
+                className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
+              >
+                Export as Markdown
+              </button>
+              <button
+                type="button"
+                onClick={() => { void exportConversation(conversation, 'json'); }}
+                className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
+              >
+                Export as JSON
+              </button>
+            </PopoverContent>
+          </Popover>
+          <button
+            type="button"
+            onClick={() => startRename(conversation)}
+            disabled={isActiveMindBusy || deletingId === conversation.sessionId}
+            className="h-7 w-7 rounded-md text-muted-foreground opacity-0 hover:text-foreground hover:bg-accent group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={`Rename ${conversation.title}`}
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => { void deleteConversation(conversation); }}
+            disabled={isActiveMindBusy || deletingId !== null}
+            className="h-7 w-7 rounded-md text-muted-foreground opacity-0 hover:text-destructive hover:bg-destructive/10 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={`Delete ${conversation.title}`}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <aside
       aria-label="Conversation history"
@@ -408,105 +575,25 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
                 {selectedConversationError}
               </p>
             ) : null}
-            {filteredConversations.map((conversation) => {
-              const isSelected = conversation.sessionId === selectedConversationId || conversation.active;
-
-              return (
-                <div
-                  key={conversation.sessionId}
-                  className={cn(
-                    'group flex items-center gap-2 rounded-lg border-l-2 px-2 py-2 transition-colors',
-                    isSelected
-                      ? 'border-l-primary bg-accent text-foreground'
-                      : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                  )}
+            {pinnedConversations.length > 0 ? (
+              <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Pinned</div>
+            ) : null}
+            {pinnedConversations.map(renderConversationRow)}
+            {regularConversations.map(renderConversationRow)}
+            {archivedConversations.length > 0 ? (
+              <div className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => setArchivedExpandedPref(!archivedExpanded)}
+                  aria-expanded={archivedExpanded}
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-accent/50"
                 >
-                  <button
-                    type="button"
-                    aria-label={`Resume ${conversation.title}`}
-                    disabled={isActiveMindBusy}
-                    onClick={() => { void resumeConversation(conversation.sessionId); }}
-                    className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
-                  >
-                    {renamingId === conversation.sessionId ? (
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={(event) => setRenameValue(event.target.value)}
-                        onKeyDown={(event) => handleRenameKeyDown(event, conversation.sessionId)}
-                        onBlur={() => { void completeRename(conversation.sessionId, renameValue.trim() || null); }}
-                        className="w-full rounded border border-primary bg-background px-1.5 py-0.5 text-sm text-foreground outline-none"
-                      />
-                    ) : (
-                      <>
-                        <div className="truncate text-sm font-medium">{conversation.title}</div>
-                        {conversation.forkOf && conversation.title !== `Fork of ${conversation.forkOf.sourceTitle}` && (
-                          <div className="truncate text-xs text-muted-foreground">
-                            Fork of {conversation.forkOf.sourceTitle}
-                          </div>
-                        )}
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          {formatRelativeTime(conversation.updatedAt)}
-                          {conversation.active ? ' · Active' : ''}
-                        </div>
-                      </>
-                    )}
-                  </button>
-
-                  <div className="flex items-center">
-                    <Popover
-                      open={exportMenuId === conversation.sessionId}
-                      onOpenChange={(open) => setExportMenuId(open ? conversation.sessionId : null)}
-                    >
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          disabled={exportingId !== null}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                          aria-label={`Export ${conversation.title}`}
-                        >
-                          <Download size={13} />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-44 p-1">
-                        <button
-                          type="button"
-                          onClick={() => { void exportConversation(conversation, 'markdown'); }}
-                          className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
-                        >
-                          Export as Markdown
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { void exportConversation(conversation, 'json'); }}
-                          className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
-                        >
-                          Export as JSON
-                        </button>
-                      </PopoverContent>
-                    </Popover>
-                    <button
-                      type="button"
-                      onClick={() => startRename(conversation)}
-                      disabled={isActiveMindBusy || deletingId === conversation.sessionId}
-                      className="h-7 w-7 rounded-md text-muted-foreground opacity-0 hover:text-foreground hover:bg-accent group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={`Rename ${conversation.title}`}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { void deleteConversation(conversation); }}
-                      disabled={isActiveMindBusy || deletingId !== null}
-                      className="h-7 w-7 rounded-md text-muted-foreground opacity-0 hover:text-destructive hover:bg-destructive/10 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={`Delete ${conversation.title}`}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  <ChevronDown size={13} className={cn('transition-transform', archivedExpanded ? '' : '-rotate-90')} />
+                  Archived ({archivedConversations.length})
+                </button>
+                {archivedExpanded ? archivedConversations.map(renderConversationRow) : null}
+              </div>
+            ) : null}
           </div>
         </>
       )}
