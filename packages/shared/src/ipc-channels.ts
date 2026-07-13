@@ -37,6 +37,7 @@ export const IPC = {
     EXPORT: 'conversationHistory:export',
     SET_PINNED: 'conversationHistory:setPinned',
     SET_ARCHIVED: 'conversationHistory:setArchived',
+    SET_SYSTEM_MESSAGE: 'conversationHistory:setSystemMessage',
   },
   MIND: {
     ADD: 'mind:add',

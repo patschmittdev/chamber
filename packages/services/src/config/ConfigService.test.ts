@@ -284,6 +284,51 @@ describe('ConfigService', () => {
       ]);
     });
 
+    it('preserves a per-conversation system prompt override and drops it when blank', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        version: 2,
+        minds: [{
+          id: 'q-a1b2',
+          path: '/tmp/agents/q',
+          conversations: [
+            {
+              sessionId: 'override-session',
+              createdAt: '2026-05-05T22:00:00.000Z',
+              updatedAt: '2026-05-05T22:15:00.000Z',
+              kind: 'chat',
+              systemMessage: 'Only answer in French.',
+            },
+            {
+              sessionId: 'blank-session',
+              createdAt: '2026-05-05T22:00:00.000Z',
+              updatedAt: '2026-05-05T22:15:00.000Z',
+              kind: 'chat',
+              systemMessage: '   ',
+            },
+          ],
+        }],
+        activeMindId: 'q-a1b2',
+        activeLogin: null,
+        theme: 'dark',
+      }));
+
+      expect(svc.load().minds[0].conversations).toEqual([
+        {
+          sessionId: 'override-session',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:15:00.000Z',
+          kind: 'chat',
+          systemMessage: 'Only answer in French.',
+        },
+        {
+          sessionId: 'blank-session',
+          createdAt: '2026-05-05T22:00:00.000Z',
+          updatedAt: '2026-05-05T22:15:00.000Z',
+          kind: 'chat',
+        },
+      ]);
+    });
+
     it('preserves only the disabled global custom instructions override on mind records', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         version: 2,

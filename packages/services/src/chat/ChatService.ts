@@ -645,6 +645,10 @@ export class ChatService {
     return this.mindManager.setArchivedConversation(mindId, sessionId, archived);
   }
 
+  setConversationSystemMessage(mindId: string, sessionId: string, systemMessage: string): Promise<ConversationSummary[]> {
+    return this.mindManager.setConversationSystemMessage(mindId, sessionId, systemMessage);
+  }
+
   getConversationMessages(mindId: string, sessionId: string): Promise<ChatMessage[]> {
     return this.mindManager.getConversationMessages(mindId, sessionId);
   }

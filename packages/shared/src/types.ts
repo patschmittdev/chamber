@@ -441,6 +441,8 @@ export interface ConversationSummary {
   isPinned?: boolean;
   /** Moves the conversation into the archived section, out of the default list. Omitted when false. */
   isArchived?: boolean;
+  /** Per-conversation system prompt override. Omitted when the conversation uses the mind default. */
+  systemMessage?: string;
 }
 
 export interface ConversationResumeResult {

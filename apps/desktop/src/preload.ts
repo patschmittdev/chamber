@@ -42,6 +42,7 @@ const electronAPI: ElectronAPI = {
     rename: (mindId, sessionId, title) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.RENAME, mindId, sessionId, title),
     setPinned: (mindId, sessionId, pinned) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.SET_PINNED, mindId, sessionId, pinned),
     setArchived: (mindId, sessionId, archived) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.SET_ARCHIVED, mindId, sessionId, archived),
+    setSystemMessage: (mindId, sessionId, systemMessage) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.SET_SYSTEM_MESSAGE, mindId, sessionId, systemMessage),
     delete: (mindId, sessionId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.DELETE, mindId, sessionId),
     messages: (mindId, sessionId) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.MESSAGES, mindId, sessionId),
     export: (mindId, sessionId, format) => ipcRenderer.invoke(IPC.CONVERSATION_HISTORY.EXPORT, mindId, sessionId, format),

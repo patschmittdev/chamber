@@ -1829,6 +1829,130 @@ describe('MindManager', () => {
         `Conversation missing-session not found for mind ${mind.mindId}`,
       );
     });
+
+    it('persists a per-conversation system prompt without disturbing recency', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const before = manager.listConversationHistory(mind.mindId)[0];
+
+      const history = await manager.setConversationSystemMessage(mind.mindId, before.sessionId, 'Be terse.');
+
+      expect(history[0]).toMatchObject({ sessionId: before.sessionId, systemMessage: 'Be terse.' });
+      expect(history[0].updatedAt).toBe(before.updatedAt);
+      expect(lastSavedConfig().minds[0].conversations?.[0]).toMatchObject({
+        sessionId: before.sessionId,
+        systemMessage: 'Be terse.',
+      });
+      expect(lastSavedConfig().minds[0].conversations?.[0]?.updatedAt).toBe(before.updatedAt);
+    });
+
+    it('clears the override instead of persisting an empty string', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = manager.listConversationHistory(mind.mindId)[0].sessionId;
+
+      await manager.setConversationSystemMessage(mind.mindId, sessionId, 'Be terse.');
+      const history = await manager.setConversationSystemMessage(mind.mindId, sessionId, '   ');
+
+      expect(history[0].systemMessage).toBeUndefined();
+      expect(lastSavedConfig().minds[0].conversations?.[0]).not.toHaveProperty('systemMessage');
+    });
+
+    it('rebinds the active conversation session with the override applied immediately', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = manager.listConversationHistory(mind.mindId)[0].sessionId;
+      mockResumeSession.mockClear();
+      mockCreateSession.mockClear();
+
+      await manager.setConversationSystemMessage(mind.mindId, sessionId, 'Only speak in haiku.');
+
+      const rebindConfig = mockResumeSession.mock.calls.at(-1)?.[1]
+        ?? mockCreateSession.mock.calls.at(-1)?.[0];
+      expect(rebindConfig).toMatchObject({
+        systemMessage: expect.objectContaining({
+          sections: expect.objectContaining({
+            identity: { action: 'replace', content: 'Only speak in haiku.' },
+          }),
+        }),
+      });
+    });
+
+    it('rebinds the active session back to the mind default when the override is cleared', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = manager.listConversationHistory(mind.mindId)[0].sessionId;
+      await manager.setConversationSystemMessage(mind.mindId, sessionId, 'Only speak in haiku.');
+      mockResumeSession.mockClear();
+      mockCreateSession.mockClear();
+
+      await manager.setConversationSystemMessage(mind.mindId, sessionId, '');
+
+      const rebindConfig = mockResumeSession.mock.calls.at(-1)?.[1]
+        ?? mockCreateSession.mock.calls.at(-1)?.[0];
+      expect(rebindConfig).toMatchObject({
+        systemMessage: expect.objectContaining({
+          sections: expect.objectContaining({
+            identity: { action: 'replace', content: 'Identity for /tmp/agents/q' },
+          }),
+        }),
+      });
+    });
+
+    it('does not rebind a session for a non-active conversation', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'First chat');
+      await manager.startNewConversation(mind.mindId);
+      const inactive = manager.listConversationHistory(mind.mindId).find((conversation) => !conversation.active);
+      expect(inactive).toBeTruthy();
+      mockResumeSession.mockClear();
+      mockCreateSession.mockClear();
+
+      const history = await manager.setConversationSystemMessage(mind.mindId, inactive!.sessionId, 'Inactive override.');
+
+      expect(history.find((conversation) => conversation.sessionId === inactive!.sessionId)?.systemMessage)
+        .toBe('Inactive override.');
+      expect(mockResumeSession).not.toHaveBeenCalled();
+      expect(mockCreateSession).not.toHaveBeenCalled();
+    });
+
+    it('resumes a non-active conversation with the mind default after its override is cleared', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'First chat');
+      await manager.startNewConversation(mind.mindId);
+      const inactive = manager.listConversationHistory(mind.mindId).find((conversation) => !conversation.active);
+      expect(inactive).toBeTruthy();
+      await manager.setConversationSystemMessage(mind.mindId, inactive!.sessionId, 'Only speak in haiku.');
+      await manager.setConversationSystemMessage(mind.mindId, inactive!.sessionId, '');
+      mockResumeSession.mockClear();
+
+      await manager.resumeConversation(mind.mindId, inactive!.sessionId);
+
+      expect(mockResumeSession.mock.calls.at(-1)?.[1]).toMatchObject({
+        systemMessage: expect.objectContaining({
+          sections: expect.objectContaining({
+            identity: { action: 'replace', content: 'Identity for /tmp/agents/q' },
+          }),
+        }),
+      });
+    });
+
+    it('rejects when setting a system prompt on a conversation that does not exist', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+
+      await expect(manager.setConversationSystemMessage(mind.mindId, 'missing-session', 'x')).rejects.toThrow(
+        `Conversation missing-session not found for mind ${mind.mindId}`,
+      );
+    });
+
+    it('does not persist the override when rebinding the active session fails', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = manager.listConversationHistory(mind.mindId)[0].sessionId;
+      mockResumeSession.mockRejectedValueOnce(new Error('session load failed'));
+
+      await expect(manager.setConversationSystemMessage(mind.mindId, sessionId, 'Should not persist.'))
+        .rejects.toThrow('session load failed');
+
+      expect(manager.listConversationHistory(mind.mindId)[0].systemMessage).not.toBe('Should not persist.');
+      const persisted = lastSavedConfig().minds[0].conversations?.find((conversation) => conversation.sessionId === sessionId);
+      expect(persisted?.systemMessage).not.toBe('Should not persist.');
+    });
   });
 
   describe('restoreFromConfig', () => {

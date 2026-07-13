@@ -3,6 +3,7 @@ import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useDelayedFlag } from '../../hooks/useDelayedFlag';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
+import { ChatSystemPromptControl } from './ChatSystemPromptControl';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AgentWelcome } from './AgentWelcome';
 import { Logger } from '../../lib/logger';
@@ -65,10 +66,16 @@ export function ChatPanel() {
   };
 
   const activeMind = activeMindId ? minds.find((m) => m.mindId === activeMindId) : undefined;
+  const hasActiveConversation = Boolean(conversationHistory?.some((conversation) => conversation.active));
   const showAboutPanel = messages.length === 0 && !isLoadingConversation && activeMind;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {activeMind && hasActiveConversation ? (
+        <div className="flex items-center justify-end border-b border-border px-4 py-2">
+          <ChatSystemPromptControl disabled={isStreaming || isBusy} />
+        </div>
+      ) : null}
       {isLoadingConversation ? (
         showHydratingSkeleton ? <ConversationHydratingSkeleton /> : null
       ) : (
