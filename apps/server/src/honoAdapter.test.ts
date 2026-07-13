@@ -78,10 +78,8 @@ describe('createHttpServer', () => {
     }
   });
 
-  it('returns 400 for malformed privileged requests', async () => {
-    const { port } = await startServer({
-      handlePrivilegedRequest: async (request) => ({ ok: true, requestId: request.requestId }),
-    });
+  it('no longer registers the privileged credential route (keychain oracle stays deleted)', async () => {
+    const { port } = await startServer({});
 
     const response = await httpRequest(port, {
       method: 'POST',
@@ -89,30 +87,13 @@ describe('createHttpServer', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         protoVersion: 1,
-        type: 'credential.setPassword',
+        type: 'credential.findCredentials',
         requestId: 'r1',
-        payload: { service: 'copilot-cli', account: 'octocat' },
+        payload: { service: 'copilot-cli' },
       }),
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({ error: 'credential.setPassword requires payload.password.' });
-  });
-
-  it('returns 400 for invalid privileged JSON bodies', async () => {
-    const { port } = await startServer({
-      handlePrivilegedRequest: async (request) => ({ ok: true, requestId: request.requestId }),
-    });
-
-    const response = await httpRequest(port, {
-      method: 'POST',
-      path: '/api/privileged',
-      headers: { 'content-type': 'application/json' },
-      body: '{"protoVersion":',
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({ error: 'Privileged request body must be valid JSON.' });
+    expect(response.statusCode).toBe(404);
   });
 
   it('accepts browser WebSocket auth via token query and fans out published chat events', async () => {
@@ -139,6 +120,24 @@ describe('createHttpServer', () => {
         messageId: 'assistant-1',
         event: { type: 'done' },
       });
+    } finally {
+      ws.close();
+    }
+  });
+
+  it('drops malformed WebSocket frames instead of crashing the server', async () => {
+    const { port } = await startServer({});
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/events?token=${TOKEN}`, {
+      headers: { origin: `${ORIGIN}:${port}` },
+    });
+
+    try {
+      await waitForOpen(ws);
+      const ready = waitForMessage(ws, (message) => message.type === 'subscription:ready');
+      ws.send('this is not json{');
+      ws.send(JSON.stringify({ type: 'subscribe', sessionId: 'assistant-1' }));
+      const message = await ready;
+      expect(message.payload).toEqual({ sessionId: 'assistant-1' });
     } finally {
       ws.close();
     }
@@ -223,6 +222,34 @@ describe('createHttpServer', () => {
         },
       });
       expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('host header validation', () => {
+    it('rejects requests whose Host header is not loopback', async () => {
+      const { port } = await startServer({});
+      const response = await rawHttpRequest(port, {
+        method: 'GET',
+        path: '/api/mind/list',
+        headers: {
+          host: 'evil.example.com',
+          authorization: `Bearer ${TOKEN}`,
+        },
+      });
+      expect(response.statusCode).toBe(403);
+      expect(JSON.parse(response.body)).toEqual({ error: 'Forbidden host' });
+    });
+
+    it('allows loopback Host headers with or without a port', async () => {
+      const { port } = await startServer({});
+      for (const host of ['127.0.0.1', 'localhost', `127.0.0.1:${port}`]) {
+        const response = await rawHttpRequest(port, {
+          method: 'GET',
+          path: '/api/mind/list',
+          headers: { host, authorization: `Bearer ${TOKEN}` },
+        });
+        expect(response.statusCode).toBe(200);
+      }
     });
   });
 
@@ -387,6 +414,15 @@ describe('createHttpServer', () => {
       expect(status).toBe(401);
     });
 
+    it('rejects upgrades whose Host header is not loopback', async () => {
+      const { port } = await startServer({});
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/events?token=${TOKEN}`, {
+        headers: { origin: `${ORIGIN}:${port}`, host: 'evil.example.com' },
+      });
+      const status = await waitForUpgradeRejection(ws);
+      expect(status).toBe(401);
+    });
+
     it('accepts upgrades that authenticate via the Authorization header instead of the query token', async () => {
       const { port } = await startServer({});
       const ws = new WebSocket(`ws://127.0.0.1:${port}/events`, {
@@ -433,7 +469,6 @@ function makeContext(overrides: Partial<ChamberCtx> = {}): ChamberCtx {
     cancelChat: notConfigured('cancelChat'),
     listModels: notConfigured('listModels'),
     shutdown: () => {},
-    handlePrivilegedRequest: notConfigured('handlePrivilegedRequest'),
     ...overrides,
   };
 }

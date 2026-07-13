@@ -1,4 +1,3 @@
-import type { PrivilegedRequest, PrivilegedResponse } from './privileged-protocol';
 import type { ModelDto, SendChatRequest } from '@chamber/wire-contracts';
 
 export interface ChamberRequest {
@@ -57,6 +56,5 @@ export interface ChamberCtx {
   newConversation: (mindId: string) => Promise<unknown> | unknown;
   listModels: (mindId?: string) => ModelDto[] | Promise<ModelDto[]>;
   shutdown: () => void;
-  handlePrivilegedRequest: (request: PrivilegedRequest) => Promise<PrivilegedResponse>;
   publish?: (sessionId: string, event: unknown) => void;
 }

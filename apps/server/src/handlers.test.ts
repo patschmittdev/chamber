@@ -261,7 +261,6 @@ function makeContext(overrides: Partial<ChamberCtx>): ChamberCtx {
     cancelChat: notConfigured('cancelChat'),
     listModels: notConfigured('listModels'),
     shutdown: () => {},
-    handlePrivilegedRequest: notConfigured('handlePrivilegedRequest'),
     ...overrides,
   };
 }

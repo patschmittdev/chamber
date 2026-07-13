@@ -25,7 +25,6 @@ const fullCapabilities: Omit<ChamberCtx, 'token' | 'allowedOrigins'> = {
   cancelChat: noop,
   listModels: () => [],
   shutdown: noop,
-  handlePrivilegedRequest: async () => ({ ok: true as const, requestId: 'r1' }),
 };
 
 describe('createServerContext', () => {
@@ -59,9 +58,6 @@ describe('createServerContext', () => {
 
     // @ts-expect-error: sendChat is required
     createServerContext({ ...fullCapabilities, sendChat: undefined });
-
-    // @ts-expect-error: handlePrivilegedRequest is required
-    createServerContext({ ...fullCapabilities, handlePrivilegedRequest: undefined });
 
     expect(true).toBe(true);
   });
