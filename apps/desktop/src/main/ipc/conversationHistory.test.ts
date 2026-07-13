@@ -40,6 +40,7 @@ function createChatService(overrides: Partial<ChatService> = {}): ChatService {
     renameConversation: vi.fn(() => []),
     setPinnedConversation: vi.fn(() => []),
     setArchivedConversation: vi.fn(() => []),
+    setConversationSystemMessage: vi.fn(async () => []),
     deleteConversation: vi.fn(async () => ({ sessionId: '', messages: [], conversations: [] })),
     getConversationMessages: vi.fn(async () => []),
     getConversationExportFilename: vi.fn(() => markdownExport.filename),
@@ -54,7 +55,7 @@ describe('setupConversationHistoryIPC', () => {
     vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({ id: 1 } as never);
   });
 
-  it('registers list, resume, rename, pin, archive, delete, messages, and export handlers', () => {
+  it('registers list, resume, rename, pin, archive, system message, delete, messages, and export handlers', () => {
     setupConversationHistoryIPC(createChatService());
 
     const channels = vi.mocked(ipcMain.handle).mock.calls.map((entry) => entry[0]);
@@ -65,6 +66,7 @@ describe('setupConversationHistoryIPC', () => {
       'conversationHistory:rename',
       'conversationHistory:setPinned',
       'conversationHistory:setArchived',
+      'conversationHistory:setSystemMessage',
       'conversationHistory:delete',
       'conversationHistory:messages',
       'conversationHistory:export',
@@ -90,6 +92,17 @@ describe('setupConversationHistoryIPC', () => {
     const result = await handlerFor('conversationHistory:setArchived')(EVT, 'mind-1', 'session-1', true);
 
     expect(chatService.setArchivedConversation).toHaveBeenCalledWith('mind-1', 'session-1', true);
+    expect(result).toBe(history);
+  });
+
+  it('setSystemMessage handler delegates to chatService.setConversationSystemMessage', async () => {
+    const history = [{ sessionId: 'session-1', title: 'Custom', createdAt: '', updatedAt: '', kind: 'chat', active: true, hasMessages: true, systemMessage: 'Be terse.' }];
+    const chatService = createChatService({ setConversationSystemMessage: vi.fn(async () => history) as never });
+    setupConversationHistoryIPC(chatService);
+
+    const result = await handlerFor('conversationHistory:setSystemMessage')(EVT, 'mind-1', 'session-1', 'Be terse.');
+
+    expect(chatService.setConversationSystemMessage).toHaveBeenCalledWith('mind-1', 'session-1', 'Be terse.');
     expect(result).toBe(history);
   });
 

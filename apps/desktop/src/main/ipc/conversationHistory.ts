@@ -29,6 +29,9 @@ export function setupConversationHistoryIPC(chatService: ChatService): void {
   ipcMain.handle(IPC.CONVERSATION_HISTORY.SET_ARCHIVED, async (_event, mindId: string, sessionId: string, archived: boolean) =>
     chatService.setArchivedConversation(mindId, sessionId, archived));
 
+  ipcMain.handle(IPC.CONVERSATION_HISTORY.SET_SYSTEM_MESSAGE, async (_event, mindId: string, sessionId: string, systemMessage: string) =>
+    chatService.setConversationSystemMessage(mindId, sessionId, systemMessage));
+
   ipcMain.handle(IPC.CONVERSATION_HISTORY.DELETE, async (_event, mindId: string, sessionId: string) =>
     chatService.deleteConversation(mindId, sessionId));
 

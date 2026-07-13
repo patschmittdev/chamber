@@ -113,6 +113,23 @@ function withConversationFlag(
   return next;
 }
 
+/**
+ * Returns a copy of the conversation with a per-conversation system prompt
+ * override set, or with the field omitted entirely when `value` is empty, so an
+ * empty override cleanly falls back to the mind default (mirrors the
+ * omit-when-empty idiom used by `normalizeConversationRecord`). `value` is
+ * expected to be pre-trimmed by the caller.
+ */
+function withConversationSystemMessage(
+  conversation: ChamberConversationRecord,
+  value: string,
+): ChamberConversationRecord {
+  if (value.length > 0) return { ...conversation, systemMessage: value };
+  const next = { ...conversation };
+  delete next.systemMessage;
+  return next;
+}
+
 export class MindManager extends EventEmitter {
   private minds = new Map<string, InternalMindContext>();
   private pathToId = new Map<string, string>();
@@ -1003,6 +1020,7 @@ export class MindManager extends EventEmitter {
         ...(conversation.forkOf ? { forkOf: conversation.forkOf } : {}),
         ...(conversation.isPinned ? { isPinned: true } : {}),
         ...(conversation.isArchived ? { isArchived: true } : {}),
+        ...(conversation.systemMessage ? { systemMessage: conversation.systemMessage } : {}),
       }));
   }
 
@@ -1022,6 +1040,55 @@ export class MindManager extends EventEmitter {
   setArchivedConversation(mindId: string, sessionId: string, archived: boolean): ConversationSummary[] {
     return this.updateConversationRecord(mindId, sessionId, (conversation) =>
       withConversationFlag(conversation, 'isArchived', archived));
+  }
+
+  /**
+   * Sets or clears a per-conversation system prompt override. When the target is
+   * the live active conversation, its SDK session is rebound first so the change
+   * applies immediately (mirroring how a model change rebinds the active session);
+   * only after the rebind succeeds is the override persisted through the same
+   * metadata path as pin/archive (recency preserved). Rebinding before persisting
+   * keeps the operation atomic: a failed session load leaves disk, session, and
+   * store untouched, matching the resume/recover lifecycle. An empty or whitespace
+   * value clears the override so the conversation falls back to the mind default.
+   */
+  async setConversationSystemMessage(mindId: string, sessionId: string, systemMessage: string): Promise<ConversationSummary[]> {
+    return this.withMindSessionLock(mindId, async () => {
+      const trimmed = systemMessage.trim();
+      await this.rebindActiveSessionSystemMessage(mindId, sessionId, trimmed);
+      return this.updateConversationRecord(mindId, sessionId, (conversation) =>
+        withConversationSystemMessage(conversation, trimmed));
+    });
+  }
+
+  /**
+   * Rebinds the mind's live active session with the effective system prompt
+   * (`override || mind default`) when `sessionId` is the active conversation, so
+   * a per-conversation override applies to the current chat without waiting for a
+   * resume. No-op for non-active conversations, which pick up the persisted
+   * override on their next resume. Mirrors the resume/disconnect lifecycle used
+   * by `recoverActiveConversationSession`.
+   */
+  private async rebindActiveSessionSystemMessage(mindId: string, sessionId: string, override: string): Promise<void> {
+    const context = this.minds.get(mindId);
+    if (!context || context.activeSessionId !== sessionId) return;
+    const effective = override.length > 0 ? override : context.identity.systemMessage;
+    const previousSession = context.session;
+    const sessionTools = this.getSessionTools(mindId, context.mindPath);
+    const reboundSession = await this.loadConversationSession(
+      context.client,
+      'conversation',
+      context.mindPath,
+      effective,
+      sessionTools,
+      sessionId,
+      context.selectedModel,
+      context.selectedModelProvider,
+      effective,
+    );
+    context.session = reboundSession;
+    context.activeSessionSystemMessage = effective;
+    await previousSession?.disconnect().catch(() => { /* session already disconnected */ });
   }
 
   /**

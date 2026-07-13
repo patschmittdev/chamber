@@ -88,6 +88,7 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     // reject rather than fabricate a success that would blank the list.
     setPinned: { status: 'planned', rejects: true },
     setArchived: { status: 'planned', rejects: true },
+    setSystemMessage: { status: 'planned', rejects: true },
   },
   mind: {
     add: supported,

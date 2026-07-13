@@ -115,6 +115,8 @@ export interface ElectronAPI {
     setPinned: (mindId: string, sessionId: string, pinned: boolean) => Promise<ConversationSummary[]>;
     /** Archives or unarchives a conversation, returning the refreshed history (mirrors rename). */
     setArchived: (mindId: string, sessionId: string, archived: boolean) => Promise<ConversationSummary[]>;
+    /** Sets or clears a per-conversation system prompt override, returning the refreshed history (mirrors rename). An empty string clears the override so the conversation falls back to the mind default. */
+    setSystemMessage: (mindId: string, sessionId: string, systemMessage: string) => Promise<ConversationSummary[]>;
   };
   mind: {
     add: (mindPath: string) => Promise<MindContext>;
