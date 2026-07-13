@@ -544,7 +544,7 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Search conversations"
                   aria-label="Search conversations"
-                  className="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-7 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary"
+                  className="focus-ring w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-7 text-sm text-foreground placeholder:text-muted-foreground outline-none"
                 />
                 {searchQuery ? (
                   <button

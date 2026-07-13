@@ -3,7 +3,8 @@ import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type { ToolCatalogEntry } from '@chamber/shared/types';
 import { Blocks, Download, Loader2, Trash2 } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { TabEmptyState, TabError } from './extensionsShared';
+import { Button } from '../ui/button';
+import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 
 export function ToolsTab() {
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
@@ -72,7 +73,7 @@ export function ToolsTab() {
       {error && <TabError message={error} />}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading tools…</p>
+        <TabLoading label="Loading tools" />
       ) : tools.length === 0 ? (
         <TabEmptyState
           icon={<Blocks size={22} />}
@@ -107,25 +108,24 @@ export function ToolsTab() {
                 </div>
                 <div className="shrink-0">
                   {installed ? (
-                    <button
+                    <Button
+                      variant="outline"
                       aria-label={`Uninstall ${tool.displayName}`}
-                      className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-60"
                       onClick={() => void uninstall(tool)}
                       disabled={busy}
                     >
                       {busy ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                       Uninstall
-                    </button>
+                    </Button>
                   ) : (
-                    <button
+                    <Button
                       aria-label={`Install ${tool.displayName}`}
-                      className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm disabled:opacity-60"
                       onClick={() => void install(tool)}
                       disabled={busy}
                     >
                       {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                       Install
-                    </button>
+                    </Button>
                   )}
                 </div>
               </li>

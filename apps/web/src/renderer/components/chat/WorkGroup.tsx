@@ -71,7 +71,7 @@ export function WorkGroup({ entries, isActive = false, contextOnly = false }: Pr
             type="button"
             onClick={() => setIsExpanded((v) => !v)}
             className={cn(
-              'rounded px-1 text-[10px] uppercase tracking-[0.1em] text-muted-foreground/55',
+              'rounded px-1 text-[11px] uppercase tracking-[0.1em] text-muted-foreground',
               'hover:text-foreground/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
             )}
           >

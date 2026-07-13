@@ -4,6 +4,7 @@ import type { McpServerEntry } from '@chamber/shared/mcp-types';
 import { Globe, Pencil, Plus, Server, Terminal, Trash2 } from 'lucide-react';
 import { useAppState } from '../../lib/store';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -12,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { TabEmptyState, TabError } from './extensionsShared';
+import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 import {
   emptyMcpForm,
   entryToForm,
@@ -176,20 +177,16 @@ export function McpServersTab() {
             <code className="rounded bg-muted px-1 py-0.5 text-xs">.mcp.json</code>.
           </p>
         </div>
-        <button
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm disabled:opacity-60"
-          onClick={openAdd}
-          disabled={saving || !canWrite}
-        >
+        <Button onClick={openAdd} disabled={saving || !canWrite}>
           <Plus size={16} />
           Add server
-        </button>
+        </Button>
       </div>
 
       {error && <TabError message={error} />}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading servers…</p>
+        <TabLoading label="Loading servers" />
       ) : entries.length === 0 ? (
         <TabEmptyState
           icon={<Server size={22} />}
@@ -310,20 +307,12 @@ export function McpServersTab() {
           </div>
 
           <DialogFooter>
-            <button
-              className="rounded-lg border border-border bg-muted px-4 py-2 text-sm font-semibold text-foreground disabled:opacity-60"
-              onClick={() => setDialogOpen(false)}
-              disabled={saving}
-            >
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
               Cancel
-            </button>
-            <button
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm disabled:opacity-60"
-              onClick={() => void submit()}
-              disabled={saving}
-            >
+            </Button>
+            <Button onClick={() => void submit()} disabled={saving}>
               {saving ? 'Saving…' : 'Save server'}
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

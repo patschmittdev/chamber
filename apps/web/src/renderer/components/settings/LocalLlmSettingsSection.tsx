@@ -212,7 +212,7 @@ export function LocalLlmSettingsSection() {
 
   return (
     <section>
-      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
+      <h2 className="text-lg font-semibold text-foreground mb-3">
         Local &amp; Custom LLM
       </h2>
       <div className="rounded-lg border border-border bg-card p-4 space-y-4">

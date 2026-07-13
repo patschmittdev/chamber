@@ -1010,7 +1010,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
             aria-label="Message your agent"
             disabled={disabled}
             rows={1}
-            className="w-full bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground disabled:opacity-50 overflow-y-auto"
+            className="focus-ring w-full resize-none overflow-y-auto rounded-md bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
           />
 
           <div className="flex items-center justify-between">

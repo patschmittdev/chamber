@@ -5,6 +5,8 @@ import { validatePromptInput } from '@chamber/shared/prompt-authoring';
 import { FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
+import { Alert } from '../ui/alert';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -13,15 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { TabEmptyState, TabError } from './extensionsShared';
+import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 
-const secondaryButtonClass =
-  'rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50';
-const primaryButtonClass =
-  'rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50';
-const destructiveButtonClass =
-  'rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50';
-const alertClass = 'rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive';
 const fieldInputClass =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary';
 
@@ -90,14 +85,10 @@ export function PromptsTab() {
             <h3 className="text-sm font-medium">Saved prompts</h3>
             <p className="text-xs text-muted-foreground">Stored on this device and available to every mind.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className={cn(primaryButtonClass, 'flex items-center gap-1.5')}
-          >
+          <Button onClick={() => setCreateOpen(true)}>
             <Plus size={16} />
             New prompt
-          </button>
+          </Button>
         </div>
         <PromptsList
           prompts={prompts}
@@ -137,7 +128,7 @@ function PromptsList({
   onEdit: (prompt: Prompt) => void;
   onDelete: (prompt: Prompt) => void;
 }) {
-  if (loading) return <p className="text-sm text-muted-foreground">Loading prompts...</p>;
+  if (loading) return <TabLoading label="Loading prompts" />;
   if (error) return <TabError message={error} />;
   if (prompts.length === 0) {
     return (
@@ -196,15 +187,10 @@ function CardActionButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className={cn(secondaryButtonClass, 'flex items-center gap-1.5 px-3 py-1.5 text-xs')}
-    >
+    <Button variant="outline" size="sm" aria-label={label} onClick={onClick}>
       {icon}
       {text}
-    </button>
+    </Button>
   );
 }
 
@@ -300,9 +286,7 @@ function PromptDialog({
           <DialogDescription>Saved prompts insert their body into the composer from the slash menu.</DialogDescription>
         </DialogHeader>
         {error ? (
-          <div role="alert" className={alertClass}>
-            {error}
-          </div>
+          <Alert variant="destructive">{error}</Alert>
         ) : null}
         <div className="flex flex-col gap-3">
           <Field label="Title" htmlFor="prompt-title">
@@ -331,12 +315,12 @@ function PromptDialog({
           </Field>
         </div>
         <DialogFooter>
-          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={handleSave} disabled={!canSubmit} className={primaryButtonClass}>
+          </Button>
+          <Button onClick={handleSave} disabled={!canSubmit}>
             {saving ? 'Saving...' : 'Save prompt'}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -393,9 +377,7 @@ function PromptDeleteDialog({
           <DialogDescription>This removes the prompt from your library. This cannot be undone.</DialogDescription>
         </DialogHeader>
         {error ? (
-          <div role="alert" className={alertClass}>
-            {error}
-          </div>
+          <Alert variant="destructive">{error}</Alert>
         ) : null}
         {prompt ? (
           <p className="text-sm text-muted-foreground">
@@ -403,12 +385,12 @@ function PromptDeleteDialog({
           </p>
         ) : null}
         <DialogFooter>
-          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={handleDelete} disabled={deleting} className={destructiveButtonClass}>
+          </Button>
+          <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete prompt'}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

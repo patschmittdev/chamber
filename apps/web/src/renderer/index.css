@@ -355,6 +355,17 @@ html.density-compact {
     0 10px 36px -12px oklch(0.72 0.02 260 / 0.45);
 }
 
+/* Standard keyboard focus ring for inputs and interactive surfaces that don't
+ * carry a component-level focus-visible utility (e.g. bare textareas and search
+ * inputs that previously only shifted border-color on focus). Mirrors the ring
+ * token used by the ui/ primitives (badge, button) so focus reads consistently
+ * across the app: a neutral border plus a 3px translucent ring, keyboard-only. */
+.focus-ring:focus-visible {
+  outline: none;
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-ring) 50%, transparent);
+}
+
 /* Selection color is a neutral wash so highlights don't look like
  * raw OS chrome bleeding into the app. */
 ::selection {

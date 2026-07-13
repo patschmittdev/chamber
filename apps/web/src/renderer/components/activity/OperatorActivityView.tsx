@@ -23,6 +23,7 @@ import {
   Square,
   Users,
 } from 'lucide-react';
+import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { formatRelativeTime } from '../../lib/utils';
@@ -161,11 +162,7 @@ export function OperatorActivityView() {
 
   return (
     <ActivityViewFrame snapshot={snapshot} onRefresh={() => void loadSnapshot()} refreshing={refreshing}>
-      {error && (
-        <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-red-200">
-          {error}
-        </div>
-      )}
+      {error && <Alert variant="destructive">{error}</Alert>}
       {stale && (
         <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
           Activity snapshot is stale. Last update: {formatTimestamp(snapshot.updatedAt)}.

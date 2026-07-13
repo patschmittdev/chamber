@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type { A2ARelayStatus } from '@chamber/shared/a2a-types';
 import { RadioTower, ShieldCheck, Unplug, RefreshCw } from 'lucide-react';
+import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 
@@ -148,11 +149,7 @@ export function A2ARelayView() {
                     Microsoft Entra opens a browser sign-in and uses Chamber's configured Switchboard app registration.
                   </div>
                 )}
-                {error && (
-                  <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-red-200">
-                    {error}
-                  </div>
-                )}
+                {error && <Alert variant="destructive">{error}</Alert>}
                 <div className="flex flex-wrap gap-3 pt-2">
                   <button
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
