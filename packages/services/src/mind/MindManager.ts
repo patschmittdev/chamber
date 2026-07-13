@@ -97,6 +97,22 @@ const MIND_SESSION_POLICIES: Record<MindSessionKind, MindSessionPolicy> = {
   },
 };
 
+/**
+ * Returns a copy of the conversation with an optional boolean flag set to `true`,
+ * or with the flag omitted entirely when `value` is false, so persisted records
+ * stay clean (mirrors the omit-when-false idiom used across the config layer).
+ */
+function withConversationFlag(
+  conversation: ChamberConversationRecord,
+  key: 'isPinned' | 'isArchived',
+  value: boolean,
+): ChamberConversationRecord {
+  if (value) return { ...conversation, [key]: true };
+  const next = { ...conversation };
+  delete next[key];
+  return next;
+}
+
 export class MindManager extends EventEmitter {
   private minds = new Map<string, InternalMindContext>();
   private pathToId = new Map<string, string>();
@@ -985,22 +1001,51 @@ export class MindManager extends EventEmitter {
         active: conversation.sessionId === activeSessionId,
         hasMessages: conversation.hasMessages,
         ...(conversation.forkOf ? { forkOf: conversation.forkOf } : {}),
+        ...(conversation.isPinned ? { isPinned: true } : {}),
+        ...(conversation.isArchived ? { isArchived: true } : {}),
       }));
   }
 
   renameConversation(mindId: string, sessionId: string, title: string): ConversationSummary[] {
+    const updatedAt = new Date().toISOString();
+    return this.updateConversationRecord(mindId, sessionId,
+      (conversation) => ({ ...conversation, title: title.trim(), updatedAt }));
+  }
+
+  /** Pins or unpins a conversation, persisting through the same path as rename. */
+  setPinnedConversation(mindId: string, sessionId: string, pinned: boolean): ConversationSummary[] {
+    return this.updateConversationRecord(mindId, sessionId, (conversation) =>
+      withConversationFlag(conversation, 'isPinned', pinned));
+  }
+
+  /** Archives or unarchives a conversation, persisting through the same path as rename. */
+  setArchivedConversation(mindId: string, sessionId: string, archived: boolean): ConversationSummary[] {
+    return this.updateConversationRecord(mindId, sessionId, (conversation) =>
+      withConversationFlag(conversation, 'isArchived', archived));
+  }
+
+  /**
+   * Applies `update` to a single Chamber-owned conversation record and persists,
+   * returning the refreshed history. The `update` callback decides which fields
+   * change: rename passes a fresh `updatedAt`, while metadata-only edits (pin,
+   * archive) deliberately preserve `updatedAt` so recency ordering is not
+   * disturbed by organizing.
+   */
+  private updateConversationRecord(
+    mindId: string,
+    sessionId: string,
+    update: (conversation: ChamberConversationRecord) => ChamberConversationRecord,
+  ): ConversationSummary[] {
     const record = this.knownMindRecords.get(mindId);
     if (!record) throw new Error(`Mind ${mindId} not found`);
     const conversations = record.conversations ?? [];
     if (!conversations.some((conversation) => conversation.sessionId === sessionId)) {
       throw new Error(`Conversation ${sessionId} not found for mind ${mindId}`);
     }
-    const updatedAt = new Date().toISOString();
     this.knownMindRecords.set(mindId, {
       ...record,
-      conversations: conversations.map((conversation) => conversation.sessionId === sessionId
-        ? { ...conversation, title: title.trim(), updatedAt }
-        : conversation),
+      conversations: conversations.map((conversation) =>
+        conversation.sessionId === sessionId ? update(conversation) : conversation),
     });
     this.persistConfig();
     return this.listConversationHistory(mindId);

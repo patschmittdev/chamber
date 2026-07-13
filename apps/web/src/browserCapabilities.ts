@@ -84,6 +84,10 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     delete: { status: 'planned' },
     messages: { status: 'planned' },
     export: { status: 'planned' },
+    // Organizing writes return refreshed data with no browser route yet, so they
+    // reject rather than fabricate a success that would blank the list.
+    setPinned: { status: 'planned', rejects: true },
+    setArchived: { status: 'planned', rejects: true },
   },
   mind: {
     add: supported,

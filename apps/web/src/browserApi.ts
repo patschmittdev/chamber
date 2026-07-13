@@ -196,6 +196,8 @@ export function installBrowserApi(): void {
       delete: async () => ({ sessionId: '', messages: [], conversations: [] }),
       messages: async () => [],
       export: async () => ({ status: 'canceled' as const }),
+      setPinned: async () => unavailable('conversationHistory.setPinned'),
+      setArchived: async () => unavailable('conversationHistory.setArchived'),
     },
     mind: {
       add: (mindPath): Promise<MindContext> => client.addMind(mindPath) as Promise<MindContext>,

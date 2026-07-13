@@ -1776,6 +1776,59 @@ describe('MindManager', () => {
         title: 'Better title',
       });
     });
+
+    it('pins a conversation without disturbing its recency timestamp', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const before = manager.listConversationHistory(mind.mindId)[0];
+
+      const history = manager.setPinnedConversation(mind.mindId, before.sessionId, true);
+
+      expect(history[0]).toMatchObject({ sessionId: before.sessionId, isPinned: true });
+      expect(history[0].updatedAt).toBe(before.updatedAt);
+      expect(lastSavedConfig().minds[0].conversations?.[0]).toMatchObject({
+        sessionId: before.sessionId,
+        isPinned: true,
+      });
+      expect(lastSavedConfig().minds[0].conversations?.[0]?.updatedAt).toBe(before.updatedAt);
+    });
+
+    it('clears the pinned flag instead of persisting it as false', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const sessionId = manager.listConversationHistory(mind.mindId)[0].sessionId;
+
+      manager.setPinnedConversation(mind.mindId, sessionId, true);
+      const history = manager.setPinnedConversation(mind.mindId, sessionId, false);
+
+      expect(history[0].isPinned).toBeUndefined();
+      expect(lastSavedConfig().minds[0].conversations?.[0]).not.toHaveProperty('isPinned');
+    });
+
+    it('archives only the targeted conversation', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      manager.markActiveConversationHasMessages(mind.mindId, 'First chat');
+      await manager.startNewConversation(mind.mindId);
+      const conversations = manager.listConversationHistory(mind.mindId);
+      const target = conversations[0];
+      const sibling = conversations[1];
+
+      const history = manager.setArchivedConversation(mind.mindId, target.sessionId, true);
+
+      expect(history.find((conversation) => conversation.sessionId === target.sessionId)).toMatchObject({
+        isArchived: true,
+      });
+      expect(history.find((conversation) => conversation.sessionId === sibling.sessionId)?.isArchived).toBeUndefined();
+    });
+
+    it('throws when organizing a conversation that does not exist', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+
+      expect(() => manager.setPinnedConversation(mind.mindId, 'missing-session', true)).toThrow(
+        `Conversation missing-session not found for mind ${mind.mindId}`,
+      );
+      expect(() => manager.setArchivedConversation(mind.mindId, 'missing-session', true)).toThrow(
+        `Conversation missing-session not found for mind ${mind.mindId}`,
+      );
+    });
   });
 
   describe('restoreFromConfig', () => {

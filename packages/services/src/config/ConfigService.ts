@@ -236,6 +236,8 @@ function normalizeConversationRecord(value: unknown): ChamberConversationRecord 
       ? { systemMessage: record.systemMessage }
       : {}),
     ...(forkOf ? { forkOf } : {}),
+    ...(record.isPinned === true ? { isPinned: true } : {}),
+    ...(record.isArchived === true ? { isArchived: true } : {}),
   };
 }
 

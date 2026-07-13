@@ -22,6 +22,8 @@ describe('IPC channel constants', () => {
     expect(IPC.CONVERSATION_HISTORY.DELETE).toBe('conversationHistory:delete');
     expect(IPC.CONVERSATION_HISTORY.MESSAGES).toBe('conversationHistory:messages');
     expect(IPC.CONVERSATION_HISTORY.EXPORT).toBe('conversationHistory:export');
+    expect(IPC.CONVERSATION_HISTORY.SET_PINNED).toBe('conversationHistory:setPinned');
+    expect(IPC.CONVERSATION_HISTORY.SET_ARCHIVED).toBe('conversationHistory:setArchived');
 
     expect(IPC.MIND.ADD).toBe('mind:add');
     expect(IPC.MIND.REMOVE).toBe('mind:remove');

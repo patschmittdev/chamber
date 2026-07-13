@@ -421,6 +421,10 @@ export interface ChamberConversationRecord {
   hasMessages?: boolean;
   systemMessage?: string;
   forkOf?: ConversationForkRef;
+  /** Pins the conversation to the top of the history rail. Omitted when false. */
+  isPinned?: boolean;
+  /** Moves the conversation into the archived section, out of the default list. Omitted when false. */
+  isArchived?: boolean;
 }
 
 export interface ConversationSummary {
@@ -432,6 +436,10 @@ export interface ConversationSummary {
   active: boolean;
   hasMessages?: boolean;
   forkOf?: ConversationForkRef;
+  /** Pins the conversation to the top of the history rail. Omitted when false. */
+  isPinned?: boolean;
+  /** Moves the conversation into the archived section, out of the default list. Omitted when false. */
+  isArchived?: boolean;
 }
 
 export interface ConversationResumeResult {

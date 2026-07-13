@@ -637,6 +637,14 @@ export class ChatService {
     return this.mindManager.renameConversation(mindId, sessionId, title);
   }
 
+  setPinnedConversation(mindId: string, sessionId: string, pinned: boolean): ConversationSummary[] {
+    return this.mindManager.setPinnedConversation(mindId, sessionId, pinned);
+  }
+
+  setArchivedConversation(mindId: string, sessionId: string, archived: boolean): ConversationSummary[] {
+    return this.mindManager.setArchivedConversation(mindId, sessionId, archived);
+  }
+
   getConversationMessages(mindId: string, sessionId: string): Promise<ChatMessage[]> {
     return this.mindManager.getConversationMessages(mindId, sessionId);
   }
