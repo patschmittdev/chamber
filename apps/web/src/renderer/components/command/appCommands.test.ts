@@ -152,6 +152,26 @@ describe('buildCommandItems', () => {
     expect(commands.some((command) => command.id === 'action:new-skill')).toBe(false);
   });
 
+  it('routes the New prompt command to the Prompts tab and requests the create dialog', () => {
+    const dispatch = vi.fn();
+    const commands = buildCommandItems(makeDeps({ dispatch }));
+
+    const newPrompt = commands.find((command) => command.id === 'action:new-prompt');
+    expect(newPrompt).toBeDefined();
+    newPrompt?.run();
+
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'SET_PENDING_EXTENSIONS_INTENT',
+      payload: { tab: 'prompts', action: 'create-prompt' },
+    });
+  });
+
+  it('offers the New prompt command even without an active mind', () => {
+    const commands = buildCommandItems(makeDeps());
+    expect(commands.some((command) => command.id === 'action:new-prompt')).toBe(true);
+  });
+
   it('registers the palette and shortcuts commands with their keybindings', () => {
     const commands = buildCommandItems(makeDeps());
 

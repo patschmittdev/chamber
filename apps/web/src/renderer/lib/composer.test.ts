@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { MindContext } from '@chamber/shared/types';
+import type { MindContext, Prompt } from '@chamber/shared/types';
 import {
   imageToken,
   fileToken,
@@ -15,6 +15,10 @@ import {
   detectSlash,
   filterSlashCommands,
   SLASH_COMMANDS,
+  toPromptSlashItems,
+  filterPromptItems,
+  buildSlashMenu,
+  PROMPT_ITEM_HINT,
   isImageFile,
   isTextLikeFile,
   buildDocumentAttachments,
@@ -159,6 +163,61 @@ describe('detectSlash', () => {
     expect(filterSlashCommands(SLASH_COMMANDS, '')).toHaveLength(SLASH_COMMANDS.length);
     expect(filterSlashCommands(SLASH_COMMANDS, 'cl').map((c) => c.id)).toEqual(['clear']);
     expect(filterSlashCommands(SLASH_COMMANDS, 'zzz')).toHaveLength(0);
+  });
+});
+
+function makePrompt(id: string, title: string, body: string, description?: string): Prompt {
+  return {
+    id,
+    title,
+    body,
+    ...(description !== undefined ? { description } : {}),
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+  };
+}
+
+describe('prompt slash items', () => {
+  const prompts: Prompt[] = [
+    makePrompt('a', 'Standup', 'Summarize my day.', 'Daily update'),
+    makePrompt('b', 'Retro', 'What went well?'),
+  ];
+
+  it('maps prompts to slash items with a description hint or a default', () => {
+    expect(toPromptSlashItems(prompts)).toEqual([
+      { kind: 'prompt', id: 'a', name: 'Standup', hint: 'Daily update', body: 'Summarize my day.' },
+      { kind: 'prompt', id: 'b', name: 'Retro', hint: PROMPT_ITEM_HINT, body: 'What went well?' },
+    ]);
+  });
+
+  it('uses the default hint when a description is only whitespace', () => {
+    expect(toPromptSlashItems([makePrompt('c', 'Blank', 'body', '   ')])[0].hint).toBe(PROMPT_ITEM_HINT);
+  });
+
+  it('filters prompt items by title substring and caps the count', () => {
+    const items = toPromptSlashItems(prompts);
+    expect(filterPromptItems(items, 'ret').map((item) => item.id)).toEqual(['b']);
+    expect(filterPromptItems(items, '')).toHaveLength(2);
+    expect(filterPromptItems(items, 'zzz')).toHaveLength(0);
+    expect(filterPromptItems(items, '', 1)).toHaveLength(1);
+  });
+});
+
+describe('buildSlashMenu', () => {
+  const prompts = toPromptSlashItems([makePrompt('a', 'Clarify', 'Explain this.')]);
+
+  it('lists filtered built-in commands before saved prompts', () => {
+    const menu = buildSlashMenu(SLASH_COMMANDS, prompts, '');
+    expect(menu.slice(0, SLASH_COMMANDS.length).every((item) => item.kind === 'command')).toBe(true);
+    expect(menu.at(-1)).toMatchObject({ kind: 'prompt', id: 'a' });
+  });
+
+  it('applies the query to both commands and prompts', () => {
+    const menu = buildSlashMenu(SLASH_COMMANDS, prompts, 'cl');
+    expect(menu).toEqual([
+      { kind: 'command', id: 'clear', name: '/clear', hint: 'Clear the composer' },
+      { kind: 'prompt', id: 'a', name: 'Clarify', hint: PROMPT_ITEM_HINT, body: 'Explain this.' },
+    ]);
   });
 });
 

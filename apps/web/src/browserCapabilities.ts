@@ -252,6 +252,14 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     // Converted from an echo stub that silently dropped edits.
     setServers: { status: 'planned', rejects: true },
   },
+  prompts: {
+    // User-scoped prompt library is desktop-backed. No server route is wired yet,
+    // so list() rejects with one honest unavailable signal and writes return an
+    // honest failure result (never a fabricated success).
+    list: { status: 'planned', rejects: true },
+    save: { status: 'planned' },
+    delete: { status: 'planned' },
+  },
 } satisfies BrowserCapabilityManifest;
 
 type ManifestRecord = Record<string, Record<string, BrowserCapability>>;

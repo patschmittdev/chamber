@@ -4,7 +4,7 @@ import { Mic, Paperclip, Smile } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import { VOICE_DICTATION_MODEL_ID, type VoiceDictationConfig, type VoiceModelStatus } from '@chamber/shared/voice-types';
-import type { ChatAttachment, ChatImageAttachment, ModelInfo } from '@chamber/shared/types';
+import type { ChatAttachment, ChatImageAttachment, ModelInfo, Prompt } from '@chamber/shared/types';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { useVoiceDictation } from '../../hooks/useVoiceDictation';
 import { useNewConversation } from '../../hooks/useNewConversation';
@@ -40,7 +40,8 @@ import {
   toMentionables,
   filterMentionables,
   detectSlash,
-  filterSlashCommands,
+  buildSlashMenu,
+  toPromptSlashItems,
   isImageFile,
   isTextLikeFile,
   buildDocumentAttachments,
@@ -53,6 +54,7 @@ import {
   type MentionMatch,
   type MentionTarget,
   type SlashMatch,
+  type SlashMenuItem,
   type SlashCommandId,
   type DocumentFileAttachment,
 } from '../../lib/composer';
@@ -329,6 +331,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
   const [slashMatch, setSlashMatch] = useState<SlashMatch | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashAnchor, setSlashAnchor] = useState<MenuAnchor | null>(null);
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [isComposingForVoice, setIsComposingForVoice] = useState(false);
   const [voiceConfig, setVoiceConfig] = useState<VoiceDictationConfig | null>(null);
   const [modelStatus, setModelStatus] = useState<VoiceModelStatus>(DEFAULT_VOICE_MODEL_STATUS);
@@ -370,9 +373,10 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     () => (availableModels.length > 0 ? SLASH_COMMANDS : SLASH_COMMANDS.filter((c) => c.id !== 'model')),
     [availableModels.length],
   );
-  const slashResults = useMemo(
-    () => (slashMatch ? filterSlashCommands(availableSlashCommands, slashMatch.query) : []),
-    [slashMatch, availableSlashCommands],
+  const promptSlashItems = useMemo(() => toPromptSlashItems(prompts), [prompts]);
+  const slashResults = useMemo<SlashMenuItem[]>(
+    () => (slashMatch ? buildSlashMenu(availableSlashCommands, promptSlashItems, slashMatch.query) : []),
+    [slashMatch, availableSlashCommands, promptSlashItems],
   );
 
   const updateSelectionRef = useCallback(() => {
@@ -624,6 +628,39 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [resetComposer, availableModels.length, dispatch, activeMindId, isStreaming, newConversation]);
 
+  // Insert a saved prompt's body into the composer, replacing the slash text.
+  // Mirrors runSlashCommand's reset+focus, but keeps the inserted body as the
+  // new draft rather than clearing it.
+  const insertPrompt = useCallback((body: string) => {
+    resetComposer();
+    setInput(body);
+    const caret = body.length;
+    selectionRef.current = { start: caret, end: caret };
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+      resize(el);
+    });
+  }, [resetComposer, setInput, resize]);
+
+  const acceptSlashItem = useCallback((item: SlashMenuItem) => {
+    if (item.kind === 'command') runSlashCommand(item.id);
+    else insertPrompt(item.body);
+  }, [runSlashCommand, insertPrompt]);
+
+  const loadPrompts = useCallback(() => {
+    void window.electronAPI.prompts
+      .list()
+      .then((items) => setPrompts(items))
+      .catch(() => setPrompts([]));
+  }, []);
+
+  useEffect(() => {
+    loadPrompts();
+  }, [loadPrompts]);
+
   useEffect(() => {
     if (!featureFlags.voiceDictation) {
       setVoiceConfig(null);
@@ -873,7 +910,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
       setIndex: setSlashIndex,
       onAccept: () => {
         const pick = slashResults[slashIndex] ?? slashResults[0];
-        if (pick) runSlashCommand(pick.id);
+        if (pick) acceptSlashItem(pick);
       },
       onClose: closeSlash,
       swallowEnterWhenEmpty: true,
@@ -908,6 +945,9 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     // A bare `/command` at the very start opens the slash menu.
     const slash = detectSlash(next);
     if (slash) {
+      // Refresh saved prompts once per open so newly created prompts appear
+      // without a remount; skip on subsequent keystrokes while the menu stays open.
+      if (!slashMatch) loadPrompts();
       setSlashMatch(slash);
       setSlashIndex(0);
       setSlashAnchor(getTextareaCaretCoords(e.target, caret));
@@ -1186,19 +1226,19 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
       {slashMatch && slashAnchor ? (
         <CaretPopover anchor={slashAnchor} testId="slash-popover" ariaLabel="Slash commands">
           {slashResults.length > 0 ? (
-            slashResults.map((command, i) => (
+            slashResults.map((item, i) => (
               <CommandItem
-                key={command.id}
-                value={command.name}
+                key={`${item.kind}:${item.id}`}
+                value={`${item.kind}:${item.id}`}
                 data-selected={i === slashIndex || undefined}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  runSlashCommand(command.id);
+                  acceptSlashItem(item);
                 }}
                 onMouseEnter={() => setSlashIndex(i)}
               >
-                <span className="text-sm font-medium">{command.name}</span>
-                <span className="text-xs text-muted-foreground">{command.hint}</span>
+                <span className="text-sm font-medium">{item.name}</span>
+                <span className="text-xs text-muted-foreground">{item.hint}</span>
               </CommandItem>
             ))
           ) : (

@@ -129,6 +129,19 @@ describe('installBrowserApi', () => {
     );
   });
 
+  it('degrades the prompt library honestly in browser mode', async () => {
+    await expect(window.electronAPI.prompts.list()).rejects.toThrow(
+      'Not available in browser mode',
+    );
+    await expect(
+      window.electronAPI.prompts.save({ id: null, title: 'Standup', body: 'Give me a standup update.' }),
+    ).resolves.toEqual({ success: false, error: 'Prompt library is not available in browser mode yet.' });
+    await expect(window.electronAPI.prompts.delete('prompt-1')).resolves.toEqual({
+      success: false,
+      error: 'Prompt library is not available in browser mode yet.',
+    });
+  });
+
   it('throws explicit unavailable errors for browser window controls', () => {
     expect(() => window.electronAPI.window.minimize()).toThrow('Not available in browser mode');
     expect(() => window.electronAPI.window.maximize()).toThrow('Not available in browser mode');

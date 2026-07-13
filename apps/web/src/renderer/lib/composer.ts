@@ -1,4 +1,4 @@
-import type { ChatDocumentAttachment, MindContext } from '@chamber/shared/types';
+import type { ChatDocumentAttachment, MindContext, Prompt } from '@chamber/shared/types';
 
 // ---------------------------------------------------------------------------
 // Composer power-ups — pure helpers shared by ChatInput and its tests.
@@ -191,6 +191,86 @@ export function filterSlashCommands(commands: readonly SlashCommand[], query: st
   const q = query.toLowerCase();
   if (q.length === 0) return [...commands];
   return commands.filter((command) => command.id.startsWith(q));
+}
+
+// Slash menu items ----------------------------------------------------------
+//
+// The slash menu lists built-in commands and user-authored prompts side by
+// side. Built-ins keep their closed `SlashCommandId` union; prompts are a
+// distinct item kind so dynamic user content never widens that union. ChatInput
+// branches on `kind` to run a command or insert a prompt body.
+
+export interface CommandSlashItem {
+  kind: 'command';
+  id: SlashCommandId;
+  name: string;
+  hint: string;
+}
+
+export interface PromptSlashItem {
+  kind: 'prompt';
+  /** The saved prompt's stable id. */
+  id: string;
+  /** The prompt title, shown as the item label. */
+  name: string;
+  /** The description, or a default label when none is set. */
+  hint: string;
+  /** The reusable text inserted into the composer on selection. */
+  body: string;
+}
+
+export type SlashMenuItem = CommandSlashItem | PromptSlashItem;
+
+/** Hint shown for a saved prompt that has no description. */
+export const PROMPT_ITEM_HINT = 'Saved prompt';
+
+export function toCommandSlashItems(commands: readonly SlashCommand[]): CommandSlashItem[] {
+  return commands.map((command) => ({
+    kind: 'command',
+    id: command.id,
+    name: command.name,
+    hint: command.hint,
+  }));
+}
+
+export function toPromptSlashItems(prompts: readonly Prompt[]): PromptSlashItem[] {
+  return prompts.map((prompt) => {
+    const description = prompt.description?.trim();
+    return {
+      kind: 'prompt',
+      id: prompt.id,
+      name: prompt.title,
+      hint: description && description.length > 0 ? description : PROMPT_ITEM_HINT,
+      body: prompt.body,
+    };
+  });
+}
+
+export function filterPromptItems(
+  items: readonly PromptSlashItem[],
+  query: string,
+  limit = 8,
+): PromptSlashItem[] {
+  const q = query.toLowerCase();
+  const matched = q.length === 0 ? items : items.filter((item) => item.name.toLowerCase().includes(q));
+  return matched.slice(0, limit);
+}
+
+/**
+ * Builds the combined slash menu: built-in commands filtered by id prefix,
+ * followed by saved prompts filtered by title. Pure so ChatInput only owns the
+ * DOM and caret concerns.
+ */
+export function buildSlashMenu(
+  commands: readonly SlashCommand[],
+  prompts: readonly PromptSlashItem[],
+  query: string,
+  limit = 8,
+): SlashMenuItem[] {
+  return [
+    ...toCommandSlashItems(filterSlashCommands(commands, query)),
+    ...filterPromptItems(prompts, query, limit),
+  ];
 }
 
 // File classification + document attachment manifests -----------------------

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ChatInput } from './ChatInput';
-import type { ModelInfo, MindContext } from '@chamber/shared/types';
+import type { ModelInfo, MindContext, Prompt } from '@chamber/shared/types';
 import { VOICE_DICTATION_MODEL_ID, type VoiceDictationConfig, type VoiceModelStatus } from '@chamber/shared/voice-types';
 import { MAX_IMAGE_FILE_BYTES } from '../../lib/composer';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
@@ -1135,4 +1135,39 @@ describe('ChatInput slash commands', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' });
     await waitFor(() => expect(trigger?.getAttribute('aria-expanded')).toBe('true'));
   });
+
+  it('lists saved prompts in the slash menu alongside built-ins', async () => {
+    vi.mocked(api.prompts.list).mockResolvedValue([savedPrompt()]);
+    render(<ChatInput {...defaultProps} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    typeAtEnd(textarea, '/');
+    await screen.findByTestId('slash-popover');
+    await waitFor(() => expect(screen.getByText('Standup')).toBeTruthy());
+    expect(screen.getByText('Daily update')).toBeTruthy();
+    expect(screen.getByText('/new')).toBeTruthy();
+  });
+
+  it('inserts a saved prompt body into the composer on Enter', async () => {
+    const onSend = vi.fn();
+    vi.mocked(api.prompts.list).mockResolvedValue([savedPrompt()]);
+    render(<ChatInput {...defaultProps} onSend={onSend} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    typeAtEnd(textarea, '/standup');
+    await screen.findByTestId('slash-popover');
+    await waitFor(() => expect(screen.getByText('Standup')).toBeTruthy());
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() => expect(textarea.value).toBe('What did I ship today?'));
+    expect(onSend).not.toHaveBeenCalled();
+  });
 });
+
+function savedPrompt(): Prompt {
+  return {
+    id: 'p1',
+    title: 'Standup',
+    description: 'Daily update',
+    body: 'What did I ship today?',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+  };
+}

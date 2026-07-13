@@ -74,6 +74,8 @@ import {
   ManagedSkillService,
   OperatorActivityFileStore,
   OperatorActivityService,
+  PromptLibraryService,
+  PromptLibraryStore,
   ToolInstaller,
   ToolsService,
   TurnQueue,
@@ -141,6 +143,7 @@ import { setupUpdaterIPC } from './main/ipc/updater';
 import { setupUserProfileIPC } from './main/ipc/userProfile';
 import { setupSkillsIPC } from './main/ipc/skills';
 import { setupMcpIPC } from './main/ipc/mcp';
+import { setupPromptsIPC } from './main/ipc/prompts';
 import { setupVoiceIPC } from './main/ipc/voice';
 import { setupAppearanceIPC } from './main/ipc/appearance';
 
@@ -272,6 +275,7 @@ let mindManager: MindManager;
 let mindProfileService: MindProfileService;
 let mindMemoryService: MindMemoryService;
 let userProfileService: UserProfileService;
+let promptLibraryService: PromptLibraryService;
 let microsoftGraphProfileImporter: MicrosoftGraphProfileImporter;
 let chatService: ChatService;
 let a2aRelayModeService: A2ARelayModeService;
@@ -459,6 +463,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath ?? null,
   });
   userProfileService = new UserProfileService(configService);
+  promptLibraryService = new PromptLibraryService(new PromptLibraryStore(configService.getConfigDir()));
   microsoftGraphProfileImporter = new MicrosoftGraphProfileImporter(
     userProfileService,
     new MsalBrokerGraphTokenProvider({
@@ -1043,6 +1048,7 @@ app.on('ready', async () => {
     },
     { read: readMcpServers, write: writeMcpServers },
   );
+  setupPromptsIPC(promptLibraryService);
   setupAuthIPC(authService, mindManager, async () => {
     await chamberCopilotService?.resetAuthState();
   });
