@@ -63,6 +63,19 @@ describe('ConversationHistoryPanel', () => {
     expect(within(history).getByRole('button', { name: 'Expand history panel' })).toBeTruthy();
   });
 
+  it('locks the history rail collapsed and disables the toggle when the shell forces auto-collapse', () => {
+    render(
+      <AppStateProvider testInitialState={{ activeMindId: mind.mindId, minds: [mind], conversationHistoryByMind: { [mind.mindId]: [] } }}>
+        <ConversationHistoryPanel autoCollapsed />
+      </AppStateProvider>,
+    );
+
+    const history = screen.getByLabelText('Conversation history');
+    expect(history.className).toContain('w-10');
+    const expand = screen.getByRole('button', { name: 'Expand history panel' }) as HTMLButtonElement;
+    expect(expand.disabled).toBe(true);
+  });
+
   it('distinguishes no selected agent, loading history, and empty selected history', async () => {
     renderHistoryPanel({ activeMindId: null, minds: [] });
     expect(screen.getByText('Select an agent to see history')).toBeTruthy();

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useAppSubscriptions } from '../../hooks/useAppSubscriptions';
+import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { useAppDispatch, useAppState } from '../../lib/store';
 import { TooltipProvider } from '../ui/tooltip';
 import { CommandPalette } from '../command/CommandPalette';
@@ -22,6 +23,7 @@ export function AppShell() {
   const { isPopout, popoutMindId } = usePopoutParams();
   const { minds } = useAppState();
   const dispatch = useAppDispatch();
+  const { shouldAutoCollapseHistory, shouldAutoCollapseMindSidebar } = useResponsiveLayout();
 
   // In popout mode, lock to the specified mind
   useEffect(() => {
@@ -54,11 +56,11 @@ export function AppShell() {
         {/* Main layout: activity bar | mind sidebar | content | conversation history */}
         <div className="flex flex-1 min-h-0 gap-2 p-2">
           <ActivityBar />
-          <MindSidebar />
+          <MindSidebar autoCollapsed={shouldAutoCollapseMindSidebar} />
           <main className="flex-1 flex flex-col min-w-0 bg-card border border-border rounded-xl overflow-hidden">
             <ViewRouter />
           </main>
-          <ConversationHistoryPanel />
+          <ConversationHistoryPanel autoCollapsed={shouldAutoCollapseHistory} />
         </div>
       </div>
     </TooltipProvider>

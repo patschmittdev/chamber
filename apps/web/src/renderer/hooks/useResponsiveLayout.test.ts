@@ -21,25 +21,25 @@ describe('useResponsiveLayout', () => {
     Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true });
   });
 
-  it('reports a wide viewport as no-clamp and no-auto-collapse', () => {
+  it('reports a wide viewport as no auto-collapse for either rail', () => {
     setViewportWidth(1440);
     const { result } = renderHook(() => useResponsiveLayout());
     expect(result.current.shouldAutoCollapseHistory).toBe(false);
-    expect(result.current.shouldClampMindSidebar).toBe(false);
+    expect(result.current.shouldAutoCollapseMindSidebar).toBe(false);
   });
 
   it('auto-collapses history below the lg breakpoint (1024px)', () => {
     setViewportWidth(900);
     const { result } = renderHook(() => useResponsiveLayout());
     expect(result.current.shouldAutoCollapseHistory).toBe(true);
-    expect(result.current.shouldClampMindSidebar).toBe(false);
+    expect(result.current.shouldAutoCollapseMindSidebar).toBe(false);
   });
 
-  it('clamps the mind sidebar below the md breakpoint (768px)', () => {
+  it('auto-collapses the mind sidebar below the md breakpoint (768px)', () => {
     setViewportWidth(700);
     const { result } = renderHook(() => useResponsiveLayout());
     expect(result.current.shouldAutoCollapseHistory).toBe(true);
-    expect(result.current.shouldClampMindSidebar).toBe(true);
+    expect(result.current.shouldAutoCollapseMindSidebar).toBe(true);
   });
 
   it('responds to window resize events', () => {

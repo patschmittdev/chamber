@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationExportFormat, ConversationSummary } from '@chamber/shared/types';
 import { useAppDispatch, useAppState } from '../../lib/store';
 import { useNewConversation } from '../../hooks/useNewConversation';
+import { usePersistedCollapse } from '../../hooks/usePersistedCollapse';
 import { Logger } from '../../lib/logger';
 import { cn } from '../../lib/utils';
 import { conversationSearchText, filterConversations, normalizeSearchQuery } from './conversationSearch';
@@ -28,7 +29,7 @@ interface CachedTranscriptText {
   text: string;
 }
 
-export function ConversationHistoryPanel() {
+export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollapsed?: boolean }) {
   const { activeMindId, conversationHistoryByMind, activeConversationByMind, conversationViewByMind, streamingByMind } = useAppState();
   const dispatch = useAppDispatch();
   const newConversation = useNewConversation();
@@ -38,7 +39,8 @@ export function ConversationHistoryPanel() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDeleteConversation, setPendingDeleteConversation] = useState<ConversationSummary | null>(null);
   const [loadingMindId, setLoadingMindId] = useState<string | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem(HISTORY_COLLAPSED_STORAGE_KEY) === 'true');
+  const [manualCollapsed, setManualCollapsed] = usePersistedCollapse(HISTORY_COLLAPSED_STORAGE_KEY);
+  const collapsed = autoCollapsed || manualCollapsed;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [exportingId, setExportingId] = useState<string | null>(null);
@@ -265,11 +267,6 @@ export function ConversationHistoryPanel() {
     }
   };
 
-  const setCollapsed = (nextCollapsed: boolean) => {
-    setIsCollapsed(nextCollapsed);
-    localStorage.setItem(HISTORY_COLLAPSED_STORAGE_KEY, String(nextCollapsed));
-  };
-
   const performDeleteConversation = async (conversation: ConversationSummary) => {
     if (!activeMindId || isActiveMindBusy || deletingId) return;
 
@@ -330,14 +327,15 @@ export function ConversationHistoryPanel() {
       aria-label="Conversation history"
       className={cn(
         'shrink-0 bg-card border border-border rounded-xl overflow-hidden flex flex-col transition-[width]',
-        isCollapsed ? 'w-10' : 'w-80',
+        collapsed ? 'w-10' : 'w-80',
       )}
     >
-      {isCollapsed ? (
+      {collapsed ? (
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
-          className="m-1 h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center"
+          onClick={() => setManualCollapsed(false)}
+          disabled={autoCollapsed}
+          className="m-1 h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
           aria-label="Expand history panel"
         >
           <ChevronLeft size={15} />
@@ -348,7 +346,7 @@ export function ConversationHistoryPanel() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setCollapsed(true)}
+                onClick={() => setManualCollapsed(true)}
                 className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center"
                 aria-label="Collapse history panel"
               >
