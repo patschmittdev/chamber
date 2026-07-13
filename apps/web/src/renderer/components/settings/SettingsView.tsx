@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { Camera, LogOut, UserRound } from 'lucide-react';
-import type { MarketplaceRegistry, MindContext, MindInstructionPrecedence, UserProfile } from '@chamber/shared/types';
+import type { MarketplaceRegistry, MindContext, UserProfile } from '@chamber/shared/types';
 import { APP_VERSION } from '@/renderer/lib/appVersion';
-import { useAppState } from '../../lib/store';
+import { useAppState, useAppDispatch } from '../../lib/store';
+import { useInstructionPrecedence } from '../../hooks/useInstructionPrecedence';
 import {
   Select,
   SelectContent,
@@ -14,6 +15,8 @@ import {
 } from '../ui/select';
 import { AddAccountModal } from './AddAccountModal';
 import { AppearanceSettingsSection } from './AppearanceSettingsSection';
+import { AgentsSettingsSection } from './AgentsSettingsSection';
+import { PerMindCustomInstructionsControls } from './PerMindCustomInstructionsControls';
 import { LocalLlmSettingsSection } from './LocalLlmSettingsSection';
 import { Skeleton } from '../ui/skeleton';
 import { VoiceDictationSettingsSection } from './VoiceDictationSettingsSection';
@@ -41,25 +44,17 @@ export function SettingsView() {
   const [customInstructions, setCustomInstructions] = useState('');
   const [customInstructionsMessage, setCustomInstructionsMessage] = useState<string | null>(null);
   const [customInstructionsSaving, setCustomInstructionsSaving] = useState(false);
-  const [instructionPrecedenceByMindId, setInstructionPrecedenceByMindId] = useState<Record<string, MindInstructionPrecedence>>({});
-  const [instructionPreferenceSavingMindId, setInstructionPreferenceSavingMindId] = useState<string | null>(null);
-
   const sortedMinds = useMemo(
     () => [...minds].sort((a, b) => a.identity.name.localeCompare(b.identity.name)),
     [minds],
   );
 
-  const refreshInstructionPrecedence = useCallback(async () => {
-    if (sortedMinds.length === 0) {
-      setInstructionPrecedenceByMindId({});
-      return;
-    }
-    const entries = await Promise.all(sortedMinds.map(async (mind) => [
-      mind.mindId,
-      await window.electronAPI.mind.getInstructionPrecedence(mind.mindId),
-    ] as const));
-    setInstructionPrecedenceByMindId(Object.fromEntries(entries));
-  }, [sortedMinds]);
+  const {
+    precedenceByMindId: instructionPrecedenceByMindId,
+    savingMindId: instructionPreferenceSavingMindId,
+    refresh: refreshInstructionPrecedence,
+    setInheritance: setMindInstructionInheritance,
+  } = useInstructionPrecedence(sortedMinds);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,17 +90,6 @@ export function SettingsView() {
       unsubAccountSwitched();
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    refreshInstructionPrecedence()
-      .catch((err: unknown) => {
-        if (!cancelled) setCustomInstructionsMessage(getErrorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshInstructionPrecedence]);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,21 +183,14 @@ export function SettingsView() {
   };
 
   const handleToggleMindCustomInstructions = async (mind: MindContext, enabled: boolean) => {
-    setInstructionPreferenceSavingMindId(mind.mindId);
     setCustomInstructionsMessage(null);
     try {
-      const precedence = await window.electronAPI.mind.setGlobalCustomInstructionsEnabled(mind.mindId, enabled);
-      setInstructionPrecedenceByMindId((previous) => ({
-        ...previous,
-        [mind.mindId]: precedence,
-      }));
+      await setMindInstructionInheritance(mind.mindId, enabled);
       setCustomInstructionsMessage(enabled
         ? `${mind.identity.name} now inherits global custom instructions.`
         : `${mind.identity.name} now skips global custom instructions.`);
     } catch (err) {
       setCustomInstructionsMessage(getErrorMessage(err));
-    } finally {
-      setInstructionPreferenceSavingMindId(null);
     }
   };
 
@@ -277,7 +254,7 @@ export function SettingsView() {
       showLocalLlm={Boolean(featureFlags.byoLlm)}
       showVoiceDictation={Boolean(featureFlags.voiceDictation)}
     >
-      {(activeSection) => (
+      {(activeSection, agentsMindId, agentsSelectionToken) => (
         <>
           {activeSection === 'profile' && (
             <section className="space-y-3">
@@ -438,6 +415,17 @@ export function SettingsView() {
                 ) : null}
               </div>
             </section>
+          )}
+
+          {activeSection === 'agents' && (
+            <AgentsSettingsSection
+              minds={sortedMinds}
+              initialSelectedMindId={agentsMindId}
+              selectionToken={agentsSelectionToken}
+              precedenceByMindId={instructionPrecedenceByMindId}
+              savingMindId={instructionPreferenceSavingMindId}
+              onToggleInheritance={handleToggleMindCustomInstructions}
+            />
           )}
 
           {activeSection === 'account' && (
@@ -604,102 +592,6 @@ export function SettingsView() {
   );
 }
 
-interface PerMindCustomInstructionsControlsProps {
-  minds: MindContext[];
-  precedenceByMindId: Record<string, MindInstructionPrecedence>;
-  savingMindId: string | null;
-  onToggle: (mind: MindContext, enabled: boolean) => Promise<void>;
-}
-
-function PerMindCustomInstructionsControls({
-  minds,
-  precedenceByMindId,
-  savingMindId,
-  onToggle,
-}: PerMindCustomInstructionsControlsProps) {
-  return (
-    <div className="space-y-3 rounded-lg border border-border bg-background/60 p-3">
-      <div>
-        <h3 className="text-sm font-semibold text-foreground">Per-mind inheritance</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Minds inherit global custom instructions by default. Disable inheritance only when a mind needs to ignore your global preferences. Chamber safety guidance remains authoritative for every mind.
-        </p>
-      </div>
-
-      {minds.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No minds are loaded.</p>
-      ) : (
-        <div className="space-y-3">
-          {minds.map((mind) => {
-            const precedence = precedenceByMindId[mind.mindId];
-            const enabled = precedence?.globalCustomInstructionsEnabled ?? true;
-            const saving = savingMindId === mind.mindId;
-            return (
-              <div key={mind.mindId} className="rounded-lg border border-border bg-card p-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{mind.identity.name}</p>
-                    <p className="text-xs text-muted-foreground">{mindInstructionStatus(precedence)}</p>
-                  </div>
-                  <label className="inline-flex items-center gap-2 text-xs font-medium text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      disabled={saving}
-                      onChange={(event) => { void onToggle(mind, event.currentTarget.checked); }}
-                      aria-label={`Apply global custom instructions to ${mind.identity.name}`}
-                      className="h-4 w-4 rounded border-border text-primary focus:ring-ring disabled:opacity-60"
-                    />
-                    {saving ? 'Saving...' : enabled ? 'Enabled' : 'Disabled'}
-                  </label>
-                </div>
-
-                {precedence ? (
-                  <ol aria-label={`Instruction precedence for ${mind.identity.name}`} className="mt-3 space-y-2">
-                    {precedence.layers.map((layer, index) => (
-                      <li key={layer.id} className="flex gap-3 rounded-md border border-border/70 bg-muted/20 p-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background text-[11px] font-semibold text-muted-foreground">
-                          {index + 1}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-xs font-medium text-foreground">{layer.label}</p>
-                            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                              {instructionLayerStatus(layer)}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">{layer.source}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{layer.description}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="mt-3 text-xs text-muted-foreground">Loading instruction precedence...</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function mindInstructionStatus(precedence: MindInstructionPrecedence | undefined): string {
-  if (!precedence) return 'Loading instruction precedence.';
-  if (!precedence.globalCustomInstructionsEnabled) return 'Global custom instructions are disabled for this mind.';
-  if (!precedence.hasGlobalCustomInstructions) return 'Inheritance is enabled, but no global custom instructions are saved.';
-  return 'Inherits global custom instructions.';
-}
-
-function instructionLayerStatus(layer: MindInstructionPrecedence['layers'][number]): string {
-  if (layer.included) return 'Included';
-  if (!layer.enabled) return 'Disabled';
-  if (!layer.present) return 'Not present';
-  return 'Skipped';
-}
-
 // ---------------------------------------------------------------------------
 // SettingsLayout
 //
@@ -709,7 +601,7 @@ function instructionLayerStatus(layer: MindInstructionPrecedence['layers'][numbe
 // index.css so navigating between sections matches the rest of the app.
 // ---------------------------------------------------------------------------
 
-export type SettingsSectionId = 'profile' | 'custom-instructions' | 'account' | 'marketplaces' | 'appearance' | 'local-llm' | 'voice-dictation';
+export type SettingsSectionId = 'profile' | 'custom-instructions' | 'agents' | 'account' | 'marketplaces' | 'appearance' | 'local-llm' | 'voice-dictation';
 
 interface SettingsRailItem {
   id: SettingsSectionId;
@@ -719,14 +611,25 @@ interface SettingsRailItem {
 interface SettingsLayoutProps {
   showLocalLlm: boolean;
   showVoiceDictation: boolean;
-  children: (activeSection: SettingsSectionId) => React.ReactNode;
+  children: (activeSection: SettingsSectionId, agentsMindId?: string, agentsSelectionToken?: number) => React.ReactNode;
+}
+
+function resolveInitialSection(
+  intent: { section: string; mindId?: string } | null,
+  railItems: SettingsRailItem[],
+): SettingsSectionId {
+  const target = intent ? railItems.find((item) => item.id === intent.section) : undefined;
+  return target ? target.id : (railItems[0]?.id ?? 'profile');
 }
 
 function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: SettingsLayoutProps) {
+  const { pendingSettingsIntent } = useAppState();
+  const dispatch = useAppDispatch();
   const railItems = useMemo<SettingsRailItem[]>(() => {
     const items: SettingsRailItem[] = [
       { id: 'profile', label: 'Profile' },
       { id: 'custom-instructions', label: 'Custom instructions' },
+      { id: 'agents', label: 'Agents' },
       { id: 'account', label: 'Account' },
       { id: 'marketplaces', label: 'Marketplaces' },
       { id: 'appearance', label: 'Appearance' },
@@ -736,7 +639,27 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
     return items;
   }, [showLocalLlm, showVoiceDictation]);
 
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(railItems[0]?.id ?? 'profile');
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(
+    () => resolveInitialSection(pendingSettingsIntent, railItems),
+  );
+  const [deepLinkMindId, setDeepLinkMindId] = useState<string | undefined>(
+    () => pendingSettingsIntent?.mindId,
+  );
+  // Distinguishes one deep-link from the next so a repeated intent to the same
+  // agent is not collapsed into an unchanged prop (see AgentsSettingsSection).
+  const [deepLinkToken, setDeepLinkToken] = useState(0);
+
+  // A caller (e.g. the agent sidebar "Manage agent" action) can deep-link into a
+  // specific settings section and agent. Apply the one-shot intent, then clear it
+  // so navigating away and back does not re-trigger it.
+  useEffect(() => {
+    if (!pendingSettingsIntent) return;
+    const target = railItems.find((item) => item.id === pendingSettingsIntent.section);
+    if (target) setActiveSection(target.id);
+    setDeepLinkMindId(pendingSettingsIntent.mindId);
+    setDeepLinkToken((token) => token + 1);
+    dispatch({ type: 'SET_PENDING_SETTINGS_INTENT', payload: null });
+  }, [pendingSettingsIntent, railItems, dispatch]);
 
   // Feature flags may change after remote policy refresh. Keep the active page
   // on a section that is still available.
@@ -779,7 +702,7 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
          * (defined in index.css) every time the user picks a new tab,
          * matching the activity-bar transitions. */}
         <div key={activeSection} className="view-enter p-6 max-w-3xl space-y-6">
-          {children(activeSection)}
+          {children(activeSection, deepLinkMindId, deepLinkToken)}
         </div>
       </div>
     </div>

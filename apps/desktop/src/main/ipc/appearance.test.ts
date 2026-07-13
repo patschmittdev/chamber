@@ -96,6 +96,28 @@ describe('setupAppearanceIPC', () => {
     }));
     expect(setBackgroundColor).toHaveBeenCalledWith('#ffffff');
   });
+
+  it('still broadcasts to renderers when a window has no enabled title-bar overlay', () => {
+    const webContents = { send: vi.fn() };
+    const setBackgroundColor = vi.fn();
+    const setTitleBarOverlay = vi.fn(() => {
+      throw new TypeError('Titlebar overlay is not enabled');
+    });
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      {
+        isDestroyed: () => false,
+        webContents,
+        setTitleBarOverlay,
+        setBackgroundColor,
+      },
+    ] as never);
+    const service = createService();
+    setupAppearanceIPC(service);
+
+    expect(() => service.emit(lightSnapshot)).not.toThrow();
+    expect(webContents.send).toHaveBeenCalledWith(IPC.APPEARANCE.CHANGED, lightSnapshot);
+    expect(setBackgroundColor).toHaveBeenCalledWith('#ffffff');
+  });
 });
 
 function createService(): AppearanceService & { emit: (snapshot: AppearanceSnapshot) => void } {

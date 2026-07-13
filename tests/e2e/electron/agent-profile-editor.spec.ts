@@ -39,7 +39,7 @@ test.describe('electron agent profile editor smoke', () => {
     }
   });
 
-  test('edits SOUL.md through the profile modal and prompts for restart', async () => {
+  test('edits SOUL.md through the Agents persona tab and prompts for restart', async () => {
     const page = await findRendererPage(app?.browser, app?.logs ?? []);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForLoadState('domcontentloaded');
@@ -51,15 +51,17 @@ test.describe('electron agent profile editor smoke', () => {
     }, { targetMindPath: mindPath });
 
     await expect(page.getByText('How can I help you today?')).toBeVisible();
-    await page.getByRole('button', { name: `Edit ${mindName} profile`, exact: true }).click();
-    await expect(page.getByRole('dialog').getByText('Agent profile')).toBeVisible();
+    // The sidebar action deep-links into Settings > Agents with this mind
+    // preselected; the persona editor lives on the Persona tab.
+    await page.getByRole('button', { name: `Manage ${mindName}`, exact: true }).click();
+    await page.getByRole('tab', { name: 'Persona' }).click();
 
     await page.getByRole('button', { name: /SOUL.md/ }).click();
     const editor = page.getByRole('textbox');
     await editor.fill(`# ${mindName}\n\nEdited through the Chamber profile smoke.`);
     await page.getByRole('button', { name: 'Save' }).click();
 
-    await expect(page.getByRole('button', { name: 'Restart agent to apply' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Restart to apply' })).toBeVisible();
     expect(fs.readFileSync(path.join(mindPath, 'SOUL.md'), 'utf-8')).toContain('Edited through the Chamber profile smoke.');
   });
 });

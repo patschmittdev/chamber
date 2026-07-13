@@ -834,6 +834,17 @@ describe('appReducer', () => {
     expect(state.activeView).toBe('briefing-1');
   });
 
+  it('SET_PENDING_SETTINGS_INTENT stores and clears the deep-link target', () => {
+    const opened = appReducer(initialState, {
+      type: 'SET_PENDING_SETTINGS_INTENT',
+      payload: { section: 'agents', mindId: 'mind-1' },
+    });
+    expect(opened.pendingSettingsIntent).toEqual({ section: 'agents', mindId: 'mind-1' });
+
+    const cleared = appReducer(opened, { type: 'SET_PENDING_SETTINGS_INTENT', payload: null });
+    expect(cleared.pendingSettingsIntent).toBeNull();
+  });
+
   it('SET_FEATURE_FLAGS updates feature flags', () => {
     const state = appReducer(initialState, {
       type: 'SET_FEATURE_FLAGS',

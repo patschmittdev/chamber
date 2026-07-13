@@ -1,22 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AgentProfileModal } from './AgentProfileModal';
+import { AgentPersonaEditor } from './AgentPersonaEditor';
 import { AppStateProvider } from '../../lib/store';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
-import type { AgentProfile, MindContext } from '@chamber/shared/types';
+import type { AgentProfile } from '@chamber/shared/types';
 
-const mind: MindContext = {
-  mindId: 'mind-1',
-  mindPath: 'C:\\agents\\moneypenny',
-  identity: { name: 'Moneypenny', systemMessage: '# Moneypenny' },
-  status: 'ready',
-};
-
-describe('AgentProfileModal', () => {
+describe('AgentPersonaEditor', () => {
   let api: ReturnType<typeof mockElectronAPI>;
 
   beforeEach(() => {
@@ -29,7 +21,7 @@ describe('AgentProfileModal', () => {
   });
 
   it('renders profile facts and opens SOUL.md in a focused editor', async () => {
-    renderProfileModal();
+    renderEditor();
 
     expect(await screen.findByText('Moneypenny')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /SOUL.md/ }));
@@ -37,10 +29,10 @@ describe('AgentProfileModal', () => {
     expect(await screen.findByRole('textbox')).toHaveProperty('value', '# Moneypenny\n\nCalm.');
   });
 
-  it('saves profile files and shows the restart prompt', async () => {
+  it('saves profile files and surfaces the restart prompt', async () => {
     const updated = makeProfile({ needsRestart: true });
     (api.mindProfile.saveFile as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, needsRestart: true, profile: updated });
-    renderProfileModal();
+    renderEditor();
 
     fireEvent.click(await screen.findByRole('button', { name: /SOUL.md/ }));
     const editor = await screen.findByRole('textbox') as HTMLTextAreaElement;
@@ -48,7 +40,7 @@ describe('AgentProfileModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(api.mindProfile.saveFile).toHaveBeenCalled());
-    expect(await screen.findByRole('button', { name: 'Restart agent to apply' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Restart to apply' })).toBeTruthy();
   });
 
   it('renders every local agent markdown file', async () => {
@@ -58,7 +50,7 @@ describe('AgentProfileModal', () => {
         makeAgentFile('briefing.agent.md'),
       ],
     }));
-    renderProfileModal();
+    renderEditor();
 
     expect(await screen.findByRole('button', { name: /moneypenny\.agent\.md/ })).toBeTruthy();
     expect(await screen.findByRole('button', { name: /briefing\.agent\.md/ })).toBeTruthy();
@@ -73,7 +65,7 @@ describe('AgentProfileModal', () => {
     };
     (api.mindProfile.pickAvatarImage as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, source });
     (api.mindProfile.saveAvatar as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, profile: makeProfile({ avatarDataUrl: source.dataUrl }) });
-    renderProfileModal();
+    renderEditor();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upload avatar' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Save avatar' }));
@@ -86,10 +78,10 @@ describe('AgentProfileModal', () => {
   });
 });
 
-function renderProfileModal() {
+function renderEditor() {
   render(
     <AppStateProvider>
-      <AgentProfileModal mind={mind} open onOpenChange={vi.fn()} />
+      <AgentPersonaEditor mindId="mind-1" />
     </AppStateProvider>,
   );
 }

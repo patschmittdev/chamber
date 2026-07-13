@@ -26,6 +26,14 @@ describe('applyTitleBarTheme', () => {
     expect(setTitleBarOverlay).toHaveBeenCalledWith(titleBarOverlayFor('light'));
   });
 
+  it('swallows Electron "overlay not enabled" errors so a failed repaint never blocks appearance', () => {
+    const setTitleBarOverlay = vi.fn(() => {
+      throw new TypeError('Titlebar overlay is not enabled');
+    });
+    expect(() => applyTitleBarTheme({ setTitleBarOverlay }, 'light', 'win32')).not.toThrow();
+    expect(setTitleBarOverlay).toHaveBeenCalledWith(titleBarOverlayFor('light'));
+  });
+
   describe('windowBackgroundColorFor', () => {
     it('uses the same background as the title-bar overlay', () => {
       expect(windowBackgroundColorFor('dark')).toBe('#09090b');

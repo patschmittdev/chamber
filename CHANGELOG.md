@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fix appearance theme selection on Windows** - Clicking a theme no longer throws "Titlebar overlay is not enabled" and aborts the update. The native title-bar repaint is now best-effort, so the selected theme always applies live and persists across reloads.
+- **Apply light and system themes across chat surfaces** - Tokenizes previously hardcoded dark colors in the chatroom panel, task ledger, and agent sidebar so those surfaces follow the selected theme instead of staying dark in light or system mode.
 - **Restore legacy conversation resume fallback** — Conversation resume now falls back from Chamber's current SDK session-state root to the legacy default Copilot session-state root before recreating a missing session, so pre-move chat history hydrates instead of opening empty.
 - **Refresh the packaged Copilot runtime** — Pins @github/copilot-sdk 1.0.6-preview.1 with its compatible @github/copilot 1.0.69-1 package, records the bundled CLI's reported 1.0.71-0 version for package smoke, and updates Chamber for the SDK's current session configuration and event contracts.
 - **Stop Copilot CLI auth popups after sign-in** — Pass Chamber's stored GitHub OAuth token into SDK-created CLI clients and disable CLI auto-login so device-flow browser prompts only occur from Chamber's explicit sign-in flow.
@@ -24,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Redesign per-agent settings into an Agents section** - Replaces the vertical per-mind enumeration with a searchable master-detail Agents settings surface that scales past a handful of agents. Each agent gets Overview, Persona, Model, and Instructions tabs, a read-only working-memory summary, and a confirm-gated remove action, and the sidebar per-agent action deep-links straight into it.
 - **Retain edit and regenerate versions with a toggle pager** - Editing a user turn or regenerating an assistant reply now keeps the prior turn as a retained version instead of discarding it, with a compact prev/next version pager (shown as n/m) on the affected message. Toggling between versions is display only; continuing the conversation from a selected version promotes it to the live branch first, then sends. Versions persist across resume and reload through a Chamber-owned variant store that mirrors how conversation forks persist, and a message with a single version looks exactly as before. Because the Copilot SDK session history supports only tail truncation, promotion re-injects the selected version as bounded fork-style context rather than replaying it verbatim.
 - **Add chamber:a2a ttasks runtime support** — Adds a chamber:a2a custom task type, production A2A bridge wiring, durable ttasks persistence, and invariants for the runtime contract.
 - **Add theme-aware update chrome** — Adds a dismissible ready-to-install banner and update-status indicator with accessible light and dark theme colors.

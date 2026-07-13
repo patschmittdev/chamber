@@ -40,6 +40,12 @@ export function titleBarOverlayFor(theme: TitleBarTheme): TitleBarOverlay {
  * Repaint a window's native title-bar overlay to match the given theme. A no-op
  * on platforms without an overlay (only Windows renders one) and when the target
  * window is missing.
+ *
+ * The repaint is best-effort: Electron throws `TypeError: Titlebar overlay is not
+ * enabled` when a window was created without an enabled overlay (for example a
+ * non-`hidden` title-bar style, or a secondary window). Title-bar chrome is
+ * cosmetic, so a failed repaint is swallowed and must never block an appearance
+ * change from broadcasting to the renderer.
  */
 export function applyTitleBarTheme(
   win: Pick<BrowserWindow, 'setTitleBarOverlay'> | null | undefined,
@@ -47,5 +53,9 @@ export function applyTitleBarTheme(
   platform: NodeJS.Platform = process.platform,
 ): void {
   if (!win || platform !== 'win32') return;
-  win.setTitleBarOverlay(titleBarOverlayFor(theme));
+  try {
+    win.setTitleBarOverlay(titleBarOverlayFor(theme));
+  } catch {
+    // Overlay not enabled for this window; leave the OS chrome as-is.
+  }
 }

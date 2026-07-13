@@ -189,7 +189,7 @@ function TypingIndicator({ speaker, minds, orchestrationMode }: {
         </div>
         <span className="text-xs">
           <span className="font-medium" style={{ color }}>{speaker.mindName}</span> {phaseText}
-          {elapsedText && <span className="text-zinc-600 ml-1.5">{elapsedText}</span>}
+          {elapsedText && <span className="text-muted-foreground ml-1.5">{elapsedText}</span>}
         </span>
       </div>
     </div>
@@ -239,14 +239,14 @@ function CollapsibleMessage({ message }: { message: ChatroomMessage }) {
 
   return (
     <div
-      className="border border-zinc-800 rounded-md px-3 py-2 bg-zinc-900/30 cursor-pointer hover:bg-zinc-900/50 transition-colors"
+      className="border border-border rounded-md px-3 py-2 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => setCollapsed(false)}
     >
       <div className="flex items-center gap-2">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground shrink-0"><polyline points="6 9 12 15 18 9"/></svg>
-        <span className="text-sm text-zinc-300 truncate">{summary || 'View response'}</span>
+        <span className="text-sm text-foreground truncate">{summary || 'View response'}</span>
         {toolCount > 0 && (
-          <span className="text-xs text-zinc-500 shrink-0">({toolCount} tool call{toolCount > 1 ? 's' : ''})</span>
+          <span className="text-xs text-muted-foreground shrink-0">({toolCount} tool call{toolCount > 1 ? 's' : ''})</span>
         )}
       </div>
     </div>
@@ -366,28 +366,28 @@ function MetricsSummaryCard({ metrics }: {
 
   return (
     <div className="mx-auto max-w-3xl px-4 pb-2">
-      <div className="flex items-center gap-4 px-4 py-2.5 rounded-lg bg-zinc-900/60 border border-zinc-800 text-xs">
+      <div className="flex items-center gap-4 px-4 py-2.5 rounded-lg bg-muted/40 border border-border text-xs">
         <div className="flex items-center gap-1.5">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-500"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span className="text-zinc-400">{timeStr}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span className="text-muted-foreground">{timeStr}</span>
         </div>
-        <div className="w-px h-3 bg-zinc-700" />
+        <div className="w-px h-3 bg-border" />
         <div className="flex items-center gap-1.5">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-500"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span className="text-zinc-400">{metrics.agentsUsed} agent{metrics.agentsUsed !== 1 ? 's' : ''}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span className="text-muted-foreground">{metrics.agentsUsed} agent{metrics.agentsUsed !== 1 ? 's' : ''}</span>
         </div>
-        <div className="w-px h-3 bg-zinc-700" />
+        <div className="w-px h-3 bg-border" />
         <div className="flex items-center gap-1.5">
           {metrics.failedTasks === 0 ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-500"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           ) : (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           )}
-          <span className="text-zinc-400">{metrics.completedTasks}/{metrics.totalTasks} tasks</span>
+          <span className="text-muted-foreground">{metrics.completedTasks}/{metrics.totalTasks} tasks</span>
           {metrics.failedTasks > 0 && <span className="text-amber-500">({metrics.failedTasks} failed)</span>}
         </div>
-        <div className="w-px h-3 bg-zinc-700" />
-        <span className="text-zinc-600 uppercase tracking-wide">{metrics.orchestrationMode}</span>
+        <div className="w-px h-3 bg-border" />
+        <span className="text-muted-foreground uppercase tracking-wide">{metrics.orchestrationMode}</span>
       </div>
     </div>
   );
@@ -456,14 +456,14 @@ function ChatroomEmptyState({ connected, onSend }: { connected: boolean; onSend?
           <button
             key={scenario.label}
             onClick={() => onSend?.(scenario.prompt)}
-            className="text-left px-3 py-2.5 rounded-lg border border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800/70 hover:border-zinc-700 transition-colors group"
+            className="text-left px-3 py-2.5 rounded-lg border border-border bg-muted/40 hover:bg-accent transition-colors group"
           >
             <div className="flex items-center gap-2 mb-1">
               <span className="text-base">{scenario.icon}</span>
-              <span className="text-sm font-medium text-zinc-200 group-hover:text-foreground">{scenario.label}</span>
-              <span className="text-[10px] text-zinc-600 ml-auto uppercase">{scenario.mode}</span>
+              <span className="text-sm font-medium text-foreground">{scenario.label}</span>
+              <span className="text-[10px] text-muted-foreground ml-auto uppercase">{scenario.mode}</span>
             </div>
-            <p className="text-xs text-zinc-500 line-clamp-2">{scenario.prompt.slice(0, 120)}…</p>
+            <p className="text-xs text-muted-foreground line-clamp-2">{scenario.prompt.slice(0, 120)}…</p>
           </button>
         ))}
       </div>
