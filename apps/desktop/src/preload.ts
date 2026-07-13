@@ -64,6 +64,9 @@ const electronAPI: ElectronAPI = {
     removeAvatar: (mindId) => ipcRenderer.invoke('mindProfile:removeAvatar', mindId),
     restart: (mindId) => ipcRenderer.invoke('mindProfile:restart', mindId),
   },
+  mindMemory: {
+    read: (mindId) => ipcRenderer.invoke('mindMemory:read', mindId),
+  },
   lens: {
     getViews: (mindId?) => ipcRenderer.invoke(IPC.LENS.GET_VIEWS, mindId),
     getViewData: (viewId, mindId?) => ipcRenderer.invoke(IPC.LENS.GET_VIEW_DATA, viewId, mindId),

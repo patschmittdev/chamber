@@ -106,6 +106,9 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     removeAvatar: { status: 'desktop-only' },
     restart: { status: 'desktop-only', rejects: true },
   },
+  mindMemory: {
+    read: { status: 'desktop-only', rejects: true },
+  },
   lens: {
     getViews: { status: 'planned' },
     getViewData: { status: 'planned' },

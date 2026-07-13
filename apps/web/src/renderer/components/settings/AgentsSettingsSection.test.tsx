@@ -121,7 +121,16 @@ describe('AgentsSettingsSection', () => {
     expect(await screen.findByRole('button', { name: /SOUL.md/ })).toBeTruthy();
   });
 
-  it('summarizes working memory on the Overview tab', () => {
+  it('summarizes working memory and renders file contents on the Overview tab', async () => {
+    (api.mindMemory.read as ReturnType<typeof vi.fn>).mockResolvedValue({
+      mindId: 'ada-1',
+      present: true,
+      files: [
+        { name: 'memory.md', label: 'Memory', present: true, content: '# Roadmap note', truncated: false, mtimeMs: 1 },
+        { name: 'rules.md', label: 'Rules', present: false, content: '', truncated: false, mtimeMs: null },
+        { name: 'log.md', label: 'Log', present: false, content: '', truncated: false, mtimeMs: null },
+      ],
+    });
     const precedence: Record<string, MindInstructionPrecedence> = {
       'ada-1': {
         mindId: 'ada-1',
@@ -164,6 +173,8 @@ describe('AgentsSettingsSection', () => {
     expect(screen.getByText('Working memory')).toBeTruthy();
     expect(screen.getByText('C:\\agents\\ada\\.working-memory')).toBeTruthy();
     expect(screen.getByText('Active')).toBeTruthy();
+    expect(await screen.findByText('Roadmap note')).toBeTruthy();
+    expect(screen.getByText('No rules file yet.')).toBeTruthy();
   });
 
   it('lists the agent models on the Model tab', async () => {

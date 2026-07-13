@@ -231,6 +231,9 @@ export function installBrowserApi(): void {
       removeAvatar: async () => ({ success: false, error: 'Agent profiles are desktop-only in browser mode.' }),
       restart: async () => unavailable('mindProfile.restart'),
     },
+    mindMemory: {
+      read: async () => unavailable('mindMemory.read'),
+    },
     lens: {
       getViews: async (): Promise<LensViewManifest[]> => [],
       getViewData: async () => null,

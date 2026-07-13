@@ -195,6 +195,17 @@ export function mockElectronAPI(): ElectronAPI {
       removeAvatar: vi.fn().mockResolvedValue({ success: false, error: 'not stubbed' }),
       restart: vi.fn().mockResolvedValue({ mindId: 'test-1234', mindPath: 'C:\\test', identity: { name: 'Test', systemMessage: '' }, status: 'ready' }),
     },
+    mindMemory: {
+      read: vi.fn().mockImplementation((mindId: string) => Promise.resolve({
+        mindId,
+        present: true,
+        files: [
+          { name: 'memory.md', label: 'Memory', present: true, content: '# Memory\n', truncated: false, mtimeMs: 1 },
+          { name: 'rules.md', label: 'Rules', present: false, content: '', truncated: false, mtimeMs: null },
+          { name: 'log.md', label: 'Log', present: false, content: '', truncated: false, mtimeMs: null },
+        ],
+      })),
+    },
     userProfile: {
       get: vi.fn().mockResolvedValue({
         displayName: '',

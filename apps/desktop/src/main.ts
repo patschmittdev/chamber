@@ -61,6 +61,7 @@ import {
   MarketplaceSkillCatalog,
   MarketplaceSkillMaterializer,
   MindManager,
+  MindMemoryService,
   MindProfileService,
   MindScaffold,
   MindSkillDiscovery,
@@ -123,6 +124,7 @@ import { enrollMarketplaceFromProtocolUrl, findMarketplaceInstallUrl, parseMarke
 import { setupChatIPC } from './main/ipc/chat';
 import { setupMindIPC } from './main/ipc/mind';
 import { setupMindProfileIPC } from './main/ipc/mindProfile';
+import { setupMindMemoryIPC } from './main/ipc/mindMemory';
 import { setupLensIPC } from './main/ipc/lens';
 import { setupGenesisIPC } from './main/ipc/genesis';
 import { setupMarketplaceIPC } from './main/ipc/marketplace';
@@ -267,6 +269,7 @@ let byoLlmStore: ByoLlmStore;
 let cachedByoLlmConfig: import('@chamber/shared/types').ByoLlmConfig | null = null;
 let mindManager: MindManager;
 let mindProfileService: MindProfileService;
+let mindMemoryService: MindMemoryService;
 let userProfileService: UserProfileService;
 let microsoftGraphProfileImporter: MicrosoftGraphProfileImporter;
 let chatService: ChatService;
@@ -451,6 +454,9 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath ?? null,
     restartMind: (mindId) => mindManager.reloadMind(mindId),
   }, identityLoader, new SharpAvatarNormalizer(sharp));
+  mindMemoryService = new MindMemoryService({
+    getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath ?? null,
+  });
   userProfileService = new UserProfileService(configService);
   microsoftGraphProfileImporter = new MicrosoftGraphProfileImporter(
     userProfileService,
@@ -987,6 +993,7 @@ app.on('ready', async () => {
     getAppearanceSnapshot: () => appearanceService.getSnapshot(),
   });
   setupMindProfileIPC(mindProfileService, mindManager, sharp);
+  setupMindMemoryIPC(mindMemoryService);
   setupUserProfileIPC(userProfileService, microsoftGraphProfileImporter, {
     onProfileSaved: async () => {
       try {
