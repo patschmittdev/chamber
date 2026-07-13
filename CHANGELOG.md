@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refresh Settings navigation and layout** — Reorganizes Profile, Account, Marketplaces, and Local LLM settings into a clearer left-rail interface with updated panels and light-theme styling.
 - **Polish Lens view presentation** — Adds view descriptions, Lucide icons, loading skeletons, refined empty states, and improved detail-view readability.
 - **Lens descriptions surface consistently** — Shows non-empty Lens descriptions in ActivityBar metadata and keeps prompt empty states using description copy. (#403)
+- **Declare browser-host capability parity through a single manifest** - The browser host now routes every unavailable window.electronAPI method through one manifest-keyed dispatcher derived from the ElectronAPI contract, and a new parity test fails when browserApi.ts drifts from that contract. Browser mode now rejects userProfile.save and mcp.setServers instead of fabricating success, so unsupported writes surface an honest error rather than silently dropping input.
 
 ### Security
 

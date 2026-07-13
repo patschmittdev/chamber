@@ -5,12 +5,26 @@ import type { ElectronAPI } from '@chamber/shared/electron-types';
 import type { AgentCard, ListTasksResponse, Task } from '@chamber/shared/a2a-types';
 import type { ChatroomAPI, ChatroomMessage, TaskLedgerItem } from '@chamber/shared/chatroom-types';
 import type { OperatorActivitySnapshot } from '@chamber/shared/operator-activity-types';
+import { getBrowserCapability } from './browserCapabilities';
 
 const noopUnsubscribe = () => undefined;
 const SUBSCRIPTION_TIMEOUT_MS = 10_000;
 
-function unavailable(operation: string): never {
-  throw new Error(`Not available in browser mode: ${operation}.`);
+/**
+ * Single dispatcher for methods the browser host cannot provide. `method` is a
+ * qualified `namespace.method` name declared with `rejects: true` in the browser
+ * capability manifest. The manifest is the source of truth for what the browser
+ * cannot do; a method routed here without a `rejects: true` declaration is a
+ * wiring mistake, so we still throw the standard user-facing message (never
+ * internal wording) and append a developer hint so the mismatch is diagnosable.
+ */
+function unavailable(method: string): never {
+  const [namespace, name] = method.split('.');
+  const capability = getBrowserCapability(namespace, name);
+  const developerHint = capability?.rejects
+    ? ''
+    : ` (declare "${method}" with rejects: true in browserCapabilities.ts)`;
+  throw new Error(`Not available in browser mode: ${method}.${developerHint}`);
 }
 
 type AuthProgress = Parameters<ElectronAPI['auth']['onProgress']>[0] extends (progress: infer TProgress) => void
@@ -24,15 +38,15 @@ function createClient(): ChamberClient {
 
 function createBrowserChatroomApi(): ChatroomAPI {
   return {
-    send: async () => unavailable('chatroom send'),
+    send: async () => unavailable('chatroom.send'),
     history: async (): Promise<ChatroomMessage[]> => [],
     taskLedger: async (): Promise<TaskLedgerItem[]> => [],
-    clear: async () => unavailable('chatroom clear'),
-    stop: async () => unavailable('chatroom stop'),
-    setOrchestration: async () => unavailable('chatroom orchestration changes'),
+    clear: async () => unavailable('chatroom.clear'),
+    stop: async () => unavailable('chatroom.stop'),
+    setOrchestration: async () => unavailable('chatroom.setOrchestration'),
     getOrchestration: async () => ({ mode: 'concurrent', config: null }),
     onEvent: () => noopUnsubscribe,
-    setMindEnabled: async () => unavailable('chatroom participant toggles'),
+    setMindEnabled: async () => unavailable('chatroom.setMindEnabled'),
     getDisabledMindIds: async (): Promise<string[]> => [],
     onStateChanged: () => noopUnsubscribe,
   };
@@ -167,13 +181,13 @@ export function installBrowserApi(): void {
       // (Electron IPC) surface. Browser mode has no server route for history
       // mutation yet, so these stay unavailable; the reconcile read is a safe
       // no-op so it never throws after a turn completes.
-      deleteMessage: async () => unavailable('deleting messages'),
-      editMessage: async () => unavailable('editing messages'),
-      regenerate: async () => unavailable('regenerating messages'),
+      deleteMessage: async () => unavailable('chat.deleteMessage'),
+      editMessage: async () => unavailable('chat.editMessage'),
+      regenerate: async () => unavailable('chat.regenerate'),
       getConversationEvents: async () => [],
       getConversationVariants: async () => [],
-      switchActiveVariant: async () => unavailable('switching message versions'),
-      forkConversation: async () => unavailable('forking conversations'),
+      switchActiveVariant: async () => unavailable('chat.switchActiveVariant'),
+      forkConversation: async () => unavailable('chat.forkConversation'),
     },
     conversationHistory: {
       list: async () => [],
@@ -185,9 +199,9 @@ export function installBrowserApi(): void {
     },
     mind: {
       add: (mindPath): Promise<MindContext> => client.addMind(mindPath) as Promise<MindContext>,
-      remove: async () => unavailable('mind removal'),
+      remove: async () => unavailable('mind.remove'),
       list: () => client.listMinds() as Promise<MindContext[]>,
-      setActive: async () => unavailable('active mind changes'),
+      setActive: async () => unavailable('mind.setActive'),
       setModel: async () => null,
       setGlobalCustomInstructionsEnabled: async (mindId, enabled) => ({
         mindId,
@@ -210,22 +224,18 @@ export function installBrowserApi(): void {
       onMindChanged: () => noopUnsubscribe,
     },
     mindProfile: {
-      get: async () => {
-        throw new Error('Agent profiles are desktop-only in browser mode.');
-      },
+      get: async () => unavailable('mindProfile.get'),
       saveFile: async () => ({ success: false, error: 'Agent profiles are desktop-only in browser mode.' }),
       pickAvatarImage: async () => ({ success: false, error: 'Agent profiles are desktop-only in browser mode.' }),
       saveAvatar: async () => ({ success: false, error: 'Agent profiles are desktop-only in browser mode.' }),
       removeAvatar: async () => ({ success: false, error: 'Agent profiles are desktop-only in browser mode.' }),
-      restart: async () => {
-        throw new Error('Agent profiles are desktop-only in browser mode.');
-      },
+      restart: async () => unavailable('mindProfile.restart'),
     },
     lens: {
       getViews: async (): Promise<LensViewManifest[]> => [],
       getViewData: async () => null,
       refreshView: async () => null,
-      sendAction: async () => unavailable('Lens write actions'),
+      sendAction: async () => unavailable('lens.sendAction'),
       getCanvasUrl: async () => null,
       getDisabledViewIds: async () => [],
       setViewEnabled: async (_viewId, enabled, mindId) => ({
@@ -299,16 +309,16 @@ export function installBrowserApi(): void {
     },
     voice: {
       getConfig: async () => null,
-      saveConfig: async () => unavailable('voice dictation config'),
+      saveConfig: async () => unavailable('voice.saveConfig'),
       onConfigChanged: () => noopUnsubscribe,
       getPermissionState: async () => 'unsupported',
-      openMicPreferences: async () => unavailable('voice dictation microphone preferences'),
+      openMicPreferences: async () => unavailable('voice.openMicPreferences'),
       getModelStatus: async (modelId) => ({ id: modelId as 'nemotron-speech-streaming-en-0.6b', status: 'error', errorMessage: 'Voice dictation is desktop-only in browser mode.' }),
-      downloadModel: async () => unavailable('voice dictation model download'),
-      cancelDownload: async () => unavailable('voice dictation model download cancellation'),
-      startSession: async () => unavailable('voice dictation session start'),
-      appendAudio: async () => unavailable('voice dictation audio append'),
-      endSession: async () => unavailable('voice dictation session end'),
+      downloadModel: async () => unavailable('voice.downloadModel'),
+      cancelDownload: async () => unavailable('voice.cancelDownload'),
+      startSession: async () => unavailable('voice.startSession'),
+      appendAudio: async () => unavailable('voice.appendAudio'),
+      endSession: async () => unavailable('voice.endSession'),
       testMic: async () => ({ success: false, error: 'Voice dictation is desktop-only in browser mode.' }),
       onModelProgress: () => noopUnsubscribe,
       onTranscript: () => noopUnsubscribe,
@@ -339,16 +349,7 @@ export function installBrowserApi(): void {
         source: 'local',
         updatedAt: null,
       }),
-      save: async (request) => ({
-        displayName: request.displayName ?? '',
-        work: request.work ?? '',
-        location: request.location ?? '',
-        about: request.about ?? '',
-        avatarDataUrl: request.avatarDataUrl ?? null,
-        customInstructions: request.customInstructions ?? '',
-        source: 'local',
-        updatedAt: new Date().toISOString(),
-      }),
+      save: async () => unavailable('userProfile.save'),
       importFromMicrosoft: async () => ({
         success: false,
         error: 'Microsoft profile import is desktop-only in browser mode.',
@@ -432,8 +433,8 @@ export function installBrowserApi(): void {
       onRelayStateChanged: () => noopUnsubscribe,
     },
     window: {
-      minimize: () => unavailable('window minimize'),
-      maximize: () => unavailable('window maximize'),
+      minimize: () => unavailable('window.minimize'),
+      maximize: () => unavailable('window.maximize'),
       close: () => window.close(),
     },
     app: {
@@ -458,7 +459,7 @@ export function installBrowserApi(): void {
     mcp: {
       // Web host has no on-disk mind directory to read or write .mcp.json.
       getServers: async () => [],
-      setServers: async (servers) => servers,
+      setServers: async () => unavailable('mcp.setServers'),
     },
   };
   window.electronAPI = api;
