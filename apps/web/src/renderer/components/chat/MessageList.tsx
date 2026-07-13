@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
-import { MessageActions, type RowAction } from './MessageActions';
+import { MessageActions, type RowAction, type RegenerateAction } from './MessageActions';
 import { MessageVariantPager } from './MessageVariantPager';
 import { useAppState, useAppDispatch, getPlainContent } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
@@ -8,7 +8,7 @@ import { useConversationActions } from '../../hooks/useConversationActions';
 import { StreamingMessage } from './StreamingMessage';
 import { hasAttachmentBlocks } from './messageContent';
 import { cn, formatTime, parseSkillContextInjection } from '../../lib/utils';
-import type { ChatMessage, MindContext } from '@chamber/shared/types';
+import type { ChatMessage, MindContext, ModelInfo } from '@chamber/shared/types';
 import { buildMessageVariantView, resolvePendingPromotion } from '@chamber/shared/messageVariants';
 import { formatAttachmentSize } from '@chamber/shared';
 import type { AgentProfileSummary } from '../../lib/store/state';
@@ -68,7 +68,7 @@ function messagePresenter(
 }
 
 export function MessageList() {
-  const { messagesByMind, activeMindId, minds, variantGroupsByMind, variantSelectionByMind } = useAppState();
+  const { messagesByMind, activeMindId, minds, variantGroupsByMind, variantSelectionByMind, availableModels, selectedModel } = useAppState();
   const dispatch = useAppDispatch();
   const profileByMindId = useMindProfiles(minds);
   const userProfile = useUserProfile();
@@ -195,6 +195,8 @@ export function MessageList() {
                 onEditSubmit={editAndResubmit}
                 regenerateSupported={isLastMessage && message.role === 'assistant' && regenerateSupported}
                 regenerateDisabledReason={regenerateDisabledReason}
+                availableModels={availableModels}
+                currentModel={selectedModel}
                 followingTurnCount={displayMessages.length - 1 - index}
                 pagerGroupId={pager?.groupId}
                 pagerIndex={pager?.index}
@@ -240,7 +242,7 @@ interface MessageRowProps {
   launch: boolean;
   // The active conversation is streaming, hydrating, or switching models.
   isBusy: boolean;
-  onRegenerate: () => void;
+  onRegenerate: (model?: string) => void;
   onDelete: (message: ChatMessage) => void;
   onFork: (message: ChatMessage) => void;
   onEditSubmit: (message: ChatMessage, text: string) => void;
@@ -249,6 +251,10 @@ interface MessageRowProps {
   // receiving primitives.
   regenerateSupported: boolean;
   regenerateDisabledReason: string | undefined;
+  // Models offered by the one-shot regenerate submenu, and the mind's current
+  // model to mark within it. Sourced from app state by the parent.
+  availableModels: ModelInfo[];
+  currentModel: string | null;
   // Number of turns after this one. Editing a user turn resubmits it and drops
   // everything after, so the editor warns when this is non-zero.
   followingTurnCount: number;
@@ -282,6 +288,8 @@ const MessageRow = memo(function MessageRow({
   onEditSubmit,
   regenerateSupported,
   regenerateDisabledReason,
+  availableModels,
+  currentModel,
   followingTurnCount,
   mutationsDisabled,
   pagerGroupId,
@@ -304,9 +312,11 @@ const MessageRow = memo(function MessageRow({
     [canMutate, handleFork],
   );
 
-  const regenerate = useMemo<RowAction | undefined>(
-    () => regenerateSupported ? { onRun: onRegenerate, disabledReason: regenerateDisabledReason } : undefined,
-    [regenerateSupported, onRegenerate, regenerateDisabledReason],
+  const regenerate = useMemo<RegenerateAction | undefined>(
+    () => regenerateSupported
+      ? { onRun: onRegenerate, disabledReason: regenerateDisabledReason, models: availableModels, currentModel }
+      : undefined,
+    [regenerateSupported, onRegenerate, regenerateDisabledReason, availableModels, currentModel],
   );
 
   const edit = useMemo<RowAction | undefined>(

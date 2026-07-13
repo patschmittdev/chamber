@@ -241,4 +241,37 @@ describe('useChatStreaming', () => {
       expect(api.chat.send).toHaveBeenCalled();
     });
   });
+
+  describe('model override', () => {
+    it('regenerates with the mind current model when no override is given', async () => {
+      const live = [user('u2', 'question', 'e1'), assistant('a2', 'answer', 'e2')];
+      const { result } = renderHook(() => useChatStreaming(), {
+        wrapper: wrapper({ minds: [MIND], activeMindId: MIND.mindId, selectedModel: 'copilot:model-1', messagesByMind: { [MIND.mindId]: live } }),
+      });
+
+      await act(async () => {
+        await result.current.regenerate();
+      });
+
+      expect(api.chat.regenerate).toHaveBeenCalledWith(MIND.mindId, expect.any(String), 'copilot:model-1');
+      expect(api.mind.setModel).not.toHaveBeenCalled();
+    });
+
+    it('regenerates one-shot with a chosen model without persisting the selection', async () => {
+      const live = [user('u2', 'question', 'e1'), assistant('a2', 'answer', 'e2')];
+      const { result } = renderHook(() => ({ chat: useChatStreaming(), state: useAppState() }), {
+        wrapper: wrapper({ minds: [MIND], activeMindId: MIND.mindId, selectedModel: 'copilot:model-1', messagesByMind: { [MIND.mindId]: live } }),
+      });
+
+      await act(async () => {
+        await result.current.chat.regenerate('copilot:model-2');
+      });
+
+      expect(api.chat.regenerate).toHaveBeenCalledWith(MIND.mindId, expect.any(String), 'copilot:model-2');
+      expect(api.mind.setModel).not.toHaveBeenCalled();
+      expect(result.current.state.selectedModel).toBe('copilot:model-1');
+      const groups = result.current.state.variantGroupsByMind[MIND.mindId] ?? [];
+      expect(groups).toHaveLength(1);
+    });
+  });
 });

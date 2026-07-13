@@ -1,11 +1,25 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import type { ChatMessage } from '@chamber/shared/types';
+import type { ChatMessage, ModelInfo } from '@chamber/shared/types';
 import { MessageActions } from './MessageActions';
+import { installCmdkDom } from '../../../test/helpers';
+
+installCmdkDom();
 
 function assistantMsg(overrides?: Partial<ChatMessage>): ChatMessage {
   return { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: '# Title\n\nBody' }], timestamp: 2, eventId: 'evt-a1', ...overrides };
+}
+
+function model(id: string, name: string, provider?: ModelInfo['provider']): ModelInfo {
+  return provider ? { id, name, provider } : { id, name };
+}
+
+function modelOption(name: string): HTMLElement {
+  const items = Array.from(document.querySelectorAll('[data-slot="command-item"]')) as HTMLElement[];
+  const match = items.find((el) => el.textContent?.includes(name));
+  if (!match) throw new Error(`No model option matching ${name}`);
+  return match;
 }
 
 function button(name: string): HTMLButtonElement {
@@ -61,6 +75,138 @@ describe('MessageActions', () => {
     expect(regen.title).toBe('no images yet');
     fireEvent.click(regen);
     expect(onRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('regenerates with the current model when the plain Regenerate button is clicked', () => {
+    const onRun = vi.fn();
+    render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{ onRun, models: [model('model-1', 'Model 1')], currentModel: 'copilot:model-1' }}
+      />,
+    );
+
+    fireEvent.click(button('Regenerate response'));
+    expect(onRun).toHaveBeenCalledWith();
+  });
+
+  it('regenerates one-shot with a chosen model from the submenu', () => {
+    const onRun = vi.fn();
+    render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{
+          onRun,
+          models: [model('model-1', 'Model 1'), model('model-2', 'Model 2')],
+          currentModel: 'copilot:model-1',
+        }}
+      />,
+    );
+
+    fireEvent.click(button('Regenerate with a different model'));
+    fireEvent.click(modelOption('Model 2'));
+    expect(onRun).toHaveBeenCalledWith('copilot:model-2');
+  });
+
+  it('keeps the action row visible while the model menu is open', () => {
+    render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{
+          onRun: vi.fn(),
+          models: [model('model-1', 'Model 1'), model('model-2', 'Model 2')],
+          currentModel: 'copilot:model-1',
+        }}
+      />,
+    );
+
+    const row = button('Regenerate response').closest('div') as HTMLElement;
+    const tokens = () => row.className.split(/\s+/);
+    expect(tokens()).toContain('opacity-0');
+
+    fireEvent.click(button('Regenerate with a different model'));
+    expect(tokens()).toContain('opacity-100');
+    expect(tokens()).not.toContain('opacity-0');
+  });
+
+  it('exposes each model as a selectable option with an accessible name', () => {
+    render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{
+          onRun: vi.fn(),
+          models: [model('model-1', 'Model 1'), model('model-2', 'Model 2')],
+          currentModel: 'copilot:model-1',
+        }}
+      />,
+    );
+
+    fireEvent.click(button('Regenerate with a different model'));
+    expect(screen.getByLabelText('Search models to regenerate with')).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Model 1/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Model 2/ })).toBeTruthy();
+  });
+
+  it('regenerates one-shot with a chosen model via keyboard selection', () => {
+    const onRun = vi.fn();
+    render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{
+          onRun,
+          models: [model('model-1', 'Model 1'), model('model-2', 'Model 2')],
+          currentModel: 'copilot:model-1',
+        }}
+      />,
+    );
+
+    fireEvent.click(button('Regenerate with a different model'));
+    const search = screen.getByLabelText('Search models to regenerate with');
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onRun).toHaveBeenCalledWith(expect.stringMatching(/^copilot:/));
+  });
+
+  it('omits the model submenu unless at least two models are available', () => {
+    const { rerender } = render(
+      <MessageActions message={assistantMsg()} isBusy={false} regenerate={{ onRun: vi.fn(), models: [] }} />,
+    );
+    expect(queryButton('Regenerate with a different model')).toBeNull();
+    expect(button('Regenerate response')).toBeTruthy();
+
+    rerender(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{ onRun: vi.fn(), models: [model('model-1', 'Model 1')], currentModel: 'copilot:model-1' }}
+      />,
+    );
+    expect(queryButton('Regenerate with a different model')).toBeNull();
+    expect(button('Regenerate response')).toBeTruthy();
+  });
+
+  it('disables the model submenu while busy and when a regenerate reason is given', () => {
+    const models = [model('model-1', 'Model 1'), model('model-2', 'Model 2')];
+    const { rerender } = render(
+      <MessageActions message={assistantMsg()} isBusy regenerate={{ onRun: vi.fn(), models }} />,
+    );
+    expect(button('Regenerate with a different model').disabled).toBe(true);
+
+    rerender(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{ onRun: vi.fn(), models, disabledReason: 'no images yet' }}
+      />,
+    );
+    const caret = button('Regenerate with a different model');
+    expect(caret.disabled).toBe(true);
+    expect(caret.title).toBe('no images yet');
   });
 
   it('runs Edit when enabled and disables it with a tooltip when a reason is given', () => {
