@@ -26,7 +26,6 @@ import {
 } from '@chamber/services';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { createCredentialPrivilegedHandler } from './privileged-protocol';
 import type { ChamberCtx } from './types';
 
 const port = Number(process.env.CHAMBER_SERVER_PORT ?? 0);
@@ -189,7 +188,6 @@ const productionContext: ChamberCtx = createServerContext({
   shutdown: () => {
     void shutdown();
   },
-  handlePrivilegedRequest: createCredentialPrivilegedHandler(credentialStore),
 });
 
 const useFakeChat = process.env.CHAMBER_E2E === '1' && process.env.CHAMBER_E2E_FAKE_CHAT === '1';

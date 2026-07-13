@@ -22,9 +22,8 @@ import {
   switchAuthAccountHandler,
   uploadAttachmentHandler,
 } from './handlers';
-import { isAllowedOrigin, isAuthorized } from './auth';
+import { isAllowedOrigin, isAuthorized, isLoopbackHost } from './auth';
 import type { ChamberCtx, ChamberRequest, ChamberResponse } from './types';
-import { parsePrivilegedRequest, PrivilegedProtocolError } from './privileged-protocol';
 import { WIRE_PROTOCOL_VERSION } from '@chamber/wire-contracts';
 
 function toRequest(c: Context): ChamberRequest {
@@ -80,6 +79,9 @@ function streamAuthLogin(ctx: ChamberCtx): Response {
 }
 
 function requireAuth(c: Context, ctx: ChamberCtx): Response | null {
+  if (!isLoopbackHost(c.req.header('host'))) {
+    return c.json({ error: 'Forbidden host' }, 403);
+  }
   if (!isAllowedOrigin(c.req.header('origin') ?? null, ctx.allowedOrigins)) {
     return c.json({ error: 'Forbidden origin' }, 403);
   }
@@ -147,26 +149,6 @@ export function createHonoApp(ctx: ChamberCtx): Hono {
     return send(c, await newConversationHandler(await toRequestWithBody(c), ctx));
   });
   app.get('/api/chat/models', authenticated(listModelsHandler));
-  app.post('/api/privileged', async (c) => {
-    const authFailure = requireAuth(c, ctx);
-    if (authFailure) return authFailure;
-    let body: unknown;
-    let request;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: 'Privileged request body must be valid JSON.' }, 400);
-    }
-    try {
-      request = parsePrivilegedRequest(body);
-    } catch (error) {
-      if (error instanceof PrivilegedProtocolError) {
-        return c.json({ error: error.message }, 400);
-      }
-      throw error;
-    }
-    return c.json(await ctx.handlePrivilegedRequest(request));
-  });
   app.post('/api/shutdown', async (c) => {
     const authFailure = requireAuth(c, ctx);
     if (authFailure) return authFailure;
@@ -194,11 +176,12 @@ export function createHttpServer(ctx: ChamberCtx) {
 
   server.on('upgrade', (request, socket, head) => {
     const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
+    const host = request.headers.host;
     const origin = request.headers.origin ?? null;
     const authorization = request.headers.authorization ?? (
       requestUrl.searchParams.has('token') ? `Bearer ${requestUrl.searchParams.get('token')}` : null
     );
-    if (!isAllowedOrigin(origin, ctx.allowedOrigins) || !isAuthorized(authorization, ctx.token)) {
+    if (!isLoopbackHost(host) || !isAllowedOrigin(origin, ctx.allowedOrigins) || !isAuthorized(authorization, ctx.token)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -206,14 +189,32 @@ export function createHttpServer(ctx: ChamberCtx) {
     wsServer.handleUpgrade(request, socket, head, (ws) => {
       ws.send(JSON.stringify({ type: 'hello', version: 1 }));
       const subscribed = new Set<string>();
+      // Trust boundary: this loopback server is single-user and gated by the
+      // per-launch bearer token plus the origin and host checks on the upgrade
+      // above. It does not yet bind a subscription to the connection that
+      // created the session, so any authenticated connection can subscribe to
+      // any sessionId it names. That is acceptable only under the single-user
+      // assumption. Per-connection ownership needs the authenticated-identity
+      // handshake tracked as follow-up F0b (token cookie / WS subprotocol);
+      // narrow this to connection-owned sessions once that lands.
       ws.on('message', (data) => {
-        const message = JSON.parse(data.toString()) as { type?: string; sessionId?: string; event?: unknown };
-        if (message.type === 'subscribe' && message.sessionId) {
-          subscribed.add(message.sessionId);
-          const sockets = subscriptions.get(message.sessionId) ?? new Set();
+        let message: { type?: unknown; sessionId?: unknown };
+        try {
+          const parsed: unknown = JSON.parse(data.toString());
+          if (typeof parsed !== 'object' || parsed === null) return;
+          message = parsed as { type?: unknown; sessionId?: unknown };
+        } catch {
+          // Drop malformed frames instead of letting an uncaught exception
+          // crash the loopback server for every connected session.
+          return;
+        }
+        if (message.type === 'subscribe' && typeof message.sessionId === 'string' && message.sessionId.length > 0) {
+          const sessionId = message.sessionId;
+          subscribed.add(sessionId);
+          const sockets = subscriptions.get(sessionId) ?? new Set();
           sockets.add(ws);
-          subscriptions.set(message.sessionId, sockets);
-          ws.send(JSON.stringify({ version: 1, type: 'subscription:ready', payload: { sessionId: message.sessionId } }));
+          subscriptions.set(sessionId, sockets);
+          ws.send(JSON.stringify({ version: 1, type: 'subscription:ready', payload: { sessionId } }));
         }
       });
       ws.on('close', () => {
