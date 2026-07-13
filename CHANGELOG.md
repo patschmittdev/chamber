@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Polish Lens view presentation** — Adds view descriptions, Lucide icons, loading skeletons, refined empty states, and improved detail-view readability.
 - **Lens descriptions surface consistently** — Shows non-empty Lens descriptions in ActivityBar metadata and keeps prompt empty states using description copy. (#403)
 - **Declare browser-host capability parity through a single manifest** - The browser host now routes every unavailable window.electronAPI method through one manifest-keyed dispatcher derived from the ElectronAPI contract, and a new parity test fails when browserApi.ts drifts from that contract. Browser mode now rejects userProfile.save and mcp.setServers instead of fabricating success, so unsupported writes surface an honest error rather than silently dropping input.
+- **Unify shared UI primitives and fix visual drift across chat, extensions, and settings** - Introduce shared Button, Alert, and EmptyState primitives and adopt them at the drifting call sites, fix light-mode contrast on error banners, normalize Settings header casing to Title Case, and add a keyboard focus ring to the composer and history search inputs.
 
 ### Security
 
