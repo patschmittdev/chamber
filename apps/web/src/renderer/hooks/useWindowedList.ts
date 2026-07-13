@@ -35,6 +35,12 @@ export interface UseWindowedListOptions {
 export interface UseWindowedListResult extends WindowRange {
   /** Ref callback to attach to each rendered row (reads `data-window-key`). */
   readonly measureElement: (element: HTMLElement | null) => void;
+  /**
+   * Monotonic version that increments whenever any mounted row's measured height
+   * changes. Consumers can key side-effects on it when they need to react to
+   * post-mount size changes (for example, re-pinning scroll while auto-scroll is active).
+   */
+  readonly measureVersion: number;
 }
 
 interface ScrollMetrics {
@@ -48,6 +54,7 @@ const FULL_RANGE_NOOP: UseWindowedListResult = {
   paddingTop: 0,
   paddingBottom: 0,
   measureElement: () => {},
+  measureVersion: 0,
 };
 
 /**
@@ -139,7 +146,11 @@ export function useWindowedList({
         const contentRect = content.getBoundingClientRect();
         scrollTop = Math.max(0, scrollRect.top - contentRect.top);
       }
-      setMetrics({ scrollTop, viewportHeight: element.clientHeight });
+      const viewportHeight = element.clientHeight;
+      setMetrics((previous) =>
+        previous.scrollTop === scrollTop && previous.viewportHeight === viewportHeight
+          ? previous
+          : { scrollTop, viewportHeight });
     };
     const schedule = () => {
       if (frame !== 0) return;
@@ -189,5 +200,5 @@ export function useWindowedList({
     return { ...FULL_RANGE_NOOP, endIndex: itemCount };
   }
 
-  return { ...range, measureElement };
+  return { ...range, measureElement, measureVersion };
 }

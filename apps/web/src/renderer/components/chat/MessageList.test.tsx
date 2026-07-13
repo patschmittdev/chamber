@@ -774,8 +774,9 @@ describe('MessageList', () => {
         // content-visibility / contain-intrinsic-size hints untouched.
         const firstRow = container.querySelector('[data-window-key="msg-0"]') as HTMLElement;
         expect(firstRow.querySelector('.group.flex.gap-3')).toBeTruthy();
-        expect(firstRow.querySelector('[style*="content-visibility"]')).toBeTruthy();
-        expect(firstRow.querySelector('[style*="contain-intrinsic-size"]')).toBeTruthy();
+        const rowRoot = firstRow.querySelector('.group.flex.gap-3') as HTMLElement;
+        expect(rowRoot.style.contentVisibility).toBe('auto');
+        expect(rowRoot.style.containIntrinsicSize).toBe('auto 140px');
 
         // A spacer stands in for the un-mounted rows below the window.
         expect(container.querySelector('[data-window-spacer="bottom"]')).toBeTruthy();

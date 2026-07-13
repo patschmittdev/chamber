@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
 import { MessageActions, type RowAction, type RegenerateAction } from './MessageActions';
 import { MessageVariantPager } from './MessageVariantPager';
@@ -132,7 +132,7 @@ export function MessageList() {
     (index: number) => displayMessages[index]?.id ?? String(index),
     [displayMessages],
   );
-  const { startIndex, endIndex, paddingTop, paddingBottom, measureElement } = useWindowedList({
+  const { startIndex, endIndex, paddingTop, paddingBottom, measureElement, measureVersion } = useWindowedList({
     itemCount: displayMessages.length,
     getScrollElement: getScroller,
     getKey: getWindowKey,
@@ -172,6 +172,13 @@ export function MessageList() {
     lastMessageIdRef.current = latest?.id ?? null;
     lastMessageCountRef.current = displayMessages.length;
   }, [displayMessages]);
+
+  useLayoutEffect(() => {
+    if (!scrollRef.current) return;
+    if (!isAutoScrolling.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    setHasNewBelow(false);
+  }, [measureVersion]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
@@ -374,7 +381,7 @@ const MessageRow = memo(function MessageRow({
   return (
     <div
       className={cn('group flex gap-3', launch ? 'chamber-launch' : animate && 'chamber-fade-in')}
-      style={{ contentVisibility: 'auto', containIntrinsicSize: '140px' } as React.CSSProperties}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 140px' } as React.CSSProperties}
     >
       <AgentAvatar
         name={presenter.name}
