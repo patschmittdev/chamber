@@ -64,6 +64,7 @@ import {
   MindMemoryService,
   MindProfileService,
   MindScaffold,
+  MindSkillAuthoring,
   MindSkillDiscovery,
   readMcpServers,
   writeMcpServers,
@@ -982,6 +983,7 @@ app.on('ready', async () => {
 
   // --- IPC adapters (thin, parameter-injected) ---
   const skillDiscovery = new MindSkillDiscovery();
+  const skillAuthoring = new MindSkillAuthoring();
   setupAppearanceIPC(appearanceService);
   setupChatIPC(chatService, mindManager);
   setupConversationHistoryIPC(chatService);
@@ -1030,6 +1032,7 @@ app.on('ready', async () => {
   setupSkillsIPC(
     { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
     skillDiscovery,
+    skillAuthoring,
     marketplaceSkillCatalog,
     genesisTemplateCatalog,
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type {
   MarketplaceSkillEntry,
@@ -11,18 +11,29 @@ import type {
   SkillMarketplaceBrowseResult,
   SkillValidationError,
 } from '@chamber/shared/skill-types';
-import { AlertTriangle, PackageSearch, Sparkles, Store } from 'lucide-react';
-import { useAppState } from '../../lib/store';
+import { buildSkillMarkdown, validateSkillId } from '@chamber/shared/skill-authoring';
+import { AlertTriangle, PackageSearch, Pencil, Plus, Sparkles, Store } from 'lucide-react';
+import { useAppState, useAppDispatch } from '../../lib/store';
+import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
 import { Skeleton } from '../ui/skeleton';
 import { TabEmptyState, TabError } from './extensionsShared';
+
+const secondaryButtonClass =
+  'rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50';
+const primaryButtonClass =
+  'rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50';
+const alertClass = 'rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive';
+const fieldInputClass =
+  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary';
 
 type DetailSelection =
   | { type: 'local'; item: SkillDetail }
@@ -31,7 +42,8 @@ type DetailSelection =
   | { type: 'malformed-skill'; item: MarketplaceSkillMalformedEntry };
 
 export function SkillsTab() {
-  const { activeMindId, minds } = useAppState();
+  const { activeMindId, minds, pendingExtensionsIntent } = useAppState();
+  const dispatch = useAppDispatch();
   const activeMind = minds.find((mind) => mind.mindId === activeMindId) ?? null;
 
   const [skills, setSkills] = useState<SkillDetail[]>([]);
@@ -41,6 +53,21 @@ export function SkillsTab() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(true);
   const [marketplaceError, setMarketplaceError] = useState<string | null>(null);
   const [detailSelection, setDetailSelection] = useState<DetailSelection | null>(null);
+  const [localReloadNonce, setLocalReloadNonce] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<SkillDetail | null>(null);
+  const reloadLocalSkills = useCallback(() => setLocalReloadNonce((nonce) => nonce + 1), []);
+
+  useEffect(() => {
+    setCreateOpen(false);
+    setEditTarget(null);
+  }, [activeMindId]);
+
+  useEffect(() => {
+    if (pendingExtensionsIntent?.action !== 'create-skill') return;
+    setCreateOpen(true);
+    dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
+  }, [pendingExtensionsIntent, dispatch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,7 +96,7 @@ export function SkillsTab() {
     return () => {
       cancelled = true;
     };
-  }, [activeMindId]);
+  }, [activeMindId, localReloadNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +133,18 @@ export function SkillsTab() {
         <SectionHeading
           title="Installed skills"
           detail="Local and Chamber-managed skills are read from bounded metadata under .github/skills."
+          action={
+            activeMindId ? (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className={cn(primaryButtonClass, 'flex items-center gap-1.5')}
+              >
+                <Plus size={16} />
+                New skill
+              </button>
+            ) : undefined
+          }
         />
         {!activeMindId ? (
           <TabEmptyState
@@ -119,6 +158,7 @@ export function SkillsTab() {
             loading={localLoading}
             error={localError}
             onDetails={(item) => setDetailSelection({ type: 'local', item })}
+            onEdit={(item) => setEditTarget(item)}
           />
         )}
       </section>
@@ -144,6 +184,30 @@ export function SkillsTab() {
           if (!open) setDetailSelection(null);
         }}
       />
+
+      {activeMindId ? (
+        <SkillCreateDialog
+          open={createOpen}
+          mindId={activeMindId}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => {
+            setCreateOpen(false);
+            reloadLocalSkills();
+          }}
+        />
+      ) : null}
+
+      {activeMindId ? (
+        <SkillSourceEditor
+          mindId={activeMindId}
+          skill={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => {
+            setEditTarget(null);
+            reloadLocalSkills();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -153,11 +217,13 @@ function LocalSkillsSection({
   loading,
   error,
   onDetails,
+  onEdit,
 }: {
   skills: SkillDetail[];
   loading: boolean;
   error: string | null;
   onDetails: (skill: SkillDetail) => void;
+  onEdit: (skill: SkillDetail) => void;
 }) {
   if (loading) return <LoadingRows label="Loading skills" />;
   if (error) return <TabError message={error} />;
@@ -195,11 +261,24 @@ function LocalSkillsSection({
           {skill.validationErrors.length > 0 && (
             <ValidationErrors errors={skill.validationErrors} />
           )}
-          <DetailsButton label={`View details for ${skill.name}`} onClick={() => onDetails(skill)} />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <CardActionButton label={`View details for ${skill.name}`} onClick={() => onDetails(skill)} />
+            {isEditableSkill(skill) ? (
+              <CardActionButton
+                label={`Edit ${skill.name}`}
+                icon={<Pencil size={14} />}
+                onClick={() => onEdit(skill)}
+              />
+            ) : null}
+          </div>
         </li>
       ))}
     </ul>
   );
+}
+
+function isEditableSkill(skill: SkillDetail): boolean {
+  return !skill.isCore && !skill.isManaged;
 }
 
 function MarketplaceSection({
@@ -508,11 +587,14 @@ function SourceStatusList({
   );
 }
 
-function SectionHeading({ title, detail }: { title: string; detail: string }) {
+function SectionHeading({ title, detail, action }: { title: string; detail: string; action?: ReactNode }) {
   return (
-    <div>
-      <h3 className="text-base font-semibold">{title}</h3>
-      <p className="text-sm text-muted-foreground">{detail}</p>
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <h3 className="text-base font-semibold">{title}</h3>
+        <p className="text-sm text-muted-foreground">{detail}</p>
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }
@@ -577,6 +659,252 @@ function DetailsButton({ label, onClick }: { label: string; onClick: () => void 
     >
       {label}
     </button>
+  );
+}
+
+function CardActionButton({ label, onClick, icon }: { label: string; onClick: () => void; icon?: ReactNode }) {
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
+        {label}
+      </label>
+      {children}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
+function SkillCreateDialog({
+  open,
+  mindId,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  mindId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [id, setId] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setId('');
+      setName('');
+      setDescription('');
+      setError(null);
+      setSaving(false);
+    }
+  }, [open]);
+
+  const canSubmit = id.trim().length > 0 && name.trim().length > 0 && description.trim().length > 0 && !saving;
+
+  const handleCreate = async () => {
+    const trimmedId = id.trim();
+    const idError = validateSkillId(trimmedId);
+    if (idError) {
+      setError(idError);
+      return;
+    }
+    if (!name.trim() || !description.trim()) {
+      setError('Name and description are required.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    const content = buildSkillMarkdown({ name: name.trim(), description: description.trim() });
+    try {
+      const result = await window.electronAPI.skills.save({
+        mindId,
+        id: trimmedId,
+        content,
+        expectedMtimeMs: null,
+      });
+      setSaving(false);
+      if (result.success) {
+        onCreated();
+      } else {
+        setError(result.error ?? 'Could not create the skill.');
+      }
+    } catch (err) {
+      setSaving(false);
+      setError(getErrorMessage(err));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="flex max-h-[88vh] max-w-lg flex-col">
+        <DialogHeader>
+          <DialogTitle>New skill</DialogTitle>
+          <DialogDescription>Create a SKILL.md under this mind&apos;s .github/skills directory.</DialogDescription>
+        </DialogHeader>
+        {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+        <div className="flex flex-col gap-3">
+          <Field label="Skill id" htmlFor="skill-create-id" hint="Lowercase letters, numbers, and single hyphens, for example note-taker.">
+            <input
+              id="skill-create-id"
+              value={id}
+              onChange={(event) => setId(event.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              className={fieldInputClass}
+            />
+          </Field>
+          <Field label="Name" htmlFor="skill-create-name">
+            <input
+              id="skill-create-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className={fieldInputClass}
+            />
+          </Field>
+          <Field label="Description" htmlFor="skill-create-description">
+            <textarea
+              id="skill-create-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              className={cn(fieldInputClass, 'min-h-[80px] resize-none')}
+            />
+          </Field>
+        </div>
+        <DialogFooter>
+          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+            Cancel
+          </button>
+          <button type="button" onClick={handleCreate} disabled={!canSubmit} className={primaryButtonClass}>
+            {saving ? 'Creating...' : 'Create skill'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SkillSourceEditor({
+  mindId,
+  skill,
+  onClose,
+  onSaved,
+}: {
+  mindId: string;
+  skill: SkillDetail | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [content, setContent] = useState('');
+  const [initialContent, setInitialContent] = useState('');
+  const [baselineMtimeMs, setBaselineMtimeMs] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!skill) return;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    setError(null);
+    void window.electronAPI.skills.getSource(mindId, skill.id)
+      .then((source) => {
+        if (cancelled) return;
+        setContent(source.content);
+        setInitialContent(source.content);
+        setBaselineMtimeMs(source.mtimeMs);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setLoadError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [skill, mindId]);
+
+  const dirty = content !== initialContent;
+
+  const handleSave = async () => {
+    if (!skill) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.skills.save({
+        mindId,
+        id: skill.id,
+        content,
+        expectedMtimeMs: baselineMtimeMs,
+      });
+      setSaving(false);
+      if (result.success) {
+        onSaved();
+      } else {
+        setError(result.error ?? 'Could not save the skill.');
+      }
+    } catch (err) {
+      setSaving(false);
+      setError(getErrorMessage(err));
+    }
+  };
+
+  return (
+    <Dialog open={Boolean(skill)} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="flex max-h-[88vh] max-w-4xl flex-col">
+        <DialogHeader>
+          <DialogTitle>{skill ? `Edit ${skill.name}` : 'Edit skill'}</DialogTitle>
+          <DialogDescription>{skill?.source.manifestPath ?? 'SKILL.md'}</DialogDescription>
+        </DialogHeader>
+        {loadError ? <div role="alert" className={alertClass}>{loadError}</div> : null}
+        {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+        <textarea
+          aria-label="SKILL.md content"
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          spellCheck={false}
+          disabled={loading}
+          className="min-h-[240px] w-full flex-1 resize-none rounded-xl border border-border bg-background p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-primary disabled:opacity-50"
+        />
+        <DialogFooter>
+          {dirty ? <span className="mr-auto self-center text-xs text-amber-600 dark:text-amber-300">Unsaved edits</span> : null}
+          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+            Cancel
+          </button>
+          <button type="button" onClick={handleSave} disabled={!dirty || saving || loading} className={primaryButtonClass}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

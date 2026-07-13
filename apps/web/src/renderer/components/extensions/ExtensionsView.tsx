@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Blocks } from 'lucide-react';
+import { useAppState, useAppDispatch } from '../../lib/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { McpServersTab } from './McpServersTab';
 import { ToolsTab } from './ToolsTab';
@@ -6,6 +8,21 @@ import { SkillsTab } from './SkillsTab';
 import { LensViewsTab } from './LensViewsTab';
 
 export function ExtensionsView() {
+  const { pendingExtensionsIntent } = useAppState();
+  const dispatch = useAppDispatch();
+  const [activeTab, setActiveTab] = useState('mcp');
+
+  useEffect(() => {
+    if (!pendingExtensionsIntent) return;
+    setActiveTab(pendingExtensionsIntent.tab);
+    // A follow-up action (e.g. create-skill) is cleared by the destination tab
+    // once it applies it; clear here only for a plain tab deep-link so the intent
+    // does not linger and re-pin the tab on a later navigation.
+    if (!pendingExtensionsIntent.action) {
+      dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
+    }
+  }, [pendingExtensionsIntent, dispatch]);
+
   return (
     <div className="flex-1 overflow-auto bg-background">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
@@ -21,7 +38,15 @@ export function ExtensionsView() {
           </div>
         </header>
 
-        <Tabs defaultValue="mcp">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value);
+            if (pendingExtensionsIntent) {
+              dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
+            }
+          }}
+        >
           <TabsList>
             <TabsTrigger value="mcp">MCP servers</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>

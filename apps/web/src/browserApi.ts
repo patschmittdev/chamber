@@ -458,6 +458,12 @@ export function installBrowserApi(): void {
         templates: [],
         templateSources: [],
       }),
+      // Authoring is desktop-backed; there is no on-disk mind directory here.
+      getSource: async () => unavailable('skills.getSource'),
+      save: async () => ({
+        success: false,
+        error: 'Skill authoring is not available in browser mode yet.',
+      }),
     },
     mcp: {
       // Web host has no on-disk mind directory to read or write .mcp.json.

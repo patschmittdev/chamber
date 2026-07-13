@@ -11,6 +11,7 @@ import type {
   SkillValidationError,
 } from '@chamber/shared/types';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
+import { parseSkillFrontmatter } from '@chamber/shared/skill-authoring';
 import { Logger } from '../logger';
 
 export const MAX_SKILL_DIRECTORIES = 256;
@@ -290,50 +291,18 @@ function invalidBoundedRead(logMessage: string, message: string): BoundedReadRes
 }
 
 /**
- * Parses the bounded scalar subset of SKILL.md frontmatter used for display.
+ * Adapts the shared frontmatter parser to the bounded display subset used here.
  */
 function parseFrontmatter(raw: string): ParsedFrontmatter {
-  const content = raw.startsWith('\uFEFF') ? raw.slice(1) : raw;
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return { name: '' };
-
-  const fields = new Map<string, string>();
-  let currentKey: string | null = null;
-  for (const line of match[1].split(/\r?\n/)) {
-    if (currentKey && /^\s+\S/.test(line)) {
-      fields.set(currentKey, `${fields.get(currentKey) ?? ''} ${line.trim()}`);
-      continue;
-    }
-    const kv = line.match(/^([A-Za-z0-9_]+)\s*:\s*(.*)$/);
-    if (!kv) {
-      currentKey = null;
-      continue;
-    }
-    currentKey = kv[1];
-    fields.set(currentKey, kv[2].trim());
-  }
-
-  for (const [key, value] of fields) fields.set(key, stripQuotes(value));
-
-  const name = fields.get('name') ?? '';
-  const version = fields.get('version');
-  const description = fields.get('description');
+  const fields = parseSkillFrontmatter(raw);
+  if (!fields) return { name: '' };
+  const version = fields.version;
+  const description = fields.description;
   return {
-    name,
+    name: fields.name ?? '',
     ...(version ? { version } : {}),
     ...(description ? { description } : {}),
   };
-}
-
-function stripQuotes(value: string): string {
-  if (value.length >= 2) {
-    const first = value[0];
-    const last = value[value.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return value.slice(1, -1);
-    }
-  }
-  return value;
 }
 
 function isWithin(root: string, candidate: string): boolean {

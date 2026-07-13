@@ -75,6 +75,8 @@ describe('IPC channel constants', () => {
     expect(IPC.SKILLS.LIST_FOR_MIND).toBe('skills:listForMind');
     expect(IPC.SKILLS.LIST_FOR_MIND_DETAILS).toBe('skills:listForMindDetails');
     expect(IPC.SKILLS.BROWSE_MARKETPLACE).toBe('skills:browseMarketplace');
+    expect(IPC.SKILLS.GET_SOURCE).toBe('skills:getSource');
+    expect(IPC.SKILLS.SAVE).toBe('skills:save');
 
     expect(IPC.BYO_LLM.GET).toBe('byoLlm:get');
     expect(IPC.BYO_LLM.SAVE).toBe('byoLlm:save');

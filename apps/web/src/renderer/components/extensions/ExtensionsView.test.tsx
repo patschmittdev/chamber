@@ -42,4 +42,16 @@ describe('ExtensionsView', () => {
     await waitFor(() => expect(api.tools.list).toHaveBeenCalled());
     expect(screen.getByText('No tools available')).toBeTruthy();
   });
+
+  it('selects the Skills tab from a pending extensions intent', () => {
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ pendingExtensionsIntent: { tab: 'skills' } }}>
+        <ExtensionsView />
+      </AppStateProvider>,
+    );
+
+    expect(screen.getByRole('tab', { name: 'Skills' }).getAttribute('data-state')).toBe('active');
+    expect(screen.getByRole('tab', { name: 'MCP servers' }).getAttribute('data-state')).toBe('inactive');
+  });
 });

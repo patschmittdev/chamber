@@ -238,6 +238,10 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     listForMind: { status: 'planned' },
     listForMindDetails: { status: 'planned' },
     browseMarketplace: { status: 'planned' },
+    // Authoring is desktop-backed. No server route is wired yet, so reads reject
+    // and writes return an honest failure result (never a fabricated success).
+    getSource: { status: 'planned', rejects: true },
+    save: { status: 'planned' },
   },
   mcp: {
     getServers: { status: 'planned' },

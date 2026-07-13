@@ -198,6 +198,8 @@ export const IPC = {
     LIST_FOR_MIND: 'skills:listForMind',
     LIST_FOR_MIND_DETAILS: 'skills:listForMindDetails',
     BROWSE_MARKETPLACE: 'skills:browseMarketplace',
+    GET_SOURCE: 'skills:getSource',
+    SAVE: 'skills:save',
   },
   MCP: {
     GET_SERVERS: 'mcp:getServers',

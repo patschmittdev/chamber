@@ -6,6 +6,8 @@ import type {
   SkillDetail,
   SkillManifest,
   SkillMarketplaceBrowseResult,
+  SkillSaveResult,
+  SkillSource,
 } from '@chamber/shared';
 import type {
   GenesisMindTemplateMarketplaceResult,
@@ -13,6 +15,13 @@ import type {
 } from '@chamber/services';
 
 const mindIdSchema = z.string().min(1, 'must be a non-empty string');
+const skillIdSchema = z.string().min(1, 'must be a non-empty string');
+const saveRequestSchema = z.object({
+  mindId: z.string().min(1, 'must be a non-empty string'),
+  id: z.string().min(1, 'must be a non-empty string'),
+  content: z.string(),
+  expectedMtimeMs: z.number().nullable(),
+});
 
 export interface SkillsIpcMindProvider {
   getMindPath(mindId: string): string | undefined;
@@ -21,6 +30,14 @@ export interface SkillsIpcMindProvider {
 export interface MindSkillDiscoveryPort {
   list(mindPath: string): Promise<SkillManifest[]>;
   listDetails(mindPath: string): Promise<SkillDetail[]>;
+}
+
+export interface MindSkillAuthoringPort {
+  readSource(mindPath: string, id: string): Promise<SkillSource>;
+  save(
+    mindPath: string,
+    request: { id: string; content: string; expectedMtimeMs: number | null },
+  ): Promise<SkillSaveResult>;
 }
 
 export interface MarketplaceSkillCatalogPort {
@@ -34,6 +51,7 @@ export interface GenesisMindTemplateMarketplaceCatalogPort {
 export function setupSkillsIPC(
   mindProvider: SkillsIpcMindProvider,
   discovery: MindSkillDiscoveryPort,
+  authoring: MindSkillAuthoringPort,
   marketplaceSkillCatalog?: MarketplaceSkillCatalogPort,
   templateCatalog?: GenesisMindTemplateMarketplaceCatalogPort,
 ): void {
@@ -49,6 +67,28 @@ export function setupSkillsIPC(
     const mindPath = mindProvider.getMindPath(mindId);
     if (!mindPath) return [];
     return discovery.listDetails(mindPath);
+  });
+
+  ipcMain.handle(IPC.SKILLS.GET_SOURCE, async (_event, rawMindId: unknown, rawId: unknown) => {
+    const [mindId, id] = parseIpcArgs(
+      IPC.SKILLS.GET_SOURCE,
+      z.tuple([mindIdSchema, skillIdSchema]),
+      [rawMindId, rawId],
+    );
+    const mindPath = mindProvider.getMindPath(mindId);
+    if (!mindPath) throw new Error(`Mind ${mindId} not found`);
+    return authoring.readSource(mindPath, id);
+  });
+
+  ipcMain.handle(IPC.SKILLS.SAVE, async (_event, rawRequest: unknown) => {
+    const request = parseIpcArgs(IPC.SKILLS.SAVE, saveRequestSchema, rawRequest);
+    const mindPath = mindProvider.getMindPath(request.mindId);
+    if (!mindPath) return { success: false, error: `Mind ${request.mindId} not found` };
+    return authoring.save(mindPath, {
+      id: request.id,
+      content: request.content,
+      expectedMtimeMs: request.expectedMtimeMs,
+    });
   });
 
   ipcMain.handle(IPC.SKILLS.BROWSE_MARKETPLACE, async () => {

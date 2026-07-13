@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
 import { ipcMain } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { IPC } from '@chamber/shared';
-import type { SkillDetail } from '@chamber/shared';
+import type { SkillDetail, SkillSaveResult, SkillSource } from '@chamber/shared';
 import type { GenesisMindTemplateMarketplaceResult, MarketplaceSkillCatalogResult } from '@chamber/services';
 import { setupSkillsIPC } from './skills';
 
@@ -18,13 +18,19 @@ describe('Skills IPC', () => {
   const getMindPath = vi.fn<(mindId: string) => string | undefined>();
   const list = vi.fn<(mindPath: string) => Promise<Array<{ id: string; name: string }>>>();
   const listDetails = vi.fn<(mindPath: string) => Promise<SkillDetail[]>>();
+  const readSource = vi.fn<(mindPath: string, id: string) => Promise<SkillSource>>();
+  const save = vi.fn<
+    (mindPath: string, request: { id: string; content: string; expectedMtimeMs: number | null }) => Promise<SkillSaveResult>
+  >();
 
   beforeEach(() => {
     vi.clearAllMocks();
     getMindPath.mockReturnValue(undefined);
     list.mockResolvedValue([]);
     listDetails.mockResolvedValue([]);
-    setupSkillsIPC({ getMindPath }, { list, listDetails });
+    readSource.mockResolvedValue({ id: 'helper', content: '', mtimeMs: null });
+    save.mockResolvedValue({ success: true });
+    setupSkillsIPC({ getMindPath }, { list, listDetails }, { readSource, save });
   });
 
   for (const [label, value] of [
@@ -82,7 +88,7 @@ describe('Skills IPC', () => {
     const templateCatalog = { listTemplates: vi.fn<() => Promise<GenesisMindTemplateMarketplaceResult>>() };
     skillCatalog.listSkills.mockResolvedValue(marketplaceSkillResult());
     templateCatalog.listTemplates.mockResolvedValue(templateMarketplaceResult());
-    setupSkillsIPC({ getMindPath }, { list, listDetails }, skillCatalog, templateCatalog);
+    setupSkillsIPC({ getMindPath }, { list, listDetails }, { readSource, save }, skillCatalog, templateCatalog);
 
     await expect(getHandler(IPC.SKILLS.BROWSE_MARKETPLACE)(EVT)).resolves.toEqual({
       skills: [expect.objectContaining({ id: 'team-helper', displayName: 'Team Helper' })],
@@ -99,6 +105,57 @@ describe('Skills IPC', () => {
       })],
       templateSources: [expect.objectContaining({ id: 'github:contoso/genesis-minds', status: 'ok' })],
     });
+  });
+  it('reads a skill source only through the trusted resolved mind path', async () => {
+    getMindPath.mockReturnValue('C:\\minds\\lucy');
+    readSource.mockResolvedValue({ id: 'writer', content: '# writer\n', mtimeMs: 12 });
+
+    await expect(getHandler(IPC.SKILLS.GET_SOURCE)(EVT, 'lucy', 'writer')).resolves.toEqual({
+      id: 'writer',
+      content: '# writer\n',
+      mtimeMs: 12,
+    });
+    expect(getMindPath).toHaveBeenCalledWith('lucy');
+    expect(readSource).toHaveBeenCalledWith('C:\\minds\\lucy', 'writer');
+  });
+
+  it('rejects a non-string skill id for getSource without resolving a mind', async () => {
+    await expect(getHandler(IPC.SKILLS.GET_SOURCE)(EVT, 'lucy', 42)).rejects.toThrow(TypeError);
+    expect(getMindPath).not.toHaveBeenCalled();
+    expect(readSource).not.toHaveBeenCalled();
+  });
+
+  it('throws when getSource targets an unknown mind', async () => {
+    await expect(getHandler(IPC.SKILLS.GET_SOURCE)(EVT, 'ghost', 'writer')).rejects.toThrow(/ghost/);
+    expect(readSource).not.toHaveBeenCalled();
+  });
+
+  it('saves a skill only through the trusted resolved mind path', async () => {
+    getMindPath.mockReturnValue('C:\\minds\\lucy');
+    const request = { mindId: 'lucy', id: 'writer', content: '---\nname: writer\ndescription: x\n---\n', expectedMtimeMs: null };
+
+    await expect(getHandler(IPC.SKILLS.SAVE)(EVT, request)).resolves.toEqual({ success: true });
+    expect(getMindPath).toHaveBeenCalledWith('lucy');
+    expect(save).toHaveBeenCalledWith('C:\\minds\\lucy', {
+      id: 'writer',
+      content: request.content,
+      expectedMtimeMs: null,
+    });
+  });
+
+  it('rejects a malformed save payload without resolving a mind', async () => {
+    await expect(getHandler(IPC.SKILLS.SAVE)(EVT, { mindId: 'lucy', id: 'writer' })).rejects.toThrow(TypeError);
+    expect(getMindPath).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('returns a failure result when save targets an unknown mind', async () => {
+    const request = { mindId: 'ghost', id: 'writer', content: 'x', expectedMtimeMs: null };
+    await expect(getHandler(IPC.SKILLS.SAVE)(EVT, request)).resolves.toEqual({
+      success: false,
+      error: 'Mind ghost not found',
+    });
+    expect(save).not.toHaveBeenCalled();
   });
 });
 
