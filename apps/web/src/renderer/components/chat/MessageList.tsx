@@ -367,7 +367,7 @@ const MessageRow = memo(function MessageRow({
             {formatTime(message.timestamp)}
           </span>
           {message.forkSeed && (
-            <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-foreground/70">
               Prior context
             </span>
           )}

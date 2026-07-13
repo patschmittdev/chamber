@@ -63,6 +63,14 @@ describe('ConversationHistoryPanel', () => {
     expect(within(history).getByRole('button', { name: 'Expand history panel' })).toBeTruthy();
   });
 
+  it('gives the conversation search input the shared focus-ring utility', () => {
+    renderHistoryPanel({ activeMindId: mind.mindId, minds: [mind], conversationHistoryByMind: { [mind.mindId]: [] } });
+
+    const search = screen.getByLabelText('Search conversations');
+    expect(search.className).toContain('focus-ring');
+    expect(search.className).not.toContain('focus:border-primary');
+  });
+
   it('locks the history rail collapsed and disables the toggle when the shell forces auto-collapse', () => {
     render(
       <AppStateProvider testInitialState={{ activeMindId: mind.mindId, minds: [mind], conversationHistoryByMind: { [mind.mindId]: [] } }}>

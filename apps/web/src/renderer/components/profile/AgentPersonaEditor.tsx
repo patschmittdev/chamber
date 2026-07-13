@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { Camera, FileText, Trash2 } from 'lucide-react';
+import { Alert } from '../ui/alert';
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,6 @@ const secondaryButtonClass = 'rounded-lg border border-border bg-card px-4 py-2 
 const primaryButtonClass = 'rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50';
 const iconButtonClass = 'inline-flex items-center justify-center rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground transition-colors hover:bg-accent';
 const restartButtonClass = 'rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 disabled:opacity-50 dark:text-amber-200';
-const alertClass = 'rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive';
 
 interface AgentPersonaEditorProps {
   mindId: string;
@@ -117,7 +117,7 @@ export function AgentPersonaEditor({ mindId }: AgentPersonaEditorProps) {
   return (
     <div className="space-y-5">
       {loading ? <p className="text-sm text-muted-foreground">Loading profile...</p> : null}
-      {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+      {error ? <Alert variant="destructive">{error}</Alert> : null}
 
       {profile ? (
         <>
@@ -290,7 +290,7 @@ function ProfileMarkdownEditor({
           <DialogTitle>{file?.label ?? 'Profile file'}</DialogTitle>
           <DialogDescription>{file?.relativePath}</DialogDescription>
         </DialogHeader>
-        {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+        {error ? <Alert variant="destructive">{error}</Alert> : null}
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -373,7 +373,7 @@ function AvatarCropModal({
           <DialogTitle>Crop avatar</DialogTitle>
           <DialogDescription>Position the square crop, then save a normalized 512x512 avatar.</DialogDescription>
         </DialogHeader>
-        {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+        {error ? <Alert variant="destructive">{error}</Alert> : null}
         {source && crop ? (
           <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_220px]">
             <div className="flex min-h-96 items-center justify-center rounded-2xl border border-border bg-black p-3">

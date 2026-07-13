@@ -365,7 +365,7 @@ export function VoiceDictationSettingsSection() {
 
   return (
     <section>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+      <h2 className="mb-3 text-lg font-semibold text-foreground">
         Voice dictation
       </h2>
       <div className="space-y-4 rounded-lg border border-border bg-card p-4">

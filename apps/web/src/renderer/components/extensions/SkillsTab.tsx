@@ -15,7 +15,9 @@ import { buildSkillMarkdown, validateSkillId } from '@chamber/shared/skill-autho
 import { AlertTriangle, PackageSearch, Pencil, Plus, Sparkles, Store } from 'lucide-react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
+import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -24,14 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { Skeleton } from '../ui/skeleton';
-import { TabEmptyState, TabError } from './extensionsShared';
+import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 
-const secondaryButtonClass =
-  'rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50';
-const primaryButtonClass =
-  'rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50';
-const alertClass = 'rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive';
 const fieldInputClass =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary';
 
@@ -135,14 +131,10 @@ export function SkillsTab() {
           detail="Local and Chamber-managed skills are read from bounded metadata under .github/skills."
           action={
             activeMindId ? (
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className={cn(primaryButtonClass, 'flex items-center gap-1.5')}
-              >
+              <Button onClick={() => setCreateOpen(true)}>
                 <Plus size={16} />
                 New skill
-              </button>
+              </Button>
             ) : undefined
           }
         />
@@ -225,7 +217,7 @@ function LocalSkillsSection({
   onDetails: (skill: SkillDetail) => void;
   onEdit: (skill: SkillDetail) => void;
 }) {
-  if (loading) return <LoadingRows label="Loading skills" />;
+  if (loading) return <TabLoading label="Loading skills" />;
   if (error) return <TabError message={error} />;
   if (skills.length === 0) {
     return (
@@ -296,7 +288,7 @@ function MarketplaceSection({
   onTemplateDetails: (template: MarketplaceTemplateEntry) => void;
   onMalformedDetails: (entry: MarketplaceSkillMalformedEntry) => void;
 }) {
-  if (loading) return <LoadingRows label="Loading marketplace" />;
+  if (loading) return <TabLoading label="Loading marketplace" />;
   if (error) return <TabError message={error} />;
   if (!result) return null;
 
@@ -652,26 +644,18 @@ function EscapedTextBlock({ label, text }: { label: string; text: string }) {
 
 function DetailsButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      className="mt-3 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-      onClick={onClick}
-    >
+    <Button variant="outline" size="sm" className="mt-3" onClick={onClick}>
       {label}
-    </button>
+    </Button>
   );
 }
 
 function CardActionButton({ label, onClick, icon }: { label: string; onClick: () => void; icon?: ReactNode }) {
   return (
-    <button
-      type="button"
-      className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-      onClick={onClick}
-    >
+    <Button variant="outline" size="sm" onClick={onClick}>
       {icon}
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -767,7 +751,7 @@ function SkillCreateDialog({
           <DialogTitle>New skill</DialogTitle>
           <DialogDescription>Create a SKILL.md under this mind&apos;s .github/skills directory.</DialogDescription>
         </DialogHeader>
-        {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+        {error ? <Alert variant="destructive">{error}</Alert> : null}
         <div className="flex flex-col gap-3">
           <Field label="Skill id" htmlFor="skill-create-id" hint="Lowercase letters, numbers, and single hyphens, for example note-taker.">
             <input
@@ -797,12 +781,12 @@ function SkillCreateDialog({
           </Field>
         </div>
         <DialogFooter>
-          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={handleCreate} disabled={!canSubmit} className={primaryButtonClass}>
+          </Button>
+          <Button onClick={handleCreate} disabled={!canSubmit}>
             {saving ? 'Creating...' : 'Create skill'}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -884,8 +868,8 @@ function SkillSourceEditor({
           <DialogTitle>{skill ? `Edit ${skill.name}` : 'Edit skill'}</DialogTitle>
           <DialogDescription>{skill?.source.manifestPath ?? 'SKILL.md'}</DialogDescription>
         </DialogHeader>
-        {loadError ? <div role="alert" className={alertClass}>{loadError}</div> : null}
-        {error ? <div role="alert" className={alertClass}>{error}</div> : null}
+        {loadError ? <Alert variant="destructive">{loadError}</Alert> : null}
+        {error ? <Alert variant="destructive">{error}</Alert> : null}
         <textarea
           aria-label="SKILL.md content"
           value={content}
@@ -896,25 +880,15 @@ function SkillSourceEditor({
         />
         <DialogFooter>
           {dirty ? <span className="mr-auto self-center text-xs text-amber-600 dark:text-amber-300">Unsaved edits</span> : null}
-          <button type="button" onClick={onClose} className={secondaryButtonClass}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={handleSave} disabled={!dirty || saving || loading} className={primaryButtonClass}>
+          </Button>
+          <Button onClick={handleSave} disabled={!dirty || saving || loading}>
             {saving ? 'Saving...' : 'Save'}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function LoadingRows({ label }: { label: string }) {
-  return (
-    <div aria-label={label} className="grid gap-3">
-      <p className="text-sm text-muted-foreground">{label}...</p>
-      <Skeleton className="h-24" />
-      <Skeleton className="h-24" />
-    </div>
   );
 }
 

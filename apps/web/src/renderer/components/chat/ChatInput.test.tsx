@@ -149,6 +149,11 @@ describe('ChatInput', () => {
     expect((textarea as HTMLTextAreaElement).value).toBe('Hello');
   });
 
+  it('composer textarea carries the shared focus-ring utility', () => {
+    render(<ChatInput {...defaultProps} />);
+    expect(screen.getByRole('textbox').className).toContain('focus-ring');
+  });
+
   it('Enter key submits non-empty text', () => {
     const onSend = vi.fn();
     render(<ChatInput {...defaultProps} onSend={onSend} />);
