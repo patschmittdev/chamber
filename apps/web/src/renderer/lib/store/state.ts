@@ -7,7 +7,7 @@ import { DEFAULT_APP_FEATURE_FLAGS, type AppFeatureFlags } from '@chamber/shared
 export type LensView = 'chat' | string;
 
 /** Tabs available in the Extensions view; used by the one-shot deep-link intent. */
-export type ExtensionsTab = 'mcp' | 'tools' | 'skills' | 'lens';
+export type ExtensionsTab = 'mcp' | 'tools' | 'skills' | 'lens' | 'prompts';
 
 export interface AgentProfileSummary {
   mindId: string;
@@ -76,7 +76,7 @@ export interface AppState {
    * an action such as creating a skill. ExtensionsView applies the tab and
    * SkillsTab applies the action, then each clears the intent.
    */
-  pendingExtensionsIntent: { tab: ExtensionsTab; action?: 'create-skill' } | null;
+  pendingExtensionsIntent: { tab: ExtensionsTab; action?: 'create-skill' | 'create-prompt' } | null;
   featureFlags: AppFeatureFlags;
   discoveredViews: LensViewManifest[];
   disabledLensViewKeys: string[];
@@ -123,7 +123,7 @@ export type AppAction =
   | { type: 'SET_SELECTED_MODEL'; payload: string | null }
   | { type: 'SET_ACTIVE_VIEW'; payload: LensView }
   | { type: 'SET_PENDING_SETTINGS_INTENT'; payload: { section: string; mindId?: string } | null }
-  | { type: 'SET_PENDING_EXTENSIONS_INTENT'; payload: { tab: ExtensionsTab; action?: 'create-skill' } | null }
+  | { type: 'SET_PENDING_EXTENSIONS_INTENT'; payload: { tab: ExtensionsTab; action?: 'create-skill' | 'create-prompt' } | null }
   | { type: 'SET_FEATURE_FLAGS'; payload: AppFeatureFlags }
   | { type: 'SET_DISCOVERED_VIEWS'; payload: LensViewManifest[] }
   | { type: 'SET_DISABLED_LENS_VIEW_IDS'; payload: { mindId: string; viewIds: string[] } }

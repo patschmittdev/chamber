@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { McpServersTab } from './McpServersTab';
 import { ToolsTab } from './ToolsTab';
 import { SkillsTab } from './SkillsTab';
+import { PromptsTab } from './PromptsTab';
 import { LensViewsTab } from './LensViewsTab';
 
 export function ExtensionsView() {
@@ -33,7 +34,7 @@ export function ExtensionsView() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Extensions</h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Manage the MCP servers, tools, skills, and Lens views that extend Chamber.
+              Manage the MCP servers, tools, skills, prompts, and Lens views that extend Chamber.
             </p>
           </div>
         </header>
@@ -51,6 +52,7 @@ export function ExtensionsView() {
             <TabsTrigger value="mcp">MCP servers</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>
             <TabsTrigger value="skills">Skills</TabsTrigger>
+            <TabsTrigger value="prompts">Prompts</TabsTrigger>
             <TabsTrigger value="lens">Lens views</TabsTrigger>
           </TabsList>
 
@@ -62,6 +64,9 @@ export function ExtensionsView() {
           </TabsContent>
           <TabsContent value="skills" className="mt-4">
             <SkillsTab />
+          </TabsContent>
+          <TabsContent value="prompts" className="mt-4">
+            <PromptsTab />
           </TabsContent>
           <TabsContent value="lens" className="mt-4">
             <LensViewsTab />

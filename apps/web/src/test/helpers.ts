@@ -445,6 +445,11 @@ export function mockElectronAPI(): ElectronAPI {
       getServers: vi.fn().mockResolvedValue([]),
       setServers: vi.fn().mockResolvedValue([]),
     },
+    prompts: {
+      list: vi.fn().mockResolvedValue([]),
+      save: vi.fn().mockResolvedValue({ success: true, prompts: [] }),
+      delete: vi.fn().mockResolvedValue({ success: true, prompts: [] }),
+    },
   };
 }
 

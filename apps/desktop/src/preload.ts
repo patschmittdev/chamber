@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { createIpcListener, IPC } from '@chamber/shared';
 import type { A2AIncomingPayload } from '@chamber/shared/types';
 import type { SkillSaveRequest } from '@chamber/shared/skill-types';
+import type { PromptSaveRequest } from '@chamber/shared/prompt-types';
 import type { AppearanceBridge, ElectronAPI } from '@chamber/shared/electron-types';
 import type { AppearanceSnapshot } from '@chamber/shared/appearance-types';
 import type { Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent } from '@chamber/shared/a2a-types';
@@ -208,6 +209,11 @@ const electronAPI: ElectronAPI = {
   mcp: {
     getServers: (mindId?) => ipcRenderer.invoke(IPC.MCP.GET_SERVERS, mindId),
     setServers: (servers, mindId?) => ipcRenderer.invoke(IPC.MCP.SET_SERVERS, servers, mindId),
+  },
+  prompts: {
+    list: () => ipcRenderer.invoke(IPC.PROMPTS.LIST),
+    save: (request: PromptSaveRequest) => ipcRenderer.invoke(IPC.PROMPTS.SAVE, request),
+    delete: (id: string) => ipcRenderer.invoke(IPC.PROMPTS.DELETE, id),
   },
 };
 

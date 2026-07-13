@@ -856,6 +856,14 @@ describe('appReducer', () => {
     expect(cleared.pendingExtensionsIntent).toBeNull();
   });
 
+  it('SET_PENDING_EXTENSIONS_INTENT carries a create-prompt target for the prompts tab', () => {
+    const opened = appReducer(initialState, {
+      type: 'SET_PENDING_EXTENSIONS_INTENT',
+      payload: { tab: 'prompts', action: 'create-prompt' },
+    });
+    expect(opened.pendingExtensionsIntent).toEqual({ tab: 'prompts', action: 'create-prompt' });
+  });
+
   it('SET_FEATURE_FLAGS updates feature flags', () => {
     const state = appReducer(initialState, {
       type: 'SET_FEATURE_FLAGS',

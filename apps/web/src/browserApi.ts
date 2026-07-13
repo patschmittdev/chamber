@@ -154,6 +154,7 @@ export function installBrowserApi(): void {
       }
     });
   };
+  const promptLibraryBrowserError = 'Prompt library is not available in browser mode yet.';
   const api: ElectronAPI = {
     chat: {
       send: async (mindId, message, messageId, model, attachments) => {
@@ -471,6 +472,15 @@ export function installBrowserApi(): void {
       // Web host has no on-disk mind directory to read or write .mcp.json.
       getServers: async () => [],
       setServers: async () => unavailable('mcp.setServers'),
+    },
+    prompts: {
+      // User-scoped prompt library is desktop-backed; the browser host has no
+      // config directory to read. list() throws one honest unavailable signal
+      // (both the composer and the Prompts tab degrade from it) while writes
+      // return an honest failure result rather than a fabricated success.
+      list: async () => unavailable('prompts.list'),
+      save: async () => ({ success: false, error: promptLibraryBrowserError }),
+      delete: async () => ({ success: false, error: promptLibraryBrowserError }),
     },
   };
   window.electronAPI = api;

@@ -78,6 +78,7 @@ import type {
   SkillSource,
 } from './skill-types';
 import type { McpServerEntry } from './mcp-types';
+import type { Prompt, PromptMutationResult, PromptSaveRequest } from './prompt-types';
 
 export interface ElectronAPI {
   chat: {
@@ -312,6 +313,25 @@ export interface ElectronAPI {
      * timeout, cwd) are preserved for servers kept on the same transport.
      */
     setServers: (servers: McpServerEntry[], mindId?: string) => Promise<McpServerEntry[]>;
+  };
+  prompts: {
+    /**
+     * Lists the user's saved prompt library. User-scoped and mind-independent.
+     * Returns [] when the library is absent or unreadable; degrades to [] in
+     * browser mode where the library is desktop-only.
+     */
+    list: () => Promise<Prompt[]>;
+    /**
+     * Creates a prompt when `id` is null or updates the prompt with that id.
+     * Validates title, body, and description bounds and returns the refreshed
+     * library on success. Desktop-backed; returns a failure result in browser mode.
+     */
+    save: (request: PromptSaveRequest) => Promise<PromptMutationResult>;
+    /**
+     * Deletes the prompt with the given id and returns the refreshed library on
+     * success. Desktop-backed; returns a failure result in browser mode.
+     */
+    delete: (id: string) => Promise<PromptMutationResult>;
   };
 }
 

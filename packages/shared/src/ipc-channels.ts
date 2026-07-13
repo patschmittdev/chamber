@@ -207,6 +207,11 @@ export const IPC = {
     GET_SERVERS: 'mcp:getServers',
     SET_SERVERS: 'mcp:setServers',
   },
+  PROMPTS: {
+    LIST: 'prompts:list',
+    SAVE: 'prompts:save',
+    DELETE: 'prompts:delete',
+  },
 } as const;
 
 type IpcNamespace = typeof IPC;

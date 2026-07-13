@@ -205,6 +205,30 @@ function skillsCommands(context: CommandContext): Command[] {
   ];
 }
 
+/**
+ * Prompt-library entry: open the Extensions Prompts tab and request the create
+ * dialog through the one-shot extensions intent. Available without an active
+ * mind because the prompt library is user-scoped rather than per-mind.
+ */
+function promptsCommands(context: CommandContext): Command[] {
+  return [
+    {
+      id: 'action:new-prompt',
+      title: 'New prompt',
+      group: GROUP_VIEWS,
+      icon: Plus,
+      keywords: ['create prompt', 'prompt', 'prompt library'],
+      run: () => {
+        context.dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' });
+        context.dispatch({
+          type: 'SET_PENDING_EXTENSIONS_INTENT',
+          payload: { tab: 'prompts', action: 'create-prompt' },
+        });
+      },
+    },
+  ];
+}
+
 /** Keyboard-driven surfaces: the palette toggle and the shortcuts help overlay. */
 function generalCommands(context: CommandContext): Command[] {
   return [
@@ -243,6 +267,7 @@ appCommandRegistry.register(viewCommands);
 appCommandRegistry.register(agentCommands);
 appCommandRegistry.register(conversationCommands);
 appCommandRegistry.register(skillsCommands);
+appCommandRegistry.register(promptsCommands);
 appCommandRegistry.register(generalCommands);
 
 /**

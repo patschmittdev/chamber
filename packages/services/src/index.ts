@@ -18,6 +18,7 @@ export * from './mindMemory';
 export * from './mindProfile';
 export * from './operatorActivity';
 export * from './ports';
+export * from './promptLibrary';
 export * from './sdk';
 export * from './skills';
 export * from './tools';

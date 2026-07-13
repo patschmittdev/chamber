@@ -17,6 +17,7 @@ export type {
   SkillSource,
   SkillValidationError,
 } from './skill-types';
+export type { Prompt, PromptMutationResult, PromptSaveRequest } from './prompt-types';
 
 // Shared types across main, preload, and renderer processes
 
