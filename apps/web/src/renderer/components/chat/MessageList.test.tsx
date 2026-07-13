@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AppStateProvider, useAppDispatch } from '../../lib/store';
 import { MessageList } from './MessageList';
-import type { ChatMessage, MindContext, MessageVariantGroup } from '@chamber/shared/types';
-import { installElectronAPI } from '../../../test/helpers';
+import type { ChatMessage, MindContext, MessageVariantGroup, ModelInfo } from '@chamber/shared/types';
+import { installCmdkDom, installElectronAPI } from '../../../test/helpers';
+
+installCmdkDom();
 
 const Q: MindContext = {
   mindId: 'q',
@@ -35,9 +37,57 @@ function renderMessages(messages: ChatMessage[]) {
   );
 }
 
+function renderWithModels(messages: ChatMessage[], models: ModelInfo[], selectedModel: string) {
+  return render(
+    <AppStateProvider
+      testInitialState={{
+        activeMindId: MONEYPENNY.mindId,
+        minds: [MONEYPENNY],
+        messagesByMind: { [MONEYPENNY.mindId]: messages },
+        availableModels: models,
+        selectedModel,
+      }}
+    >
+      <MessageList />
+    </AppStateProvider>,
+  );
+}
+
+function modelInfo(id: string, name: string): ModelInfo {
+  return { id, name };
+}
+
+function modelOption(name: string): HTMLElement {
+  const items = Array.from(document.querySelectorAll('[data-slot="command-item"]')) as HTMLElement[];
+  const match = items.find((el) => el.textContent?.includes(name));
+  if (!match) throw new Error(`No model option matching ${name}`);
+  return match;
+}
+
 describe('MessageList', () => {
+  let api: ReturnType<typeof installElectronAPI>;
+
   beforeEach(() => {
-    installElectronAPI();
+    api = installElectronAPI();
+  });
+
+  it('regenerates one-shot with a chosen model from the message action submenu', async () => {
+    renderWithModels(
+      [
+        { id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'ask' }], timestamp: 1, eventId: 'evt-u1' },
+        { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: 'answer' }], timestamp: 2, eventId: 'evt-a1' },
+      ],
+      [modelInfo('model-1', 'Model 1'), modelInfo('model-2', 'Model 2')],
+      'copilot:model-1',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate with a different model' }));
+    fireEvent.click(modelOption('Model 2'));
+
+    await waitFor(() => {
+      expect(api.chat.regenerate).toHaveBeenCalledWith(MONEYPENNY.mindId, expect.any(String), 'copilot:model-2');
+    });
+    expect(api.mind.setModel).not.toHaveBeenCalled();
   });
 
   it('renders A2A user messages with the sending agent attribution', () => {

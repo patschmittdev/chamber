@@ -100,7 +100,7 @@ export function useChatStreaming() {
   // Re-run the most recent user turn. The main process resolves and truncates
   // the last user turn from persisted history, so the renderer only replaces
   // the last exchange optimistically and streams a fresh response.
-  const regenerate = useCallback(async () => {
+  const regenerate = useCallback(async (modelOverride?: string) => {
     if (isBusy || !activeMindId) return;
     const messages = messagesByMind[activeMindId] ?? [];
     const lastUser = [...messages].reverse().find((message) => message.role === 'user');
@@ -116,7 +116,9 @@ export function useChatStreaming() {
     dispatch({ type: 'TRUNCATE_AFTER', payload: { mindId, messageId: lastUser.id } });
     dispatch({ type: 'ADD_USER_MESSAGE', payload: { id: generateId(), content: prompt, timestamp: Date.now() } });
     const assistantId = beginAssistantTurn(mindId);
-    await window.electronAPI.chat.regenerate(mindId, assistantId, selectedModel ?? undefined);
+    // A model override regenerates one-shot with that model; it never persists the
+    // mind's selection (no mind.setModel), so the composer's model stays as-is.
+    await window.electronAPI.chat.regenerate(mindId, assistantId, modelOverride ?? selectedModel ?? undefined);
     await refreshConversationHistory(mindId);
   }, [activeMindId, isBusy, selectedModel, messagesByMind, dispatch, beginAssistantTurn, refreshConversationHistory]);
 

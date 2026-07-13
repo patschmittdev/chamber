@@ -17,6 +17,28 @@ import type {
 } from '@chamber/shared/chatroom-types';
 
 // ---------------------------------------------------------------------------
+// cmdk DOM shims
+// ---------------------------------------------------------------------------
+
+class MockResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+/**
+ * jsdom provides neither ResizeObserver nor Element.scrollIntoView, both of
+ * which cmdk touches while rendering a command list. Call once at module scope
+ * in any test that mounts a cmdk-backed menu (Command/CommandInput).
+ */
+export function installCmdkDom(): void {
+  (globalThis as unknown as { ResizeObserver: typeof MockResizeObserver }).ResizeObserver = MockResizeObserver;
+  if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = function () {};
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ContentBlock factories
 // ---------------------------------------------------------------------------
 

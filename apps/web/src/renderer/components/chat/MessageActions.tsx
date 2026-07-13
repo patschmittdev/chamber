@@ -1,15 +1,23 @@
 import { useCallback, useState } from 'react';
-import { Check, Copy, FileCode, GitFork, Pencil, RefreshCw, Trash2, X, type LucideIcon } from 'lucide-react';
-import type { ChatMessage } from '@chamber/shared/types';
+import { Check, ChevronDown, Copy, FileCode, GitFork, Pencil, RefreshCw, Trash2, X, type LucideIcon } from 'lucide-react';
+import type { ChatMessage, ModelInfo } from '@chamber/shared/types';
+import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
+import { cn } from '../../lib/utils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { toMarkdown, toPlainText } from './messageContent';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from '../ui/command';
+
+const ROW_ACTION_BASE = 'flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40';
+const ROW_ACTION_NEUTRAL = 'text-muted-foreground hover:bg-accent hover:text-foreground';
+const ROW_ACTION_DANGER = 'text-destructive hover:bg-destructive/10';
 
 interface MessageActionsProps {
   message: ChatMessage;
   /** True while the active conversation cannot be safely mutated. */
   isBusy: boolean;
   /** Regenerate the assistant response. Omit to hide (not the newest turn, or unsupported). */
-  regenerate?: RowAction;
+  regenerate?: RegenerateAction;
   /** Edit a user turn in place. Omit to hide (assistant turn, unsaved turn, or unsupported). */
   edit?: RowAction;
   /** Forks a new conversation from this persisted turn. */
@@ -31,6 +39,21 @@ export interface RowAction {
 }
 
 /**
+ * The regenerate action. Beyond a plain rerun it can offer a one-shot model
+ * submenu: `onRun()` reruns with the mind's current model (the default click),
+ * and `onRun(modelKey)` reruns once with the chosen model without changing the
+ * mind's persisted selection. `models` populates the submenu; when it is empty
+ * or omitted only the plain button renders. `currentModel` marks the mind's
+ * active model in the submenu.
+ */
+export interface RegenerateAction {
+  onRun: (model?: string) => void;
+  disabledReason?: string;
+  models?: ModelInfo[];
+  currentModel?: string | null;
+}
+
+/**
  * Hover-revealed action row for a completed message. Mirrors the
  * M365/Anthropic pattern: actions stay out of the way until the row is hovered
  * (or a control is focused for keyboard users). Copy and Copy as markdown are
@@ -42,6 +65,7 @@ export function MessageActions({ message, isBusy, regenerate, edit, fork, onDele
   const plain = useCopyToClipboard();
   const markdown = useCopyToClipboard();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const handleCopyPlain = useCallback(() => plain.copy(toPlainText(message)), [plain, message]);
   const handleCopyMarkdown = useCallback(() => markdown.copy(toMarkdown(message)), [markdown, message]);
@@ -51,7 +75,15 @@ export function MessageActions({ message, isBusy, regenerate, edit, fork, onDele
   }, [onDelete]);
 
   return (
-    <div className="mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+    <div
+      className={cn(
+        'mt-1.5 flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100',
+        // Keep the row (and its caret) visible while the model menu is open: the
+        // menu content is portaled and takes focus, so hover and focus-within on
+        // the row no longer hold, and the row would otherwise collapse mid-pick.
+        modelMenuOpen ? 'opacity-100' : 'opacity-0',
+      )}
+    >
       <ActionButton
         onClick={handleCopyPlain}
         icon={plain.copied ? Check : Copy}
@@ -66,14 +98,61 @@ export function MessageActions({ message, isBusy, regenerate, edit, fork, onDele
       />
 
       {regenerate && (
-        <ActionButton
-          onClick={regenerate.onRun}
-          icon={RefreshCw}
-          label="Regenerate"
-          ariaLabel="Regenerate response"
-          disabled={isBusy || Boolean(regenerate.disabledReason)}
-          title={regenerate.disabledReason}
-        />
+        <span className="flex items-center">
+          <ActionButton
+            onClick={() => regenerate.onRun()}
+            icon={RefreshCw}
+            label="Regenerate"
+            ariaLabel="Regenerate response"
+            disabled={isBusy || Boolean(regenerate.disabledReason)}
+            title={regenerate.disabledReason}
+          />
+          {regenerate.models && regenerate.models.length >= 2 && (
+            <Popover open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
+              <PopoverTrigger
+                aria-label="Regenerate with a different model"
+                title={regenerate.disabledReason ?? 'Regenerate with a different model'}
+                disabled={isBusy || Boolean(regenerate.disabledReason)}
+                className={cn(ROW_ACTION_BASE, ROW_ACTION_NEUTRAL, 'px-1')}
+              >
+                <ChevronDown size={12} aria-hidden />
+              </PopoverTrigger>
+              <PopoverContent align="start" sideOffset={4} className="w-60 p-0">
+                <Command>
+                  <CommandInput placeholder="Regenerate with model" aria-label="Search models to regenerate with" />
+                  <CommandList className="p-1">
+                    <CommandEmpty>No matching models</CommandEmpty>
+                    {regenerate.models.map((entry) => {
+                      const key = modelSelectionKeyFromModel(entry);
+                      return (
+                        <CommandItem
+                          key={key}
+                          value={key}
+                          keywords={[entry.name]}
+                          onSelect={() => {
+                            setModelMenuOpen(false);
+                            regenerate.onRun(key);
+                          }}
+                          className="justify-between"
+                        >
+                          <span className="flex items-center gap-2">
+                            {entry.name}
+                            {entry.provider === 'byo' ? (
+                              <span className="rounded bg-genesis/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-genesis">Local</span>
+                            ) : null}
+                          </span>
+                          {key === regenerate.currentModel ? (
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Current</span>
+                          ) : null}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          )}
+        </span>
       )}
 
       {edit && (
@@ -156,12 +235,7 @@ function ActionButton({
       disabled={disabled}
       aria-label={ariaLabel}
       title={title}
-      className={
-        'flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 '
-        + (variant === 'danger'
-          ? 'text-destructive hover:bg-destructive/10'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground')
-      }
+      className={cn(ROW_ACTION_BASE, variant === 'danger' ? ROW_ACTION_DANGER : ROW_ACTION_NEUTRAL)}
     >
       <Icon size={12} aria-hidden />
       {label}
