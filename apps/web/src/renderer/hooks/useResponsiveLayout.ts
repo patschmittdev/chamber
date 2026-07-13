@@ -7,18 +7,18 @@ const LG_BREAKPOINT = 1024;
 export interface ResponsiveLayout {
   /** True when viewport is below `lg` (1024px). History panel should auto-collapse. */
   shouldAutoCollapseHistory: boolean;
-  /** True when viewport is below `md` (768px). Agents column should clamp to min width. */
-  shouldClampMindSidebar: boolean;
+  /** True when viewport is below `md` (768px). Agents rail should auto-collapse. */
+  shouldAutoCollapseMindSidebar: boolean;
 }
 
 function readLayout(): ResponsiveLayout {
   if (typeof window === 'undefined') {
-    return { shouldAutoCollapseHistory: false, shouldClampMindSidebar: false };
+    return { shouldAutoCollapseHistory: false, shouldAutoCollapseMindSidebar: false };
   }
   const w = window.innerWidth;
   return {
     shouldAutoCollapseHistory: w < LG_BREAKPOINT,
-    shouldClampMindSidebar: w < MD_BREAKPOINT,
+    shouldAutoCollapseMindSidebar: w < MD_BREAKPOINT,
   };
 }
 

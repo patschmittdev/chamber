@@ -1,15 +1,17 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
-import { Plus, X, Bot, ExternalLink, UserCircle } from 'lucide-react';
+import { Plus, X, Bot, ExternalLink, UserCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
+import { usePersistedCollapse } from '../../hooks/usePersistedCollapse';
 import type { MindContext } from '@chamber/shared/types';
 
 const MIN_WIDTH = 140;
 const MAX_WIDTH = 400;
 const STORAGE_KEY = 'chamber:sidebarWidth';
+const AGENTS_COLLAPSED_STORAGE_KEY = 'chamber:agents-collapsed';
 
 function statusColor(status: MindContext['status']): string {
   switch (status) {
@@ -21,7 +23,7 @@ function statusColor(status: MindContext['status']): string {
   }
 }
 
-export function MindSidebar() {
+export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean }) {
   const { minds, activeMindId } = useAppState();
   const dispatch = useAppDispatch();
   const profileByMindId = useMindProfiles(minds);
@@ -30,6 +32,8 @@ export function MindSidebar() {
     return saved ? Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parseInt(saved, 10))) : 192;
   });
   const isResizing = useRef(false);
+  const [manualCollapsed, setManualCollapsed] = usePersistedCollapse(AGENTS_COLLAPSED_STORAGE_KEY);
+  const collapsed = autoCollapsed || manualCollapsed;
 
   const handleAddMind = async () => {
     dispatch({ type: 'SHOW_LANDING' });
@@ -91,15 +95,46 @@ export function MindSidebar() {
 
   if (minds.length === 0) return null;
 
+  if (collapsed) {
+    return (
+      <aside
+        aria-label="Agents"
+        className="shrink-0 w-10 bg-card border border-border rounded-xl overflow-hidden flex flex-col"
+      >
+        <button
+          type="button"
+          onClick={() => setManualCollapsed(false)}
+          disabled={autoCollapsed}
+          aria-label="Expand agents panel"
+          className="m-1 h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        >
+          <ChevronRight size={15} />
+        </button>
+      </aside>
+    );
+  }
+
   return (
-    <div className="relative bg-card border border-border rounded-xl overflow-hidden flex flex-col shrink-0" style={{ width }}>
+    <aside
+      aria-label="Agents"
+      className="relative bg-card border border-border rounded-xl overflow-hidden flex flex-col shrink-0"
+      style={{ width }}
+    >
       {/* Resize handle */}
       <div
         onMouseDown={handleMouseDown}
         className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent/50 active:bg-accent z-10"
       />
-      <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        Agents
+      <div className="px-3 py-2 flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Agents</span>
+        <button
+          type="button"
+          onClick={() => setManualCollapsed(true)}
+          aria-label="Collapse agents panel"
+          className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center"
+        >
+          <ChevronLeft size={15} />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -189,6 +224,6 @@ export function MindSidebar() {
           Add Agent
         </button>
       </div>
-    </div>
+    </aside>
   );
 }

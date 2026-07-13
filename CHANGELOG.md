@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add first-class chat document attachments**
 - **Add conversation forking from persisted turns** - Adds fork metadata, bounded seed context, first-turn context injection, renderer actions, and history display so a prior user or assistant turn can start a distinct active conversation. Fixes ianphil/chamber#181.
 - **Add local WTD topology advice for automation authors** — Give Insiders minds a verified local workflow-shape advisor before they author ttasks DAGs, while keeping execution in ttasks-ts (#400)
+- **Make the app shell responsive with collapsible side rails**. Wires the existing responsive viewport signals into AppShell so the desktop-first layout degrades gracefully when Chamber is served in a browser at narrow or unusual widths. The conversation history rail auto-collapses below the lg breakpoint and the Agents rail below md, each keeps a keyboard-accessible manual collapse toggle persisted to localStorage via a shared usePersistedCollapse hook, and the activity bar and main content stay usable and reflow.
 
 ### Refactor
 
