@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Badge } from '../ui/badge';
 import { AgentAvatar } from '../profile/AgentAvatar';
 import { AgentPersonaEditor } from '../profile/AgentPersonaEditor';
+import { WorkingMemoryViewer } from './WorkingMemoryViewer';
 
 const AVATAR_FALLBACK_CLASS = 'flex items-center justify-center bg-muted font-semibold text-muted-foreground';
 
@@ -262,7 +263,7 @@ function AgentDetail({
           {actionMessage ? (
             <p role="status" className="text-xs text-muted-foreground">{actionMessage}</p>
           ) : null}
-          <MemorySummary precedence={precedenceByMindId[mind.mindId]} />
+          <WorkingMemoryViewer mindId={mind.mindId} precedence={precedenceByMindId[mind.mindId]} />
           <AgentDangerZone mind={mind} displayName={displayName} />
         </TabsContent>
 
@@ -299,46 +300,6 @@ function DetailField({ label, value, mono }: DetailFieldProps) {
       <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className={cn('mt-0.5 truncate text-sm text-foreground', mono && 'font-mono text-xs')} title={value}>{value}</dd>
     </div>
-  );
-}
-
-interface MemorySummaryProps {
-  precedence: MindInstructionPrecedence | undefined;
-}
-
-/**
- * Read-only view of the agent's working memory. Working memory is agent-managed,
- * so this surfaces status and location from the instruction-precedence layers
- * without exposing an edit path.
- */
-function MemorySummary({ precedence }: MemorySummaryProps) {
-  const layer = precedence?.layers.find((entry) => entry.id === 'working-memory');
-
-  let statusLabel = 'Empty';
-  let statusVariant: 'secondary' | 'outline' = 'outline';
-  if (layer?.present) {
-    const active = layer.included && layer.enabled;
-    statusLabel = active ? 'Active' : 'Not in context';
-    statusVariant = active ? 'secondary' : 'outline';
-  }
-
-  return (
-    <section className="rounded-lg border border-border bg-background/40 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-medium text-foreground">Working memory</h4>
-        {layer ? <Badge variant={statusVariant}>{statusLabel}</Badge> : null}
-      </div>
-      {layer ? (
-        <>
-          <p className="mt-1 text-xs text-muted-foreground">{layer.description}</p>
-          <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{layer.source}</p>
-        </>
-      ) : (
-        <p className="mt-1 text-xs text-muted-foreground">
-          Memory details load with this agent&apos;s instruction precedence.
-        </p>
-      )}
-    </section>
   );
 }
 

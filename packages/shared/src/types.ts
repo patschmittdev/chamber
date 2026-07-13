@@ -340,6 +340,36 @@ export type AgentProfileActionResult =
   | { success: false; error: string; profile?: AgentProfile };
 
 // ---------------------------------------------------------------------------
+// Working memory — read-only view of a mind's agent-managed memory files
+// ---------------------------------------------------------------------------
+
+/** The three agent-managed files under a mind's `.working-memory/` directory. */
+export type MindWorkingMemoryFileName = 'memory.md' | 'rules.md' | 'log.md';
+
+export interface MindWorkingMemoryFile {
+  /** Canonical file name inside `.working-memory/`. */
+  name: MindWorkingMemoryFileName;
+  /** Human label for the section (Memory, Rules, Log). */
+  label: string;
+  /** True when the file exists and was readable. */
+  present: boolean;
+  /** File contents, bounded to a safe maximum. Empty string when absent. */
+  content: string;
+  /** True when the file exceeded the read cap and `content` is partial. */
+  truncated: boolean;
+  /** Modified time in milliseconds, or null when absent. */
+  mtimeMs: number | null;
+}
+
+export interface MindWorkingMemory {
+  mindId: string;
+  /** True when the mind's `.working-memory/` directory exists. */
+  present: boolean;
+  /** Always the three known files, each flagged present or absent. */
+  files: MindWorkingMemoryFile[];
+}
+
+// ---------------------------------------------------------------------------
 // User profile — local Chamber profile for the signed-in human
 // ---------------------------------------------------------------------------
 

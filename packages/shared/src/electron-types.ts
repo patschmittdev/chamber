@@ -60,6 +60,7 @@ import type {
   MessageVariantGroup,
   MindInstructionPrecedence,
   MindContext,
+  MindWorkingMemory,
   ModelInfo,
   StartupProgressEvent,
   ToolActionResult,
@@ -122,6 +123,15 @@ export interface ElectronAPI {
     saveAvatar: (request: AgentProfileAvatarSaveRequest) => Promise<AgentProfileActionResult>;
     removeAvatar: (mindId: string) => Promise<AgentProfileActionResult>;
     restart: (mindId: string) => Promise<MindContext>;
+  };
+  mindMemory: {
+    /**
+     * Reads a mind's agent-managed working-memory files (`memory.md`,
+     * `rules.md`, `log.md`) for read-only display. Path-confined to the mind's
+     * `.working-memory/` directory; missing files come back absent, not as an
+     * error. Never writes: working memory is owned by the agent.
+     */
+    read: (mindId: string) => Promise<MindWorkingMemory>;
   };
   lens: {
     getViews: (mindId?: string) => Promise<LensViewManifest[]>;
