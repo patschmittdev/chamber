@@ -317,8 +317,9 @@ export interface ElectronAPI {
   prompts: {
     /**
      * Lists the user's saved prompt library. User-scoped and mind-independent.
-     * Returns [] when the library is absent or unreadable; degrades to [] in
-     * browser mode where the library is desktop-only.
+     * Returns [] when the library is absent or unreadable (desktop). In browser
+     * mode the library is desktop-only, so this rejects with an unavailable
+     * signal (rejects: true); the composer and Prompts tab catch it and degrade.
      */
     list: () => Promise<Prompt[]>;
     /**
