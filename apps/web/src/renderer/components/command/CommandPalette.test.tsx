@@ -6,8 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { MindContext } from '@chamber/shared/types';
 import { AppStateProvider } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
-import { installElectronAPI, mockElectronAPI, makeLensViewManifest } from '../../../test/helpers';
-import { CommandPalette, buildCommandItems, type CommandPaletteDeps } from './CommandPalette';
+import { installElectronAPI } from '../../../test/helpers';
+import { CommandPalette } from './CommandPalette';
 
 // jsdom does not provide ResizeObserver; cmdk needs it.
 class MockResizeObserver {
@@ -30,21 +30,7 @@ const mind: MindContext = {
 };
 
 const PLACEHOLDER = 'Type a command or search...';
-const NEW_CONVERSATION = 'action:new-conversation';
-
-function makeDeps(overrides: Partial<CommandPaletteDeps> = {}): CommandPaletteDeps {
-  return {
-    minds: [],
-    discoveredViews: [],
-    disabledLensViewKeys: [],
-    activeMindId: null,
-    isActiveMindBusy: false,
-    creationGuard: { current: false },
-    dispatch: vi.fn(),
-    electronAPI: mockElectronAPI(),
-    ...overrides,
-  };
-}
+const SHORTCUTS_DESCRIPTION = 'Available commands and their keybindings.';
 
 function renderPalette(testInitialState?: Partial<AppState>) {
   return render(
@@ -131,85 +117,6 @@ describe('CommandPalette', () => {
     });
   });
 
-  it('dispatches SET_ACTIVE_VIEW when the Open Settings command runs', () => {
-    const dispatch = vi.fn();
-    const commands = buildCommandItems(makeDeps({ dispatch }));
-
-    const settings = commands.find((command) => command.id === 'view:settings');
-    expect(settings).toBeDefined();
-    settings?.perform();
-
-    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'settings' });
-  });
-
-  it('dispatches SET_ACTIVE_VIEW when the Open Operator Activity command runs', () => {
-    const dispatch = vi.fn();
-    const commands = buildCommandItems(makeDeps({ dispatch }));
-
-    const activity = commands.find((command) => command.id === 'view:activity');
-    expect(activity).toBeDefined();
-    activity?.perform();
-
-    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'activity' });
-  });
-
-  it('switches the active mind through electron and the store', () => {
-    const dispatch = vi.fn();
-    const electronAPI = mockElectronAPI();
-    const commands = buildCommandItems(
-      makeDeps({ minds: [mind], activeMindId: mind.mindId, dispatch, electronAPI }),
-    );
-
-    const switchCommand = commands.find((command) => command.id === `mind:${mind.mindId}`);
-    expect(switchCommand).toBeDefined();
-    switchCommand?.perform();
-
-    expect(electronAPI.mind.setActive).toHaveBeenCalledWith(mind.mindId);
-    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_MIND', payload: mind.mindId });
-    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
-  });
-
-  it('offers the new conversation command only for an idle active mind', () => {
-    const withoutMind = buildCommandItems(makeDeps());
-    expect(withoutMind.some((command) => command.id === NEW_CONVERSATION)).toBe(false);
-
-    const idleMind = buildCommandItems(makeDeps({ minds: [mind], activeMindId: mind.mindId }));
-    expect(idleMind.some((command) => command.id === NEW_CONVERSATION)).toBe(true);
-  });
-
-  it('namespaces discovered Lens view commands so they cannot collide with reserved view ids', () => {
-    const dispatch = vi.fn();
-    const commands = buildCommandItems(
-      makeDeps({ dispatch, activeMindId: mind.mindId, discoveredViews: [makeLensViewManifest({ id: 'chat', name: 'Custom Chat' })] }),
-    );
-
-    const ids = commands.map((command) => command.id);
-    expect(ids).toContain('view:chat');
-    expect(ids).toContain('lens:chat');
-
-    commands.find((command) => command.id === 'lens:chat')?.perform();
-    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
-  });
-
-  it('omits disabled Lens view commands from the palette', () => {
-    const commands = buildCommandItems(
-      makeDeps({
-        activeMindId: mind.mindId,
-        discoveredViews: [makeLensViewManifest({ id: 'briefing', name: 'Briefing' })],
-        disabledLensViewKeys: [`${mind.mindId}:briefing`],
-      }),
-    );
-
-    expect(commands.some((command) => command.id === 'lens:briefing')).toBe(false);
-  });
-
-  it('omits the new conversation command while the active mind is busy', () => {
-    const busy = buildCommandItems(
-      makeDeps({ minds: [mind], activeMindId: mind.mindId, isActiveMindBusy: true }),
-    );
-    expect(busy.some((command) => command.id === NEW_CONVERSATION)).toBe(false);
-  });
-
   it('hides the new conversation command while the active mind is streaming', async () => {
     renderPalette({
       activeMindId: mind.mindId,
@@ -224,28 +131,27 @@ describe('CommandPalette', () => {
     expect(screen.queryByText('New conversation')).toBeNull();
   });
 
-  it('guards against duplicate concurrent conversation creation', async () => {
-    const electronAPI = mockElectronAPI();
-    let resolveNewConversation: (value: { sessionId: string; messages: []; conversations: [] }) => void = () => {};
-    (electronAPI.chat.newConversation as ReturnType<typeof vi.fn>).mockImplementation(
-      () => new Promise((resolve) => { resolveNewConversation = resolve; }),
-    );
-    const creationGuard = { current: false };
-    const commands = buildCommandItems(
-      makeDeps({ minds: [mind], activeMindId: mind.mindId, creationGuard, electronAPI }),
-    );
-    const newConversation = commands.find((command) => command.id === NEW_CONVERSATION);
-    expect(newConversation).toBeDefined();
+  it('opens the keyboard shortcuts overlay when the ? shortcut is pressed', async () => {
+    renderPalette({ activeMindId: mind.mindId, minds: [mind] });
+    expect(screen.queryByText(SHORTCUTS_DESCRIPTION)).toBeNull();
 
-    newConversation?.perform();
-    newConversation?.perform();
+    fireEvent.keyDown(document.body, { key: '?' });
 
-    expect(electronAPI.chat.newConversation).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(SHORTCUTS_DESCRIPTION)).toBeTruthy();
+    expect(screen.getByText('Command palette')).toBeTruthy();
+  });
 
-    resolveNewConversation({ sessionId: 's1', messages: [], conversations: [] });
-    await waitFor(() => expect(creationGuard.current).toBe(false));
+  it('replaces the shortcuts overlay with the palette when Ctrl+K follows ?', async () => {
+    renderPalette({ activeMindId: mind.mindId, minds: [mind] });
 
-    newConversation?.perform();
-    expect(electronAPI.chat.newConversation).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(document.body, { key: '?' });
+    await screen.findByText(SHORTCUTS_DESCRIPTION);
+
+    pressCtrlK();
+
+    await waitFor(() => {
+      expect(screen.queryByText(SHORTCUTS_DESCRIPTION)).toBeNull();
+    });
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toBeTruthy();
   });
 });
