@@ -737,4 +737,76 @@ describe('MessageList', () => {
       expect(screen.queryByRole('button', { name: 'Fork conversation from here' })).toBeNull();
     });
   });
+
+  describe('transcript virtualization (perf-D3)', () => {
+    it('mounts only a windowed subset of rows for a large transcript while keeping per-row optimizations', () => {
+      // Drive the windowing hook's rAF-throttled scroll read synchronously.
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      vi.stubGlobal('cancelAnimationFrame', () => {});
+      try {
+        const messages: ChatMessage[] = Array.from({ length: 200 }, (_, i) => ({
+          id: `msg-${i}`,
+          role: 'assistant' as const,
+          blocks: [{ type: 'text', content: `Row ${i}` }],
+          timestamp: 1000 + i,
+        }));
+
+        const { container } = renderMessages(messages);
+        const scroller = container.querySelector('.overflow-y-auto') as HTMLDivElement;
+        Object.defineProperty(scroller, 'clientHeight', { value: 800, configurable: true });
+        Object.defineProperty(scroller, 'scrollHeight', { value: 200 * 140, configurable: true });
+
+        act(() => {
+          scroller.scrollTop = 0;
+          scroller.dispatchEvent(new Event('scroll'));
+        });
+
+        const mountedAtTop = container.querySelectorAll('[data-window-key]');
+        expect(mountedAtTop.length).toBeGreaterThan(0);
+        expect(mountedAtTop.length).toBeLessThan(40);
+        expect(container.querySelector('[data-window-key="msg-0"]')).toBeTruthy();
+        expect(container.querySelector('[data-window-key="msg-199"]')).toBeNull();
+
+        // The rows that do mount keep their memoized subtree plus the
+        // content-visibility / contain-intrinsic-size hints untouched.
+        const firstRow = container.querySelector('[data-window-key="msg-0"]') as HTMLElement;
+        expect(firstRow.querySelector('.group.flex.gap-3')).toBeTruthy();
+        expect(firstRow.querySelector('[style*="content-visibility"]')).toBeTruthy();
+        expect(firstRow.querySelector('[style*="contain-intrinsic-size"]')).toBeTruthy();
+
+        // A spacer stands in for the un-mounted rows below the window.
+        expect(container.querySelector('[data-window-spacer="bottom"]')).toBeTruthy();
+
+        // Scrolling to the end swaps the mounted window to the tail rows.
+        act(() => {
+          scroller.scrollTop = 200 * 140 - 800;
+          scroller.dispatchEvent(new Event('scroll'));
+        });
+
+        expect(container.querySelector('[data-window-key="msg-199"]')).toBeTruthy();
+        expect(container.querySelector('[data-window-key="msg-0"]')).toBeNull();
+        expect(container.querySelectorAll('[data-window-key]').length).toBeLessThan(40);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('renders every row without spacers for a short transcript', () => {
+      const messages: ChatMessage[] = Array.from({ length: 8 }, (_, i) => ({
+        id: `short-${i}`,
+        role: 'assistant' as const,
+        blocks: [{ type: 'text', content: `Row ${i}` }],
+        timestamp: 1000 + i,
+      }));
+
+      const { container } = renderMessages(messages);
+
+      expect(container.querySelectorAll('[data-window-key]').length).toBe(8);
+      expect(container.querySelector('[data-window-spacer="top"]')).toBeNull();
+      expect(container.querySelector('[data-window-spacer="bottom"]')).toBeNull();
+    });
+  });
 });

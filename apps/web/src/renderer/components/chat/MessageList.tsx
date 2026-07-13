@@ -5,6 +5,7 @@ import { MessageVariantPager } from './MessageVariantPager';
 import { useAppState, useAppDispatch, getPlainContent } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useConversationActions } from '../../hooks/useConversationActions';
+import { useWindowedList } from '../../hooks/useWindowedList';
 import { StreamingMessage } from './StreamingMessage';
 import { hasAttachmentBlocks } from './messageContent';
 import { cn, formatTime, parseSkillContextInjection } from '../../lib/utils';
@@ -19,6 +20,11 @@ import { agentColor, readableTextColor } from './agentColors';
 
 const EDIT_ATTACHMENT_REASON = "Editing isn't available for messages with attachments yet";
 const REGENERATE_ATTACHMENT_REASON = "Regenerating isn't available for turns with attachments yet";
+
+// Below this row count the transcript renders in full: content-visibility alone
+// already holds 60fps, so windowing only earns its keep once the DOM node and
+// heap growth of a long transcript would otherwise be unbounded.
+const TRANSCRIPT_WINDOW_THRESHOLD = 60;
 
 function displayName(name: string, fallback: string): string {
   const trimmed = name.trim();
@@ -118,6 +124,21 @@ export function MessageList() {
   const [hasNewBelow, setHasNewBelow] = useState(false);
   const lastMessageCountRef = useRef(messages.length);
 
+  // perf-D3: window the transcript so only the rows near the viewport mount.
+  // This layers on top of the per-row memoization and content-visibility hints;
+  // it does not replace them.
+  const getScroller = useCallback(() => scrollRef.current, []);
+  const getWindowKey = useCallback(
+    (index: number) => displayMessages[index]?.id ?? String(index),
+    [displayMessages],
+  );
+  const { startIndex, endIndex, paddingTop, paddingBottom, measureElement } = useWindowedList({
+    itemCount: displayMessages.length,
+    getScrollElement: getScroller,
+    getKey: getWindowKey,
+    enabled: displayMessages.length > TRANSCRIPT_WINDOW_THRESHOLD,
+  });
+
   const scrollToBottom = useCallback(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -168,43 +189,53 @@ export function MessageList() {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-4 py-4"
       >
-        <div className="max-w-3xl mx-auto space-y-6">
-          {displayMessages.map((message, index) => {
-            const presenter = messagePresenter(message, agentName, minds, profileByMindId);
-            const avatarDataUrl = message.role === 'assistant'
-              ? activeProfile?.avatarDataUrl
-              : presenter.isAgentSender
-                ? presenter.avatarDataUrl
-                : userProfile?.avatarDataUrl;
-            const isLastMessage = index === displayMessages.length - 1;
-            const pager = view.pagerByMessageId.get(message.id);
+        <div className="max-w-3xl mx-auto">
+          {paddingTop > 0 && (
+            <div data-window-spacer="top" aria-hidden="true" style={{ height: paddingTop }} />
+          )}
+          <div className="space-y-6">
+            {displayMessages.slice(startIndex, endIndex).map((message, offset) => {
+              const index = startIndex + offset;
+              const presenter = messagePresenter(message, agentName, minds, profileByMindId);
+              const avatarDataUrl = message.role === 'assistant'
+                ? activeProfile?.avatarDataUrl
+                : presenter.isAgentSender
+                  ? presenter.avatarDataUrl
+                  : userProfile?.avatarDataUrl;
+              const isLastMessage = index === displayMessages.length - 1;
+              const pager = view.pagerByMessageId.get(message.id);
 
-            return (
-              <MessageRow
-                key={message.id}
-                message={message}
-                presenter={presenter}
-                avatarDataUrl={avatarDataUrl}
-                animate={isLastMessage}
-                launch={isLastMessage && message.role === 'user'}
-                isBusy={isBusy}
-                mutationsDisabled={viewingFrozenVersion}
-                onRegenerate={regenerate}
-                onDelete={deleteMessage}
-                onFork={forkMessage}
-                onEditSubmit={editAndResubmit}
-                regenerateSupported={isLastMessage && message.role === 'assistant' && regenerateSupported}
-                regenerateDisabledReason={regenerateDisabledReason}
-                availableModels={availableModels}
-                currentModel={selectedModel}
-                followingTurnCount={displayMessages.length - 1 - index}
-                pagerGroupId={pager?.groupId}
-                pagerIndex={pager?.index}
-                pagerCount={pager?.count}
-                onSelectVariant={selectVariant}
-              />
-            );
-          })}
+              return (
+                <div key={message.id} data-window-key={message.id} ref={measureElement}>
+                  <MessageRow
+                    message={message}
+                    presenter={presenter}
+                    avatarDataUrl={avatarDataUrl}
+                    animate={isLastMessage}
+                    launch={isLastMessage && message.role === 'user'}
+                    isBusy={isBusy}
+                    mutationsDisabled={viewingFrozenVersion}
+                    onRegenerate={regenerate}
+                    onDelete={deleteMessage}
+                    onFork={forkMessage}
+                    onEditSubmit={editAndResubmit}
+                    regenerateSupported={isLastMessage && message.role === 'assistant' && regenerateSupported}
+                    regenerateDisabledReason={regenerateDisabledReason}
+                    availableModels={availableModels}
+                    currentModel={selectedModel}
+                    followingTurnCount={displayMessages.length - 1 - index}
+                    pagerGroupId={pager?.groupId}
+                    pagerIndex={pager?.index}
+                    pagerCount={pager?.count}
+                    onSelectVariant={selectVariant}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          {paddingBottom > 0 && (
+            <div data-window-spacer="bottom" aria-hidden="true" style={{ height: paddingBottom }} />
+          )}
         </div>
       </div>
       {hasNewBelow && (

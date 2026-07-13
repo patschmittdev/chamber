@@ -5,6 +5,8 @@ import type { ConversationExportFormat, ConversationSummary } from '@chamber/sha
 import { useAppDispatch, useAppState } from '../../lib/store';
 import { useNewConversation } from '../../hooks/useNewConversation';
 import { usePersistedCollapse } from '../../hooks/usePersistedCollapse';
+import { useWindowedList } from '../../hooks/useWindowedList';
+import { usePrefetchNeighborHistory } from '../../hooks/usePrefetchNeighborHistory';
 import { Logger } from '../../lib/logger';
 import { cn } from '../../lib/utils';
 import { conversationSearchText, filterConversations, normalizeSearchQuery } from './conversationSearch';
@@ -25,6 +27,12 @@ const ARCHIVED_EXPANDED_STORAGE_KEY = 'chamber:conversation-archived-expanded';
 const SEARCH_DEBOUNCE_MS = 180;
 const CONTENT_SEARCH_MIN_QUERY_LENGTH = 2;
 const MAX_CONTENT_LOADS_PER_PASS = 8;
+
+// rail-H8: the regular conversation list is the only unbounded bucket, so it
+// windows past this row count. Pinned and archived stay fully rendered.
+const HISTORY_WINDOW_THRESHOLD = 50;
+// Approximate height of a conversation row; refined per-row by measurement.
+const HISTORY_ROW_ESTIMATE_PX = 72;
 
 interface CachedTranscriptText {
   updatedAt: string;
@@ -54,6 +62,8 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
   const creatingConversationRef = useRef(false);
   const contentIndexByMind = useRef<Map<string, Map<string, CachedTranscriptText>>>(new Map());
   const contentLoadsInFlight = useRef<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const regularListRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
   useEffect(() => () => { isMountedRef.current = false; }, []);
 
@@ -79,6 +89,29 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
     () => partitionConversations(filteredConversations),
     [filteredConversations],
   );
+
+  usePrefetchNeighborHistory();
+
+  const getHistoryScroller = useCallback(() => scrollContainerRef.current, []);
+  const getRegularListElement = useCallback(() => regularListRef.current, []);
+  const getRegularKey = useCallback(
+    (index: number) => regularConversations[index]?.sessionId ?? String(index),
+    [regularConversations],
+  );
+  const {
+    startIndex: regularStart,
+    endIndex: regularEnd,
+    paddingTop: regularPaddingTop,
+    paddingBottom: regularPaddingBottom,
+    measureElement: measureRegularRow,
+  } = useWindowedList({
+    itemCount: regularConversations.length,
+    getScrollElement: getHistoryScroller,
+    getContentElement: getRegularListElement,
+    getKey: getRegularKey,
+    estimateSize: HISTORY_ROW_ESTIMATE_PX,
+    enabled: regularConversations.length > HISTORY_WINDOW_THRESHOLD,
+  });
   const isSearching = normalizeSearchQuery(debouncedQuery).length > 0;
   const archivedExpanded = archivedExpandedPref || isSearching;
   const selectedConversationId = activeMindId ? activeConversationByMind[activeMindId] : undefined;
@@ -560,7 +593,7 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
             </div>
           ) : null}
 
-          <div className="flex-1 overflow-y-auto p-2">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-2">
             {!activeMindId ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">Select an agent to see history</p>
             ) : isHistoryLoading ? (
@@ -579,7 +612,19 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
               <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Pinned</div>
             ) : null}
             {pinnedConversations.map(renderConversationRow)}
-            {regularConversations.map(renderConversationRow)}
+            <div ref={regularListRef}>
+              {regularPaddingTop > 0 ? (
+                <div data-window-spacer="top" aria-hidden="true" style={{ height: regularPaddingTop }} />
+              ) : null}
+              {regularConversations.slice(regularStart, regularEnd).map((conversation) => (
+                <div key={conversation.sessionId} data-window-key={conversation.sessionId} ref={measureRegularRow}>
+                  {renderConversationRow(conversation)}
+                </div>
+              ))}
+              {regularPaddingBottom > 0 ? (
+                <div data-window-spacer="bottom" aria-hidden="true" style={{ height: regularPaddingBottom }} />
+              ) : null}
+            </div>
             {archivedConversations.length > 0 ? (
               <div className="mt-1">
                 <button
