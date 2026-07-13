@@ -37,10 +37,11 @@ describe('KeyboardShortcutsDialog', () => {
     expect(tokens).toContain('?');
   });
 
-  it('omits commands without a keybinding and groups that hold none', () => {
+  it('lists commands without a keybinding and marks them Unassigned', () => {
     render(<KeyboardShortcutsDialog open onOpenChange={vi.fn()} commands={commands} />);
 
-    expect(screen.queryByText('Open Settings')).toBeNull();
-    expect(screen.queryByText('Views')).toBeNull();
+    expect(screen.getByText('Open Settings')).toBeTruthy();
+    expect(screen.getByText('Views')).toBeTruthy();
+    expect(screen.getByText('Unassigned')).toBeTruthy();
   });
 });
