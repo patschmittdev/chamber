@@ -179,6 +179,32 @@ function conversationCommands(context: CommandContext): Command[] {
   ];
 }
 
+/**
+ * Skills authoring entry: open the Extensions Skills tab and request the create
+ * dialog through the one-shot extensions intent. Withheld without an active mind
+ * because skills are per-mind and creation needs an owner.
+ */
+function skillsCommands(context: CommandContext): Command[] {
+  if (!context.activeMindId) return [];
+
+  return [
+    {
+      id: 'action:new-skill',
+      title: 'New skill',
+      group: GROUP_VIEWS,
+      icon: Plus,
+      keywords: ['create skill', 'skill', 'authoring'],
+      run: () => {
+        context.dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' });
+        context.dispatch({
+          type: 'SET_PENDING_EXTENSIONS_INTENT',
+          payload: { tab: 'skills', action: 'create-skill' },
+        });
+      },
+    },
+  ];
+}
+
 /** Keyboard-driven surfaces: the palette toggle and the shortcuts help overlay. */
 function generalCommands(context: CommandContext): Command[] {
   return [
@@ -216,6 +242,7 @@ export const appCommandRegistry = new CommandRegistry<CommandContext>();
 appCommandRegistry.register(viewCommands);
 appCommandRegistry.register(agentCommands);
 appCommandRegistry.register(conversationCommands);
+appCommandRegistry.register(skillsCommands);
 appCommandRegistry.register(generalCommands);
 
 /**

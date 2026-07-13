@@ -132,6 +132,26 @@ describe('buildCommandItems', () => {
     expect(electronAPI.chat.newConversation).toHaveBeenCalledTimes(2);
   });
 
+  it('routes the New skill command to the Skills tab and requests the create dialog', () => {
+    const dispatch = vi.fn();
+    const commands = buildCommandItems(makeDeps({ dispatch, minds: [mind], activeMindId: mind.mindId }));
+
+    const newSkill = commands.find((command) => command.id === 'action:new-skill');
+    expect(newSkill).toBeDefined();
+    newSkill?.run();
+
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'SET_PENDING_EXTENSIONS_INTENT',
+      payload: { tab: 'skills', action: 'create-skill' },
+    });
+  });
+
+  it('omits the New skill command when no mind is active', () => {
+    const commands = buildCommandItems(makeDeps());
+    expect(commands.some((command) => command.id === 'action:new-skill')).toBe(false);
+  });
+
   it('registers the palette and shortcuts commands with their keybindings', () => {
     const commands = buildCommandItems(makeDeps());
 

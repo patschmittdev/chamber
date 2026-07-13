@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { createIpcListener, IPC } from '@chamber/shared';
 import type { A2AIncomingPayload } from '@chamber/shared/types';
+import type { SkillSaveRequest } from '@chamber/shared/skill-types';
 import type { AppearanceBridge, ElectronAPI } from '@chamber/shared/electron-types';
 import type { AppearanceSnapshot } from '@chamber/shared/appearance-types';
 import type { Message, TaskArtifactUpdateEvent, TaskStatusUpdateEvent } from '@chamber/shared/a2a-types';
@@ -199,6 +200,8 @@ const electronAPI: ElectronAPI = {
     listForMind: (mindId: string) => ipcRenderer.invoke(IPC.SKILLS.LIST_FOR_MIND, mindId),
     listForMindDetails: (mindId: string) => ipcRenderer.invoke(IPC.SKILLS.LIST_FOR_MIND_DETAILS, mindId),
     browseMarketplace: () => ipcRenderer.invoke(IPC.SKILLS.BROWSE_MARKETPLACE),
+    getSource: (mindId: string, id: string) => ipcRenderer.invoke(IPC.SKILLS.GET_SOURCE, mindId, id),
+    save: (request: SkillSaveRequest) => ipcRenderer.invoke(IPC.SKILLS.SAVE, request),
   },
   mcp: {
     getServers: (mindId?) => ipcRenderer.invoke(IPC.MCP.GET_SERVERS, mindId),

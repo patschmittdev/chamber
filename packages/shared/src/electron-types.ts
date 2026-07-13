@@ -69,7 +69,14 @@ import type {
   UserProfileImportResult,
   UserProfileSaveRequest,
 } from './types';
-import type { SkillDetail, SkillManifest, SkillMarketplaceBrowseResult } from './skill-types';
+import type {
+  SkillDetail,
+  SkillManifest,
+  SkillMarketplaceBrowseResult,
+  SkillSaveRequest,
+  SkillSaveResult,
+  SkillSource,
+} from './skill-types';
 import type { McpServerEntry } from './mcp-types';
 
 export interface ElectronAPI {
@@ -276,6 +283,17 @@ export interface ElectronAPI {
      * Lists read-only skill and template marketplace metadata from enrolled registries.
      */
     browseMarketplace: () => Promise<SkillMarketplaceBrowseResult>;
+    /**
+     * Reads a skill's raw SKILL.md source for editing, with the on-disk mtime used
+     * for optimistic concurrency. Desktop-backed; rejects in browser mode.
+     */
+    getSource: (mindId: string, id: string) => Promise<SkillSource>;
+    /**
+     * Creates or updates a skill's SKILL.md. Confines the write to the mind's
+     * skills directory, rejects reserved and Chamber-managed skills, and validates
+     * frontmatter before persisting.
+     */
+    save: (request: SkillSaveRequest) => Promise<SkillSaveResult>;
   };
   mcp: {
     /**

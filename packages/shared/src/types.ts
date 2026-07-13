@@ -12,6 +12,9 @@ export type {
   SkillManifest,
   SkillMarketplaceBrowseResult,
   SkillMarketplaceSourceDetails,
+  SkillSaveRequest,
+  SkillSaveResult,
+  SkillSource,
   SkillValidationError,
 } from './skill-types';
 

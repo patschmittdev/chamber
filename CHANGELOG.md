@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add local WTD topology advice for automation authors** — Give Insiders minds a verified local workflow-shape advisor before they author ttasks DAGs, while keeping execution in ttasks-ts (#400)
 - **Make the app shell responsive with collapsible side rails**. Wires the existing responsive viewport signals into AppShell so the desktop-first layout degrades gracefully when Chamber is served in a browser at narrow or unusual widths. The conversation history rail auto-collapses below the lg breakpoint and the Agents rail below md, each keeps a keyboard-accessible manual collapse toggle persisted to localStorage via a shared usePersistedCollapse hook, and the activity bar and main content stay usable and reflow.
 - **Read-only working-memory viewer** — View each mind's agent-managed working memory (memory.md, rules.md, log.md) directly in Settings > Agents > Overview, rendered read-only with the shared markdown renderer. The reader is path-confined to the mind's .working-memory directory and desktop-only in browser mode.
+- **Author and edit skills from the Skills tab** - Add a New skill dialog and an Edit surface for each editable skill in Extensions > Skills, backed by a path-confined MindSkillAuthoring service with frontmatter validation and optimistic-concurrency writes. Desktop-only for now; the browser host reports authoring as unavailable without faking success.
 
 ### Refactor
 

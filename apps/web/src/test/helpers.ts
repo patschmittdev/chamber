@@ -436,6 +436,8 @@ export function mockElectronAPI(): ElectronAPI {
         templates: [],
         templateSources: [],
       }),
+      getSource: vi.fn().mockResolvedValue({ id: '', content: '', mtimeMs: null }),
+      save: vi.fn().mockResolvedValue({ success: true }),
     },
     mcp: {
       getServers: vi.fn().mockResolvedValue([]),

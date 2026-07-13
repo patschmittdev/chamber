@@ -845,6 +845,17 @@ describe('appReducer', () => {
     expect(cleared.pendingSettingsIntent).toBeNull();
   });
 
+  it('SET_PENDING_EXTENSIONS_INTENT stores and clears the deep-link target', () => {
+    const opened = appReducer(initialState, {
+      type: 'SET_PENDING_EXTENSIONS_INTENT',
+      payload: { tab: 'skills', action: 'create-skill' },
+    });
+    expect(opened.pendingExtensionsIntent).toEqual({ tab: 'skills', action: 'create-skill' });
+
+    const cleared = appReducer(opened, { type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
+    expect(cleared.pendingExtensionsIntent).toBeNull();
+  });
+
   it('SET_FEATURE_FLAGS updates feature flags', () => {
     const state = appReducer(initialState, {
       type: 'SET_FEATURE_FLAGS',

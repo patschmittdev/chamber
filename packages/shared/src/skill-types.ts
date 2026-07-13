@@ -22,6 +22,35 @@ export interface SkillValidationError {
   path?: string;
 }
 
+/**
+ * Raw SKILL.md source for a single skill, read for editing. `mtimeMs` is the last
+ * modification time used for optimistic concurrency; it is null when the file does
+ * not yet exist on disk.
+ */
+export interface SkillSource {
+  id: string;
+  content: string;
+  mtimeMs: number | null;
+}
+
+/**
+ * Request to create or update a skill's SKILL.md. A null `expectedMtimeMs` means
+ * the caller expects to create a new skill; a number means it must match the file
+ * currently on disk or the write is rejected as stale.
+ */
+export interface SkillSaveRequest {
+  mindId: string;
+  id: string;
+  content: string;
+  expectedMtimeMs: number | null;
+}
+
+/** Outcome of a skill create or update. */
+export interface SkillSaveResult {
+  success: boolean;
+  error?: string;
+}
+
 export interface SkillFileReference {
   path: string;
   status: 'present' | 'missing' | 'invalid';
