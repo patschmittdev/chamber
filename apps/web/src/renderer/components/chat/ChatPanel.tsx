@@ -1,6 +1,7 @@
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useDelayedFlag } from '../../hooks/useDelayedFlag';
+import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { ChatErrorNotice } from './ChatErrorNotice';
@@ -68,13 +69,35 @@ export function ChatPanel() {
   };
 
   const activeMind = activeMindId ? minds.find((m) => m.mindId === activeMindId) : undefined;
-  const hasActiveConversation = Boolean(conversationHistory?.some((conversation) => conversation.active));
-  const showAboutPanel = messages.length === 0 && !isLoadingConversation && activeMind;
+  const activeConversation = conversationHistory?.find((conversation) => conversation.active);
+  const hasActiveConversation = Boolean(activeConversation);
+  const selectedModelLabel = selectedModel
+    ? (availableModels.find((model) => model.id === selectedModel || modelSelectionKeyFromModel(model) === selectedModel)?.name ?? selectedModel)
+    : 'No model selected';
+  const emptyState = activeMind ? (
+    <AgentWelcome
+      mind={activeMind}
+      onPickPrompt={handleDraftChange}
+      disabled={isModelSwitching}
+    />
+  ) : (
+    <WelcomeScreen
+      onPickPrompt={handleDraftChange}
+      connected={connected}
+      disabled={isModelSwitching}
+    />
+  );
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {activeMind && hasActiveConversation ? (
-        <div className="flex items-center justify-end border-b border-border px-4 py-2">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-foreground">{activeConversation?.title ?? 'Conversation'}</p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {activeMind.identity.name} · {selectedModelLabel}
+            </p>
+          </div>
           <ChatSystemPromptControl disabled={isStreaming || isBusy} />
         </div>
       ) : null}
@@ -82,18 +105,8 @@ export function ChatPanel() {
         showHydratingSkeleton ? <ConversationHydratingSkeleton /> : null
       ) : (
         <>
-          {showAboutPanel ? (
-            <AgentWelcome
-              mind={activeMind}
-              onPickPrompt={handleDraftChange}
-              disabled={isModelSwitching}
-            />
-          ) : messages.length === 0 ? (
-            <WelcomeScreen
-              onPickPrompt={handleDraftChange}
-              connected={connected}
-              disabled={isModelSwitching}
-            />
+          {messages.length === 0 ? (
+            emptyState
           ) : (
             <MessageList />
           )}

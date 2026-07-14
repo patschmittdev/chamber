@@ -14,7 +14,7 @@ import { Logger } from '../../lib/logger';
 const log = Logger.create('ChatSystemPromptControl');
 
 const triggerButtonClass =
-  'inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50';
+  'inline-flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50';
 const secondaryButtonClass =
   'rounded-lg border border-border bg-card px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50';
 const primaryButtonClass =
@@ -46,13 +46,18 @@ export function ChatSystemPromptControl({ disabled = false }: ChatSystemPromptCo
     : undefined;
   const mindDefault = activeMind?.identity.systemMessage ?? '';
   const override = activeConversation?.systemMessage;
-  // "Custom" means this conversation's effective prompt diverges from the agent's
-  // current default. That intentionally includes a conversation frozen against an
-  // older default after the agent persona was edited: it genuinely still runs the
-  // older prompt, and Reset re-syncs it to the current default. Chamber stores the
-  // override in the same per-conversation systemMessage field used for that frozen
-  // snapshot, so equality against the live default is the effective-state signal.
-  const hasOverride = typeof override === 'string' && override.length > 0 && override !== mindDefault;
+  const normalizedOverride = typeof override === 'string' ? override.trim() : '';
+  const normalizedDefault = mindDefault.trim();
+  const hasOverride = normalizedOverride.length > 0;
+  const overrideMatchesDefault = hasOverride && normalizedOverride === normalizedDefault;
+  const stateLabel = hasOverride
+    ? (overrideMatchesDefault ? 'Override saved' : 'Override active')
+    : 'Using agent default';
+  const stateDetail = hasOverride
+    ? (overrideMatchesDefault
+      ? 'An override is saved and currently matches the agent default.'
+      : 'This conversation is using its own prompt override.')
+    : 'No override is saved. This conversation follows the agent default.';
 
   // Prefill the editor from the current override each time the dialog opens, so
   // it always reflects the persisted value rather than a stale local edit.
@@ -64,7 +69,7 @@ export function ChatSystemPromptControl({ disabled = false }: ChatSystemPromptCo
 
   const sessionId = activeConversation.sessionId;
   const trimmed = value.trim();
-  const dirty = trimmed !== (override ?? '');
+  const dirty = trimmed !== normalizedOverride;
 
   const persist = async (nextValue: string) => {
     setSaving(true);
@@ -94,7 +99,10 @@ export function ChatSystemPromptControl({ disabled = false }: ChatSystemPromptCo
         className={triggerButtonClass}
       >
         <Settings2 className="h-4 w-4" aria-hidden="true" />
-        <span>{hasOverride ? 'Custom prompt' : 'Agent default'}</span>
+        <span className="flex flex-col items-start leading-tight">
+          <span className="font-medium text-foreground">System prompt</span>
+          <span>{stateLabel}</span>
+        </span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -118,7 +126,7 @@ export function ChatSystemPromptControl({ disabled = false }: ChatSystemPromptCo
             className="min-h-[200px] w-full flex-1 resize-none rounded-xl border border-border bg-background p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-primary"
           />
           <p className="text-xs text-muted-foreground">
-            {hasOverride ? 'This conversation uses a custom prompt.' : 'This conversation uses the agent default.'}
+            {stateDetail}
           </p>
 
           <DialogFooter>

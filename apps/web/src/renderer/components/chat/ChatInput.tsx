@@ -1,8 +1,9 @@
 import React, { useState, useRef, useCallback, useMemo, Suspense, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, Paperclip, Smile } from 'lucide-react';
+import { Command as CommandIcon, FileText, Mic, Paperclip, Smile, Sparkles, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
+import { formatAttachmentSize } from '@chamber/shared';
 import { VOICE_DICTATION_MODEL_ID, type VoiceDictationConfig, type VoiceModelStatus } from '@chamber/shared/voice-types';
 import type { ChatAttachment, ChatImageAttachment, ModelInfo, Prompt } from '@chamber/shared/types';
 import { useAppState, useAppDispatch } from '../../lib/store';
@@ -136,6 +137,13 @@ interface MenuAnchor {
 interface MenuPopoverPlacement {
   side: 'top' | 'bottom';
   style: React.CSSProperties;
+}
+
+interface ComposerAttachmentChip {
+  id: number;
+  kind: 'image' | 'document';
+  displayName: string;
+  size: number;
 }
 
 function detectShortcode(text: string, caret: number): ShortcodeMatch | null {
@@ -275,11 +283,13 @@ function handleMenuKeydown(e: React.KeyboardEvent<HTMLTextAreaElement>, menu: Me
 // Portal-rendered caret menu shared by the shortcode, mention and slash
 // popovers so placement, chrome and the cmdk wrapper live in one place.
 function CaretPopover({
+  id,
   anchor,
   testId,
   ariaLabel,
   children,
 }: {
+  id: string;
   anchor: MenuAnchor;
   testId: string;
   ariaLabel: string;
@@ -289,6 +299,7 @@ function CaretPopover({
   const placement = getMenuPopoverPlacement(anchor);
   return createPortal(
     <div
+      id={id}
       role="listbox"
       aria-label={ariaLabel}
       data-testid={testId}
@@ -378,6 +389,31 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     () => (slashMatch ? buildSlashMenu(availableSlashCommands, promptSlashItems, slashMatch.query) : []),
     [slashMatch, availableSlashCommands, promptSlashItems],
   );
+  const slashCommandItems = useMemo(
+    () => slashResults.filter((item): item is Extract<SlashMenuItem, { kind: 'command' }> => item.kind === 'command'),
+    [slashResults],
+  );
+  const slashPromptItems = useMemo(
+    () => slashResults.filter((item): item is Extract<SlashMenuItem, { kind: 'prompt' }> => item.kind === 'prompt'),
+    [slashResults],
+  );
+  const attachmentChips = useMemo<ComposerAttachmentChip[]>(
+    () => [
+      ...activeImages.map((image) => ({
+        id: image.id,
+        kind: 'image' as const,
+        displayName: image.displayName,
+        size: image.size,
+      })),
+      ...activeDocuments.map((document) => ({
+        id: document.id,
+        kind: 'document' as const,
+        displayName: document.displayName,
+        size: document.size,
+      })),
+    ],
+    [activeImages, activeDocuments],
+  );
 
   const updateSelectionRef = useCallback(() => {
     const el = textareaRef.current;
@@ -412,6 +448,48 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
     closeMention();
     closeSlash();
   }, [closeShortcode, closeMention, closeSlash]);
+
+  const getShortcodeOptionId = useCallback((index: number) => `composer-shortcode-option-${index}`, []);
+  const getMentionOptionId = useCallback((index: number) => `composer-mention-option-${index}`, []);
+  const getSlashOptionId = useCallback((index: number) => `composer-slash-option-${index}`, []);
+  const ariaMenuState = useMemo(() => {
+    if (shortcodeMatch && shortcodeAnchor && shortcodeResults.length > 0) {
+      return {
+        controlsId: 'composer-shortcode-listbox',
+        activeDescendantId: getShortcodeOptionId(shortcodeIndex),
+      };
+    }
+    if (mentionMatch && mentionAnchor && mentionResults.length > 0) {
+      return {
+        controlsId: 'composer-mention-listbox',
+        activeDescendantId: getMentionOptionId(mentionIndex),
+      };
+    }
+    if (slashMatch && slashAnchor) {
+      return {
+        controlsId: 'composer-slash-listbox',
+        activeDescendantId: slashResults.length > 0 ? getSlashOptionId(slashIndex) : undefined,
+      };
+    }
+    return null;
+  }, [
+    shortcodeMatch,
+    shortcodeAnchor,
+    shortcodeResults.length,
+    shortcodeIndex,
+    mentionMatch,
+    mentionAnchor,
+    mentionResults.length,
+    mentionIndex,
+    slashMatch,
+    slashAnchor,
+    slashResults.length,
+    slashIndex,
+    getShortcodeOptionId,
+    getMentionOptionId,
+    getSlashOptionId,
+  ]);
+  const ariaMenuExpanded = ariaMenuState !== null;
 
   // Drop attachments from the active bucket whose token id no longer appears in
   // the given text. Matching is by opaque id so odd filenames cannot desync it.
@@ -984,6 +1062,18 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
   const canSubmit = !slashMatch
     && (input.trim().length > 0 || activeImages.length > 0 || activeDocuments.length > 0)
     && !disabled;
+  const removeAttachmentChip = useCallback((chip: ComposerAttachmentChip) => {
+    const tokenEmoji = chip.kind === 'image' ? '📷' : '📄';
+    const token = new RegExp(`\\[${tokenEmoji}#${chip.id} [^\\]\\n]*\\]`, 'g');
+    const next = input.replace(token, '').replace(/\s{2,}/g, ' ');
+    setInput(next);
+    pruneAttachments(next);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      resize(el);
+    });
+  }, [input, pruneAttachments, resize, setInput]);
 
   return (
     <div className="border-t border-border px-4 py-3">
@@ -1008,10 +1098,46 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
             }}
             placeholder={placeholder ?? (disabled ? 'Select a mind directory to start…' : 'Message your agent… (paste an image to attach)')}
             aria-label="Message your agent"
+            role={ariaMenuExpanded ? 'combobox' : undefined}
+            aria-expanded={ariaMenuExpanded}
+            aria-controls={ariaMenuState?.controlsId}
+            aria-activedescendant={ariaMenuState?.activeDescendantId}
+            aria-autocomplete={ariaMenuExpanded ? 'list' : undefined}
+            aria-haspopup={ariaMenuExpanded ? 'listbox' : undefined}
             disabled={disabled}
             rows={1}
             className="focus-ring w-full resize-none overflow-y-auto rounded-md bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
           />
+
+          {attachmentChips.length > 0 ? (
+            <div
+              data-testid="composer-attachment-tray"
+              className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/70 bg-background/50 px-2 py-1.5"
+            >
+              {attachmentChips.map((chip) => (
+                <div
+                  key={`${chip.kind}:${chip.id}`}
+                  data-testid="composer-attachment-chip"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs text-muted-foreground"
+                >
+                  <span className="shrink-0" aria-hidden="true">
+                    {chip.kind === 'image' ? '📷' : '📄'}
+                  </span>
+                  <span className="max-w-[14rem] truncate font-medium text-foreground">{chip.displayName}</span>
+                  <span className="shrink-0">{formatAttachmentSize(chip.size)}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove attachment ${chip.displayName}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => removeAttachmentChip(chip)}
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
@@ -1185,10 +1311,12 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
         </p>
       </div>
       {shortcodeMatch && shortcodeAnchor && shortcodeResults.length > 0 ? (
-        <CaretPopover anchor={shortcodeAnchor} testId="shortcode-popover" ariaLabel="Emoji shortcode suggestions">
+        <CaretPopover id="composer-shortcode-listbox" anchor={shortcodeAnchor} testId="shortcode-popover" ariaLabel="Emoji shortcode suggestions">
           {shortcodeResults.map((rec, i) => (
             <CommandItem
               key={rec.hexcode}
+              role="option"
+              aria-selected={i === shortcodeIndex}
               value={rec.shortcodes[0]}
               data-selected={i === shortcodeIndex || undefined}
               onMouseDown={(e) => {
@@ -1197,6 +1325,7 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
               }}
               onMouseEnter={() => setShortcodeIndex(i)}
             >
+              <span id={getShortcodeOptionId(i)} className="sr-only" />
               <span className="text-base">{rec.emoji}</span>
               <span className="text-xs text-muted-foreground">
                 :{rec.shortcodes[0]}
@@ -1206,10 +1335,12 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
         </CaretPopover>
       ) : null}
       {mentionMatch && mentionAnchor && mentionResults.length > 0 ? (
-        <CaretPopover anchor={mentionAnchor} testId="mention-popover" ariaLabel="Agent mention suggestions">
+        <CaretPopover id="composer-mention-listbox" anchor={mentionAnchor} testId="mention-popover" ariaLabel="Agent mention suggestions">
           {mentionResults.map((item, i) => (
             <CommandItem
               key={item.mindId}
+              role="option"
+              aria-selected={i === mentionIndex}
               value={item.name}
               data-selected={i === mentionIndex || undefined}
               onMouseDown={(e) => {
@@ -1218,29 +1349,74 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled, availableMode
               }}
               onMouseEnter={() => setMentionIndex(i)}
             >
+              <span id={getMentionOptionId(i)} className="sr-only" />
               <span className="text-sm font-medium">@{item.name}</span>
             </CommandItem>
           ))}
         </CaretPopover>
       ) : null}
       {slashMatch && slashAnchor ? (
-        <CaretPopover anchor={slashAnchor} testId="slash-popover" ariaLabel="Slash commands">
+        <CaretPopover id="composer-slash-listbox" anchor={slashAnchor} testId="slash-popover" ariaLabel="Slash commands">
           {slashResults.length > 0 ? (
-            slashResults.map((item, i) => (
-              <CommandItem
-                key={`${item.kind}:${item.id}`}
-                value={`${item.kind}:${item.id}`}
-                data-selected={i === slashIndex || undefined}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  acceptSlashItem(item);
-                }}
-                onMouseEnter={() => setSlashIndex(i)}
-              >
-                <span className="text-sm font-medium">{item.name}</span>
-                <span className="text-xs text-muted-foreground">{item.hint}</span>
-              </CommandItem>
-            ))
+            <>
+              {slashCommandItems.length > 0 ? (
+                <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <CommandIcon className="h-3 w-3" aria-hidden="true" />
+                    Commands
+                  </span>
+                </div>
+              ) : null}
+              {slashCommandItems.map((item, i) => (
+                <CommandItem
+                  key={`${item.kind}:${item.id}`}
+                  role="option"
+                  aria-selected={i === slashIndex}
+                  value={`${item.kind}:${item.id}`}
+                  data-selected={i === slashIndex || undefined}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    acceptSlashItem(item);
+                  }}
+                  onMouseEnter={() => setSlashIndex(i)}
+                >
+                  <span id={getSlashOptionId(i)} className="sr-only" />
+                  <CommandIcon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" data-testid="slash-item-icon-command" />
+                  <span className="text-sm font-medium">{item.name}</span>
+                  <span className="text-xs text-muted-foreground">{item.hint}</span>
+                </CommandItem>
+              ))}
+              {slashPromptItems.length > 0 ? (
+                <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" aria-hidden="true" />
+                    Prompts
+                  </span>
+                </div>
+              ) : null}
+              {slashPromptItems.map((item, i) => {
+                const menuIndex = slashCommandItems.length + i;
+                return (
+                  <CommandItem
+                    key={`${item.kind}:${item.id}`}
+                    role="option"
+                    aria-selected={menuIndex === slashIndex}
+                    value={`${item.kind}:${item.id}`}
+                    data-selected={menuIndex === slashIndex || undefined}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      acceptSlashItem(item);
+                    }}
+                    onMouseEnter={() => setSlashIndex(menuIndex)}
+                  >
+                    <span id={getSlashOptionId(menuIndex)} className="sr-only" />
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" data-testid="slash-item-icon-prompt" />
+                    <span className="text-sm font-medium">{item.name}</span>
+                    <span className="text-xs text-muted-foreground">{item.hint}</span>
+                  </CommandItem>
+                );
+              })}
+            </>
           ) : (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">No matching commands</div>
           )}

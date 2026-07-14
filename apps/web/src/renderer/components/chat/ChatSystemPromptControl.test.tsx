@@ -58,7 +58,7 @@ describe('ChatSystemPromptControl', () => {
     });
 
     const trigger = screen.getByRole('button', { name: 'Conversation system prompt' });
-    expect(trigger.textContent).toContain('Agent default');
+    expect(trigger.textContent).toContain('Using agent default');
   });
 
   it('shows the custom state when the conversation has an override', () => {
@@ -68,7 +68,7 @@ describe('ChatSystemPromptControl', () => {
       conversationHistoryByMind: { [mind.mindId]: [makeConversation({ systemMessage: 'Only speak in haiku.' })] },
     });
 
-    expect(screen.getByRole('button', { name: 'Conversation system prompt' }).textContent).toContain('Custom prompt');
+    expect(screen.getByRole('button', { name: 'Conversation system prompt' }).textContent).toContain('Override active');
   });
 
   it('opens the dialog with the current override prefilled and the agent default as placeholder', () => {
@@ -102,7 +102,7 @@ describe('ChatSystemPromptControl', () => {
     await waitFor(() => {
       expect(api.conversationHistory.setSystemMessage).toHaveBeenCalledWith('mind-1', 'session-1', 'Be terse.');
     });
-    expect(screen.getByRole('button', { name: 'Conversation system prompt' }).textContent).toContain('Custom prompt');
+    expect(screen.getByRole('button', { name: 'Conversation system prompt' }).textContent).toContain('Override active');
   });
 
   it('clears the override through reset and falls back to the agent default', async () => {
@@ -121,7 +121,7 @@ describe('ChatSystemPromptControl', () => {
     await waitFor(() => {
       expect(api.conversationHistory.setSystemMessage).toHaveBeenCalledWith('mind-1', 'session-1', '');
     });
-    expect(screen.getByRole('button', { name: 'Conversation system prompt' }).textContent).toContain('Agent default');
+    expect(screen.getByRole('button', { name: 'Conversation system prompt' }).textContent).toContain('Using agent default');
   });
 
   it('disables the trigger while a turn is streaming or the mind is busy', () => {

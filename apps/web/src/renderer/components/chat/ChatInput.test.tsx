@@ -832,6 +832,29 @@ describe('ChatInput file attachments', () => {
     ]);
   });
 
+  it('shows attached files as removable chips with name and size', async () => {
+    render(<ChatInput {...defaultProps} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const fileInput = screen.getByTestId('composer-file-input') as HTMLInputElement;
+    const file = new File(['hello world'], 'notes.txt', { type: 'text/plain' });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    const tray = await screen.findByTestId('composer-attachment-tray');
+    expect(tray).toBeTruthy();
+    expect(screen.getByText('notes.txt')).toBeTruthy();
+    expect(tray.textContent).toMatch(/B|KB|MB/);
+    expect(screen.getByRole('button', { name: 'Remove attachment notes.txt' })).toBeTruthy();
+    expect(textarea.value).toMatch(/\[📄#\d+ notes\.txt\]/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove attachment notes.txt' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('composer-attachment-tray')).toBeNull();
+      expect(textarea.value).toBe('');
+    });
+  });
+
   it('includes visible composer text metadata alongside selected mention targets', async () => {
     const onSend = vi.fn();
     appStateMock.current.minds = [makeMind('m1', 'Ada'), makeMind('m2', 'Alan')];
@@ -1016,6 +1039,36 @@ describe('ChatInput @-mentions', () => {
     await waitFor(() => expect(textarea.value).toBe('hey @Alan '));
   });
 
+  it('wires combobox aria state from the textarea host to the mention listbox', async () => {
+    appStateMock.current.minds = [makeMind('m1', 'Ada'), makeMind('m2', 'Alan')];
+    render(<ChatInput {...defaultProps} />);
+    const textarea = screen.getByRole('textbox', { name: 'Message your agent' }) as HTMLTextAreaElement;
+
+    typeAtEnd(textarea, '@a');
+    await screen.findByTestId('mention-popover');
+
+    expect(textarea.getAttribute('role')).toBe('combobox');
+    expect(textarea.getAttribute('aria-expanded')).toBe('true');
+    expect(textarea.getAttribute('aria-autocomplete')).toBe('list');
+    const controls = textarea.getAttribute('aria-controls');
+    const activeDescendant = textarea.getAttribute('aria-activedescendant');
+    expect(controls).toBeTruthy();
+    expect(activeDescendant).toBeTruthy();
+    expect(controls ? document.getElementById(controls) : null).toBeTruthy();
+    expect(activeDescendant ? document.getElementById(activeDescendant) : null).toBeTruthy();
+
+    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+    const nextActive = textarea.getAttribute('aria-activedescendant');
+    expect(nextActive).toBeTruthy();
+    expect(nextActive).not.toBe(activeDescendant);
+
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+    await waitFor(() => {
+      expect(textarea.getAttribute('aria-expanded')).toBe('false');
+      expect(textarea.hasAttribute('aria-activedescendant')).toBe(false);
+    });
+  });
+
   it('sends selected mention metadata with stable mind ids', async () => {
     const onSend = vi.fn();
     appStateMock.current.minds = [makeMind('m1', 'Ada'), makeMind('m2', 'Alan')];
@@ -1150,6 +1203,39 @@ describe('ChatInput slash commands', () => {
     await waitFor(() => expect(screen.getByText('Standup')).toBeTruthy());
     expect(screen.getByText('Daily update')).toBeTruthy();
     expect(screen.getByText('/new')).toBeTruthy();
+  });
+
+  it('sections the slash menu into Commands and Prompts with icon cues', async () => {
+    vi.mocked(api.prompts.list).mockResolvedValue([savedPrompt()]);
+    render(<ChatInput {...defaultProps} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    typeAtEnd(textarea, '/');
+    await screen.findByTestId('slash-popover');
+    await waitFor(() => expect(screen.getByText('Prompts')).toBeTruthy());
+
+    expect(screen.getByText('Commands')).toBeTruthy();
+    expect(screen.getByText('Prompts')).toBeTruthy();
+    expect(screen.getAllByTestId('slash-item-icon-command').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('slash-item-icon-prompt').length).toBeGreaterThan(0);
+  });
+
+  it('wires combobox aria state from the textarea host to the slash listbox', async () => {
+    vi.mocked(api.prompts.list).mockResolvedValue([savedPrompt()]);
+    render(<ChatInput {...defaultProps} />);
+    const textarea = screen.getByRole('textbox', { name: 'Message your agent' }) as HTMLTextAreaElement;
+
+    typeAtEnd(textarea, '/');
+    await screen.findByTestId('slash-popover');
+    await waitFor(() => expect(screen.getByText('Prompts')).toBeTruthy());
+
+    expect(textarea.getAttribute('role')).toBe('combobox');
+    expect(textarea.getAttribute('aria-expanded')).toBe('true');
+    const controls = textarea.getAttribute('aria-controls');
+    const activeDescendant = textarea.getAttribute('aria-activedescendant');
+    expect(controls).toBeTruthy();
+    expect(activeDescendant).toBeTruthy();
+    expect(controls ? document.getElementById(controls) : null).toBeTruthy();
+    expect(activeDescendant ? document.getElementById(activeDescendant) : null).toBeTruthy();
   });
 
   it('inserts a saved prompt body into the composer on Enter', async () => {

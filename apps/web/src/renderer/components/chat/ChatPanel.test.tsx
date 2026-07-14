@@ -84,6 +84,21 @@ describe('ChatPanel error surface', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it('shows practical header context cues for the active conversation and model', () => {
+    renderPanel(mockElectronAPI(), {
+      selectedModel: 'copilot:gpt-5.6-sol',
+      availableModels: [{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }],
+      conversationHistoryByMind: {
+        'mind-1': [{ ...conversationHistory()[0], title: 'Shipping UX fixes' }],
+      },
+    });
+
+    expect(screen.getByText('Shipping UX fixes')).toBeTruthy();
+    expect(
+      screen.getByText((value) => value.includes('Monica') && value.includes('GPT-5.6 Sol')),
+    ).toBeTruthy();
+  });
+
   it('re-runs the failed turn through the regenerate path when Retry is clicked', async () => {
     const api = renderPanel(mockElectronAPI(), {
       errorByMind: { 'mind-1': { message: 'The agent ran into an error.', failedMessageId: 'a1' } },
