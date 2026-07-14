@@ -9,6 +9,7 @@ import {
   recommendBumpFromChangelog,
   promoteUnreleasedToVersion,
   ensureUnreleasedSection,
+  buildBullet,
   appendEntry,
 } from '../../scripts/changelog';
 
@@ -316,5 +317,102 @@ describe('changelog parser', () => {
     const text = readFileSync(path, 'utf8');
     // The new ### Fixed block must not abut the next ## heading.
     expect(text).toMatch(/- \*\*Patch\*\*\n\n+## \[1\.0\.0\]/);
+  });
+
+  it('buildBullet composes the canonical bullet string', () => {
+    expect(buildBullet({ summary: 'Fix auth' })).toBe('- **Fix auth**');
+    expect(buildBullet({ summary: 'Fix auth', detail: 'detail here' })).toBe('- **Fix auth** — detail here');
+    expect(buildBullet({ summary: 'Fix auth', issue: '99' })).toBe('- **Fix auth** (#99)');
+    expect(buildBullet({ summary: 'Fix auth', detail: 'detail here', issue: '99' })).toBe(
+      '- **Fix auth** — detail here (#99)',
+    );
+  });
+
+  it('appendEntry is a no-op when an exact duplicate already exists under the same heading', () => {
+    const path = writeChangelog(
+      workDir,
+      [
+        '# Changelog',
+        '',
+        '## [Unreleased]',
+        '',
+        '### Fixed',
+        '',
+        '- **Fix auth bug** — detail here (#99)',
+        '',
+        '## [1.0.0] - 2025-01-01',
+      ].join('\n'),
+    );
+    appendEntry(path, { kind: 'fixed', summary: 'Fix auth bug', detail: 'detail here', issue: '99' });
+    const text = readFileSync(path, 'utf8');
+    const matches = text.match(/- \*\*Fix auth bug\*\*/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it('appendEntry appends when summary matches but detail differs', () => {
+    const path = writeChangelog(
+      workDir,
+      [
+        '# Changelog',
+        '',
+        '## [Unreleased]',
+        '',
+        '### Fixed',
+        '',
+        '- **Fix auth bug** — original detail (#99)',
+        '',
+        '## [1.0.0] - 2025-01-01',
+      ].join('\n'),
+    );
+    appendEntry(path, { kind: 'fixed', summary: 'Fix auth bug', detail: 'updated detail', issue: '99' });
+    const text = readFileSync(path, 'utf8');
+    const matches = text.match(/- \*\*Fix auth bug\*\*/g) ?? [];
+    expect(matches.length).toBe(2);
+  });
+
+  it('appendEntry appends when summary matches but issue differs', () => {
+    const path = writeChangelog(
+      workDir,
+      [
+        '# Changelog',
+        '',
+        '## [Unreleased]',
+        '',
+        '### Fixed',
+        '',
+        '- **Fix auth bug** — same detail (#98)',
+        '',
+        '## [1.0.0] - 2025-01-01',
+      ].join('\n'),
+    );
+    appendEntry(path, { kind: 'fixed', summary: 'Fix auth bug', detail: 'same detail', issue: '99' });
+    const text = readFileSync(path, 'utf8');
+    const matches = text.match(/- \*\*Fix auth bug\*\*/g) ?? [];
+    expect(matches.length).toBe(2);
+  });
+
+  it('appendEntry appends when the matching heading is under a different kind mapping', () => {
+    // Same summary under "fixed" vs "security" should both exist — different headings.
+    const path = writeChangelog(
+      workDir,
+      [
+        '# Changelog',
+        '',
+        '## [Unreleased]',
+        '',
+        '### Fixed',
+        '',
+        '- **Patch X**',
+        '',
+        '## [1.0.0] - 2025-01-01',
+      ].join('\n'),
+    );
+    appendEntry(path, { kind: 'security', summary: 'Patch X' });
+    const text = readFileSync(path, 'utf8');
+    // Two headings, two bullets with the same summary
+    expect(text).toContain('### Fixed');
+    expect(text).toContain('### Security');
+    const matches = text.match(/- \*\*Patch X\*\*/g) ?? [];
+    expect(matches.length).toBe(2);
   });
 });

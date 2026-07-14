@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add chamber:a2a ttasks runtime support** — Adds a chamber:a2a custom task type, production A2A bridge wiring, durable ttasks persistence, and invariants for the runtime contract.
 - **Add theme-aware update chrome** — Adds a dismissible ready-to-install banner and update-status indicator with accessible light and dark theme colors.
 - **Expose bounded per-mind skill discovery** — Adds renderer-safe on-disk skill metadata IPC with asynchronous bounded reads, deterministic limits, and path/link safeguards without conflating managed provenance or integrity.
-- **Add insiders-gated local voice dictation** — Adds local Foundry/Nemotron dictation with a dedicated Settings page, chat mic and push-to-talk controls, explicit runtime capability gating, and insiders-only prepared runtime packaging. (#385) (#385)
+- **Add insiders-gated local voice dictation** — Adds local Foundry/Nemotron dictation with a dedicated Settings page, chat mic and push-to-talk controls, explicit runtime capability gating, and insiders-only prepared runtime packaging. (#385)
 - **Add appearance preferences** — Adds a Settings > Appearance section with light/dark/system theme, font size (small/medium/large), and density (comfortable/compact) that apply live and persist across reloads. An always-on renderer store follows the OS color scheme for the system option and syncs preferences across windows, and the native Windows title-bar overlay repaints to match the active theme.
 - **Add global command palette** — Adds a Cmd/Ctrl-K command palette built on the existing cmdk primitive and mounted once in the app shell, to switch between loaded agents, open Chat, Chatroom, Settings, and discovered Lens views, add an agent, and start a guarded new conversation for the active mind that is withheld while it is streaming or switching models.
 - **Add global custom instructions** — Adds a ChatGPT/Claude-style global custom instructions field to the user profile, editable in a new Settings section, injected into every mind's system message before the Chamber safety guidance, and applied to already-loaded minds so the next chat, task, and chatroom session uses the fresh instructions.
@@ -63,9 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add operator activity contracts** - Adds shared operator activity and usage contracts, a minimal service seam, and validated desktop IPC/preload access for future activity, chatroom progress, and usage rollup slices. Refs ianphil/chamber#215. Refs ianphil/chamber#342.
 - **Add operator activity surface** - Adds a persistent renderer surface for per-mind and chatroom activity metadata outside the transcript, using the shared operator activity contracts without exposing prompts, outputs, raw tool payloads, credentials, or reasoning text. Refs ianphil/chamber#215
 - **Add composer power-ups** — Chat composer gains file attachments via a paperclip button (images ride the existing blob path, text-like files become first-class document attachments, unsupported or oversized files are skipped with a notice), @-mentions that insert an agent token from the loaded minds, and slash commands (/new, /clear, /model, /settings). Attachment payloads are scoped per mind and keyed by opaque id so switching agents and unusual filenames stay correct.
-- **Add chat message actions** — Adds hover-revealed message actions to single-agent chat: regenerate the newest assistant turn, edit and resubmit a user turn, delete from a turn onward (Delete from here), and copy as raw markdown alongside plain text. Edits and deletes truncate persisted SDK session history so they survive reload; edit and regenerate are disabled for turns containing images, and the actions are hidden where history mutation is unsupported (browser mode).
-- **Add conversation history search and export** — Search the active mind's conversations by title and message content, and export any conversation as Markdown or JSON via a save dialog. Resumed, exported, and searched transcripts now preserve tool, reasoning, and permission blocks consistent with live chat.
-- **Add Extensions hub** — New Extensions view (activity-bar icon) with four tabs: manage a mind's MCP servers (add/edit/remove written to .mcp.json, reusing the runtime schema so invalid entries are preserved and never normalized, with tools/type preserved across edits and renames), install/uninstall marketplace Tools, and read-only Skills and Lens view lists.
 - **Add first-class chat document attachments**
 - **Add conversation forking from persisted turns** - Adds fork metadata, bounded seed context, first-turn context injection, renderer actions, and history display so a prior user or assistant turn can start a distinct active conversation. Fixes ianphil/chamber#181.
 - **Add local WTD topology advice for automation authors** — Give Insiders minds a verified local workflow-shape advisor before they author ttasks DAGs, while keeping execution in ttasks-ts (#400)
@@ -117,6 +114,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - **Require deterministic Electron cross-surface quality gate in CI** - Add a non-optional `electron-cross-surface-gate` Windows job to `ci.yml` that runs only `cross-surface-quality-gate.spec.ts` with one worker and zero retries. The job depends on `validate` so it only fires after lint and unit tests pass. Add `smoke:cross-surface-gate` npm script for parity with local execution. Document local command, environment assumptions, and determinism policy in `CONTRIBUTING.md`.
+- **Guard changelog appends against exact duplicate entries** - `appendEntry` in `scripts/changelog.js` now compares the rendered bullet string against existing bullets under the same heading and returns early on an exact match, preventing identical entries from accumulating in `## [Unreleased]`.
+
+### Tests
+
+- **Fix Windows link coverage to use directory junctions** - Replaces the privilege-gated file-symlink fixture in `MindProfileService` tests with a directory junction so the path-rejection invariant runs without Administrator or Developer Mode on Windows. Keeps the file-symlink case as supplemental coverage gated on capability availability.
+
+### Security
+
+- **Pin release workflow source refs to immutable SHAs** - `release.yml` now resolves the mutable `source_ref` to a full commit SHA immediately after checkout and uses that SHA for all downstream build and publish jobs, preventing race conditions where commits during a long build could cause different jobs to build different code. Resolved SHA is included in release notes.
+
+### Docs
+
+- **Reconcile insiders channel documentation with macOS build reality** - `INSIDERS.md` and `ai-docs/release-channels.md` now correctly state that the insiders channel ships Windows (x64) and macOS arm64 builds, matching the `release-insiders.yml` workflow that added macOS in v0.64.0.
 
 ## [0.64.1] - 2026-06-01
 

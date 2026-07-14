@@ -6,7 +6,7 @@ nothing is published on push to `master`.
 | Channel  | Audience               | Workflow                                | Distribution                                       | Platforms                |
 | -------- | ---------------------- | --------------------------------------- | -------------------------------------------------- | ------------------------ |
 | Stable   | Public                 | `.github/workflows/release.yml`         | GitHub Releases                                    | Windows + macOS arm64 (+ optional Intel) |
-| Insiders | Invite-only            | `.github/workflows/release-insiders.yml`| Azure Blob `chamberinsiders/releases` (unlisted)   | Windows only             |
+| Insiders | Invite-only            | `.github/workflows/release-insiders.yml`| Azure Blob `chamberinsiders/releases` (unlisted)   | Windows + macOS arm64    |
 
 ## Mental model
 
@@ -125,10 +125,9 @@ insider, then promote.
 
 ### What it is
 
-- Windows-only signed NSIS installer, published to a private Azure Blob.
-- Auto-update reads `insiders.yml` from the same blob.
-- macOS is intentionally excluded until the Apple Developer ID
-  notarization warmup completes. Insider testers run Windows only.
+- Windows (x64) signed NSIS installer and macOS (arm64) signed and notarized DMG/ZIP, both published to a private Azure Blob.
+- Windows auto-update reads `insiders.yml` from the blob; macOS reads `latest-mac.yml`.
+- Both artifacts are built and published together — the `publish` job only runs after both `build-windows` and `build-macos` succeed.
 
 ### Where artifacts live
 
@@ -171,27 +170,28 @@ insider, then promote.
      in `## [Unreleased]`, computes the target stable via SemVer, and
      advances/resets the `-insiders.N` counter against existing tags.
    - Run `npm install` to refresh the lockfile in the runner workspace.
-   - Sign via the existing Trusted Signing identity.
-   - Build with `CHAMBER_RELEASE_CHANNEL=insiders` and
+   - Sign via the existing Trusted Signing identity (Windows) and Apple Developer ID (macOS).
+   - Build Windows and macOS arm64 artifacts concurrently with `CHAMBER_RELEASE_CHANNEL=insiders` and
      `CHAMBER_BUILDER_UPDATE_URL` pointing at the blob. The embedded
      `app-update.yml` ships `channel: insiders` so the installed app
-     reads `insiders.yml` on update checks.
-   - Validate the manifest with
+     reads `insiders.yml` (Windows) or `latest-mac.yml` (macOS) on update checks.
+   - Validate each manifest with
      `node scripts/validate-builder-release.js --channel=insiders`.
-   - Upload artifacts to the blob via `az storage blob upload-batch
-     --auth-mode login`.
+   - Upload all artifacts to the blob via `az storage blob upload-batch
+     --auth-mode login` only after both build jobs succeed.
    - Tag master's commit `vX.Y.Z-insiders.N` and push the **tag only**.
      No commit is created — the `package.json` mutation lives only in
      the runner's working tree and the built installer.
 
 ### What testers do
 
-- First install: download
+- First install (Windows): download
   `Chamber-Setup-latest-insiders.exe` from the URL above and run it.
-  Share this URL out-of-band — it is not linked from the website or
-  README.
+- First install (macOS arm64): download the tagged DMG shared out-of-band
+  (e.g. `Chamber-vX.Y.Z-insiders.N-arm64.dmg`) from the blob root.
+  Both URLs are unlisted — share out-of-band only.
 - Subsequent updates: nothing. The installed app polls `insiders.yml`
-  and self-updates.
+  (Windows) or `latest-mac.yml` (macOS) and self-updates.
 - Revert to stable: uninstall, then install the latest GitHub Release.
   Mind data lives in the user profile and is preserved across reinstall.
 
