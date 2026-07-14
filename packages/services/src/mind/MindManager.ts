@@ -563,9 +563,19 @@ export class MindManager extends EventEmitter {
       tools: this.getSessionTools(mindId, context.mindPath),
       model: context.selectedModel,
       modelProvider: context.selectedModelProvider,
-      sessionId: randomUUID(),
     });
-    await session.disconnect();
+    // Explicit disposable-session boundary: disconnect() runs in finally on every
+    // exit path from this point forward, including any verification work added here
+    // in the future. An empty try body is intentional — session creation is the
+    // full verification; the boundary exists to enforce the teardown contract for
+    // future callers. If disconnect() rejects, the error propagates to
+    // McpConnectorOperationsService which maps it to reload-failed and never to
+    // configuration-applied.
+    try {
+      // No additional verification work in this pass; session creation succeeded.
+    } finally {
+      await session.disconnect();
+    }
   }
 
   async recoverActiveConversationSession(mindId: string): Promise<CopilotSession> {

@@ -58,4 +58,26 @@ describe('McpConnectorOperationsService', () => {
     expect(result).toEqual({ status: 'reload-failed' });
     expect(JSON.stringify(result)).not.toContain('secret');
   });
+
+  it('maps a disconnect rejection to reload-failed and does not return configuration-applied', async () => {
+    const disconnectError = new Error('SDK disconnect failed: internal-session-token=abc');
+    const service = new McpConnectorOperationsService({
+      listStatuses: () => ({
+        connectors: [{
+          name: 'files',
+          transport: 'stdio',
+          configuration: 'ready',
+          connection: 'unknown',
+        }],
+        sourceStatus: 'ready',
+      }),
+    }, { verifyMcpConfiguration: vi.fn().mockRejectedValue(disconnectError) });
+
+    const result = await service.check('mind-1', 'C:\\minds\\mind-1', 'files');
+
+    expect(result.status).toBe('reload-failed');
+    expect(result.status).not.toBe('configuration-applied');
+    expect(JSON.stringify(result)).not.toContain('internal-session-token');
+    expect(JSON.stringify(result)).not.toContain('abc');
+  });
 });

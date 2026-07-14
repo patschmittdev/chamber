@@ -3257,4 +3257,71 @@ describe('MindManager', () => {
       expect(foxRecord?.selectedModelProvider).toBeUndefined();
     });
   });
+
+  describe('verifyMcpConfiguration', () => {
+    it('propagates a disconnect rejection to the caller', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const context = manager.getMind(mind.mindId);
+      if (!context) throw new Error('Expected mind context');
+
+      const disconnectError = new Error('disconnect-rejected');
+      const verifySession = {
+        ...createSessionStub('verify-session-1'),
+        disconnect: vi.fn().mockRejectedValue(disconnectError),
+      };
+      mockCreateSession.mockReturnValueOnce(verifySession);
+
+      await expect(manager.verifyMcpConfiguration(mind.mindId)).rejects.toThrow('disconnect-rejected');
+    });
+
+    it('always calls disconnect on the disposable session', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+
+      const verifySession = createSessionStub('verify-session-2');
+      mockCreateSession.mockReturnValueOnce(verifySession);
+
+      await manager.verifyMcpConfiguration(mind.mindId);
+
+      expect(verifySession.disconnect).toHaveBeenCalledOnce();
+    });
+
+    it('preserves the active conversation session context after verification', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const contextBefore = manager.getMind(mind.mindId);
+      const activeSessionIdBefore = contextBefore?.activeSessionId;
+      // Guard: loadMind always establishes a conversation session; activeSessionId
+      // must be a non-trivial value so the assertion below is not vacuous.
+      expect(activeSessionIdBefore).toBeDefined();
+
+      const verifySession = createSessionStub('verify-session-3');
+      mockCreateSession.mockReturnValueOnce(verifySession);
+
+      await manager.verifyMcpConfiguration(mind.mindId);
+
+      const contextAfter = manager.getMind(mind.mindId);
+      expect(contextAfter?.activeSessionId).toBe(activeSessionIdBefore);
+      expect(contextAfter?.session).toBe(contextBefore?.session);
+    });
+
+    it('active session context is unchanged when disconnect rejects', async () => {
+      const mind = await manager.loadMind('/tmp/agents/q');
+      const contextBefore = manager.getMind(mind.mindId);
+      const activeSessionIdBefore = contextBefore?.activeSessionId;
+      // Guard: loadMind always establishes a conversation session; activeSessionId
+      // must be a non-trivial value so the assertion below is not vacuous.
+      expect(activeSessionIdBefore).toBeDefined();
+
+      const verifySession = {
+        ...createSessionStub('verify-session-4'),
+        disconnect: vi.fn().mockRejectedValue(new Error('disconnect-failed')),
+      };
+      mockCreateSession.mockReturnValueOnce(verifySession);
+
+      await expect(manager.verifyMcpConfiguration(mind.mindId)).rejects.toThrow('disconnect-failed');
+
+      const contextAfter = manager.getMind(mind.mindId);
+      expect(contextAfter?.activeSessionId).toBe(activeSessionIdBefore);
+    });
+  });
 });
+

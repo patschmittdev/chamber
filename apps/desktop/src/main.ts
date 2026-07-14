@@ -547,7 +547,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     storageRoot: path.join(appPaths.userData, 'canvas'),
     onAction: async (action) => {
       if (!action.lensViewId) {
-        log.info('Canvas action received:', action);
+        log.info('Canvas action received:', { actionId: action.actionId, mindId: action.mindId, canvas: action.canvas, action: action.action });
         return;
       }
       const mindPath = mindManager.getMind(action.mindId)?.mindPath;
