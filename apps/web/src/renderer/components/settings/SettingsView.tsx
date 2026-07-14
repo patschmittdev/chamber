@@ -24,6 +24,7 @@ const ADD_ACCOUNT_VALUE = '__add-account__';
 
 export function SettingsView() {
   const { featureFlags, minds } = useAppState();
+  const dispatch = useAppDispatch();
   const [login, setLogin] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Array<{ login: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -501,6 +502,18 @@ export function SettingsView() {
               <header>
                 <h2 className="text-lg font-semibold text-foreground">Marketplaces</h2>
                 <p className="text-xs text-foreground/60">Repositories Chamber pulls Genesis mind templates from.</p>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                    onClick={() => {
+                      dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: { tab: 'skills' } });
+                      dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' });
+                    }}
+                  >
+                    Open Extensions skills
+                  </button>
+                </div>
               </header>
               <div className="rounded-lg border border-border bg-card p-4 space-y-4">
                 <form className="flex gap-2" onSubmit={(event) => { void handleAddMarketplace(event); }}>

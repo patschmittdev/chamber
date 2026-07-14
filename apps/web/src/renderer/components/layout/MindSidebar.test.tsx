@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { MindContext } from '@chamber/shared/types';
 import { installElectronAPI, installMenuDom } from '../../../test/helpers';
-import { AppStateProvider } from '../../lib/store';
+import { AppStateProvider, useAppState } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
 import { TooltipProvider } from '../ui/tooltip';
 import { MindSidebar } from './MindSidebar';
@@ -48,6 +48,11 @@ function renderSidebar(overrides?: Partial<AppState>, props?: { autoCollapsed?: 
       </TooltipProvider>
     </AppStateProvider>,
   );
+}
+
+function ActiveViewProbe() {
+  const { activeView } = useAppState();
+  return <div data-testid="active-view">{activeView}</div>;
 }
 
 describe('MindSidebar', () => {
@@ -202,5 +207,25 @@ describe('MindSidebar', () => {
     renderSidebar();
     const filter = screen.getByLabelText('Filter agents');
     expect(filter.className).toContain('focus-ring');
+  });
+
+  it('preserves Extensions context when switching minds', () => {
+    render(
+      <AppStateProvider
+        testInitialState={{
+          minds: [mind, makeMind('mind-2', 'Bob')],
+          activeMindId: mind.mindId,
+          activeView: 'extensions',
+        }}
+      >
+        <TooltipProvider>
+          <MindSidebar />
+          <ActiveViewProbe />
+        </TooltipProvider>
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to Bob' }));
+    expect(screen.getByTestId('active-view').textContent).toBe('extensions');
   });
 });

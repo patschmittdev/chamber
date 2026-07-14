@@ -92,6 +92,7 @@ export interface CommandContext {
   disabledLensViewKeys: string[];
   featureFlags: AppFeatureFlags;
   activeMindId: string | null;
+  activeView: LensView;
   /** The conversation the palette's conversation-scoped commands act on, or null. */
   activeConversation: ConversationSummary | null;
   /** True while the active mind is streaming or switching models; blocks conversation resets. */
@@ -109,7 +110,12 @@ export interface CommandContext {
   ui: CommandSurfaceActions;
 }
 
-function switchToMind(mind: MindContext, dispatch: Dispatch<AppAction>, electronAPI: ElectronAPI): void {
+function switchToMind(
+  mind: MindContext,
+  dispatch: Dispatch<AppAction>,
+  electronAPI: ElectronAPI,
+  activeView: LensView,
+): void {
   // Mirror MindSidebar.handleSwitchMind: focus a popout window if the mind is
   // windowed, otherwise switch the active mind in the main window.
   if (mind.windowed) {
@@ -118,7 +124,9 @@ function switchToMind(mind: MindContext, dispatch: Dispatch<AppAction>, electron
   }
   void electronAPI.mind.setActive(mind.mindId);
   dispatch({ type: 'SET_ACTIVE_MIND', payload: mind.mindId });
-  dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+  if (activeView !== 'extensions') {
+    dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+  }
 }
 
 async function startNewConversation(
@@ -202,7 +210,7 @@ function agentCommands(context: CommandContext): Command[] {
     group: GROUP_AGENTS,
     icon: Bot,
     keywords: [mind.identity.name, 'agent'],
-    run: () => switchToMind(mind, context.dispatch, context.electronAPI),
+    run: () => switchToMind(mind, context.dispatch, context.electronAPI, context.activeView),
   }));
 
   commands.push({

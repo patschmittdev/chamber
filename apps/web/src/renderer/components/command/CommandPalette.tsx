@@ -32,6 +32,7 @@ export function CommandPalette() {
     discoveredViews,
     disabledLensViewKeys,
     activeMindId,
+    activeView,
     streamingByMind,
     conversationViewByMind,
     conversationHistoryByMind,
@@ -106,6 +107,7 @@ export function CommandPalette() {
       disabledLensViewKeys,
       featureFlags,
       activeMindId,
+      activeView,
       activeConversation,
       isActiveMindBusy,
       canRegenerate,
@@ -116,7 +118,7 @@ export function CommandPalette() {
       toggleTheme: appearanceStore.toggleTheme,
       ui,
     }),
-    [minds, discoveredViews, disabledLensViewKeys, featureFlags, activeMindId, activeConversation, isActiveMindBusy, canRegenerate, dispatch, regenerate, ui],
+    [minds, discoveredViews, disabledLensViewKeys, featureFlags, activeMindId, activeView, activeConversation, isActiveMindBusy, canRegenerate, dispatch, regenerate, ui],
   );
 
   useCommandShortcuts(commands);

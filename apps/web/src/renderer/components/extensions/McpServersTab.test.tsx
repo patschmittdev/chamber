@@ -106,6 +106,18 @@ describe('McpServersTab', () => {
     expect(api.mcp.setServers).not.toHaveBeenCalled();
   });
 
+  it('validates inline on blur before submit', async () => {
+    vi.mocked(api.mcp.getServers).mockResolvedValue([]);
+    renderTab(api);
+
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Add server' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Add server' }));
+    fireEvent.blur(screen.getByLabelText('Name'));
+
+    await waitFor(() => expect(screen.getByText('Name is required.')).toBeTruthy());
+    expect(api.mcp.setServers).not.toHaveBeenCalled();
+  });
+
   it('carries preserved fields through an edit so the tools allowlist survives', async () => {
     const original: McpServerEntry = {
       name: 'files',

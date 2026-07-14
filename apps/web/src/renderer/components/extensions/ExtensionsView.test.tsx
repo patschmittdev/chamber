@@ -5,7 +5,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
-import { AppStateProvider } from '../../lib/store';
+import { AppStateProvider, useAppState } from '../../lib/store';
 import { ExtensionsView } from './ExtensionsView';
 
 vi.mock('./SkillsTab', () => ({
@@ -21,6 +21,16 @@ function renderView(api: ReturnType<typeof mockElectronAPI>) {
   );
 }
 
+function StateProbe() {
+  const { activeView, pendingSettingsIntent } = useAppState();
+  return (
+    <>
+      <div data-testid="active-view">{activeView}</div>
+      <div data-testid="pending-settings">{pendingSettingsIntent?.section ?? 'none'}</div>
+    </>
+  );
+}
+
 describe('ExtensionsView', () => {
   let api: ReturnType<typeof mockElectronAPI>;
 
@@ -32,13 +42,20 @@ describe('ExtensionsView', () => {
     vi.useRealTimers();
   });
 
-  it('renders the header and all four tabs', () => {
+  it('renders the header and all five tabs', () => {
     renderView(api);
     expect(screen.getByRole('heading', { name: 'Extensions' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Prompts' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'MCP servers' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Tools' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Skills' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Lens views' })).toBeTruthy();
+  });
+
+  it('defaults to the Prompts tab to prioritize authoring flows', () => {
+    renderView(api);
+    expect(screen.getByRole('tab', { name: 'Prompts' }).getAttribute('data-state')).toBe('active');
+    expect(screen.getByRole('tab', { name: 'MCP servers' }).getAttribute('data-state')).toBe('inactive');
   });
 
   it('switches to the Tools tab and loads the catalog', async () => {
@@ -79,5 +96,27 @@ describe('ExtensionsView', () => {
     });
 
     expect(screen.getByRole('status').textContent).toContain('0:05');
+  });
+
+  it('shows explicit scope signaling for both global and mind-scoped tabs', () => {
+    renderView(api);
+    expect(screen.getByText('Scope: global (available to every mind)')).toBeTruthy();
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Skills' }));
+    expect(screen.getByText('Scope: active mind only')).toBeTruthy();
+  });
+
+  it('cross-links to Settings > Marketplaces from Extensions', () => {
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ activeView: 'extensions' }}>
+        <ExtensionsView />
+        <StateProbe />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage marketplaces' }));
+    expect(screen.getByTestId('active-view').textContent).toBe('settings');
+    expect(screen.getByTestId('pending-settings').textContent).toBe('marketplaces');
   });
 });

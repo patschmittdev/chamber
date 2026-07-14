@@ -106,6 +106,10 @@ export function McpServersTab() {
     () => entries.filter((entry) => entry.name !== editingName).map((entry) => entry.name),
     [entries, editingName],
   );
+  const validateCurrentForm = useCallback(
+    () => validateMcpForm(form, otherNames),
+    [form, otherNames],
+  );
 
   const openAdd = () => {
     setEditingName(null);
@@ -126,7 +130,7 @@ export function McpServersTab() {
       setFormError('The selected mind changed. Reload before saving.');
       return;
     }
-    const message = validateMcpForm(form, otherNames);
+    const message = validateCurrentForm();
     if (message) {
       setFormError(message);
       return;
@@ -250,12 +254,14 @@ export function McpServersTab() {
               label="Name"
               value={form.name}
               onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
+              onBlur={() => setFormError(validateCurrentForm())}
               placeholder="filesystem"
             />
             <SelectField
               label="Transport"
               value={form.transport}
               onChange={(value) => setForm((prev) => ({ ...prev, transport: value as McpServerFormState['transport'] }))}
+              onBlur={() => setFormError(validateCurrentForm())}
               options={[
                 { label: 'stdio (local command)', value: 'stdio' },
                 { label: 'http (remote endpoint)', value: 'http' },
@@ -268,6 +274,7 @@ export function McpServersTab() {
                   label="Command"
                   value={form.command}
                   onChange={(value) => setForm((prev) => ({ ...prev, command: value }))}
+                  onBlur={() => setFormError(validateCurrentForm())}
                   placeholder="npx"
                 />
                 <TextAreaField
@@ -275,6 +282,7 @@ export function McpServersTab() {
                   hint="One argument per line."
                   value={form.argsText}
                   onChange={(value) => setForm((prev) => ({ ...prev, argsText: value }))}
+                  onBlur={() => setFormError(validateCurrentForm())}
                   placeholder={'-y\n@modelcontextprotocol/server-filesystem'}
                 />
                 <TextAreaField
@@ -282,6 +290,7 @@ export function McpServersTab() {
                   hint="One KEY=VALUE per line."
                   value={form.envText}
                   onChange={(value) => setForm((prev) => ({ ...prev, envText: value }))}
+                  onBlur={() => setFormError(validateCurrentForm())}
                   placeholder={'ROOT=/tmp'}
                 />
               </>
@@ -291,6 +300,7 @@ export function McpServersTab() {
                   label="URL"
                   value={form.url}
                   onChange={(value) => setForm((prev) => ({ ...prev, url: value }))}
+                  onBlur={() => setFormError(validateCurrentForm())}
                   placeholder="https://mcp.example.com/v1"
                 />
                 <TextAreaField
@@ -298,6 +308,7 @@ export function McpServersTab() {
                   hint="One KEY=VALUE per line."
                   value={form.headersText}
                   onChange={(value) => setForm((prev) => ({ ...prev, headersText: value }))}
+                  onBlur={() => setFormError(validateCurrentForm())}
                   placeholder={'Authorization=Bearer token'}
                 />
               </>
@@ -320,7 +331,7 @@ export function McpServersTab() {
   );
 }
 
-function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+function TextField({ label, value, onChange, onBlur, placeholder }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; placeholder?: string }) {
   const id = `mcp-field-${label.toLowerCase().replaceAll(' ', '-')}`;
   return (
     <div className="block">
@@ -329,6 +340,7 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
         id={id}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         value={value}
       />
@@ -336,7 +348,7 @@ function TextField({ label, value, onChange, placeholder }: { label: string; val
   );
 }
 
-function TextAreaField({ label, value, onChange, hint, placeholder }: { label: string; value: string; onChange: (value: string) => void; hint?: string; placeholder?: string }) {
+function TextAreaField({ label, value, onChange, onBlur, hint, placeholder }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; hint?: string; placeholder?: string }) {
   const id = `mcp-field-${label.toLowerCase().replaceAll(' ', '-')}`;
   return (
     <div className="block">
@@ -345,6 +357,7 @@ function TextAreaField({ label, value, onChange, hint, placeholder }: { label: s
         className="mt-2 h-20 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-primary"
         id={id}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         value={value}
       />
@@ -353,7 +366,7 @@ function TextAreaField({ label, value, onChange, hint, placeholder }: { label: s
   );
 }
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ label: string; value: string }> }) {
+function SelectField({ label, value, onChange, onBlur, options }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; options: Array<{ label: string; value: string }> }) {
   const id = `mcp-field-${label.toLowerCase().replaceAll(' ', '-')}`;
   return (
     <div className="block">
@@ -362,6 +375,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
         id={id}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
         value={value}
       >
         {options.map((option) => (
