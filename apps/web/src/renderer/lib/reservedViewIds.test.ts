@@ -12,6 +12,10 @@ describe('reservedViewIds', () => {
     expect(isReservedViewId('extensions')).toBe(true);
   });
 
+  it('keeps the legacy activity id reserved while ViewRouter migrates it to chat', () => {
+    expect(isReservedViewId('activity')).toBe(true);
+  });
+
   it('does not reserve arbitrary discovered view ids', () => {
     expect(isReservedViewId('daily-briefing')).toBe(false);
     expect(isReservedViewId('')).toBe(false);
