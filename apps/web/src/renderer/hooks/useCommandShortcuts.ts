@@ -14,7 +14,9 @@ function isTypingTarget(element: Element | null): boolean {
  * Dispatch registry keybindings from a single global keydown listener. The listener
  * is attached once and reads the latest commands through a ref, so rebuilding the
  * command list does not churn the subscription. A matching command runs unless focus
- * is in an input and the command did not opt in through `runWhileTyping`.
+ * is in an input and the command is a plain-key shortcut that did not opt in through
+ * `runWhileTyping`. A mod chord (Cmd/Ctrl) always runs, because it can never be
+ * mistaken for literal text entry.
  */
 export function useCommandShortcuts(commands: Command[]): void {
   const commandsRef = useRef(commands);
@@ -27,7 +29,8 @@ export function useCommandShortcuts(commands: Command[]): void {
         (command) => command.keybinding && eventMatchesKeybinding(event, command.keybinding),
       );
       if (!match) return;
-      if (!match.runWhileTyping && isTypingTarget(document.activeElement)) return;
+      const requiresMod = match.keybinding?.mod === true;
+      if (!requiresMod && !match.runWhileTyping && isTypingTarget(document.activeElement)) return;
       event.preventDefault();
       match.run();
     };

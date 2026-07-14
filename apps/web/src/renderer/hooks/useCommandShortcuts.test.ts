@@ -59,4 +59,32 @@ describe('useCommandShortcuts', () => {
 
     expect(run).toHaveBeenCalledTimes(1);
   });
+
+  it('fires a mod chord while a textarea composer is focused', () => {
+    const run = vi.fn();
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    renderHook(() =>
+      useCommandShortcuts([command({ id: 'new-conversation', run, keybinding: { mod: true, shift: true, key: 'o' } })]),
+    );
+
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, shiftKey: true, bubbles: true }),
+    );
+
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps suppressing a plain-key shortcut while a textarea composer is focused', () => {
+    const run = vi.fn();
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    renderHook(() => useCommandShortcuts([command({ id: 'help', run, keybinding: { key: '?' } })]));
+
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }));
+
+    expect(run).not.toHaveBeenCalled();
+  });
 });
