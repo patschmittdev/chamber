@@ -7,10 +7,23 @@ import type { CanvasServerLike } from './types';
 
 const tempDirs: string[] = [];
 
-function makeMindPath(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-canvas-service-'));
+function makeTempDir(prefix = 'chamber-canvas-service-'): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
+}
+
+function makeMindPath(): string {
+  return makeTempDir();
+}
+
+function tryCreateSymlink(target: string, linkPath: string): boolean {
+  try {
+    fs.symlinkSync(target, linkPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 class MockCanvasServer implements CanvasServerLike {
@@ -39,11 +52,14 @@ describe('CanvasService', () => {
   let server: MockCanvasServer;
   let openedUrls: string[];
   let service: CanvasService;
+  let storageRoot: string;
 
   beforeEach(() => {
     server = new MockCanvasServer();
     openedUrls = [];
+    storageRoot = makeTempDir('chamber-canvas-storage-');
     service = new CanvasService({
+      storageRoot,
       openExternal: { open: (url) => { openedUrls.push(url); } },
       server,
     });
@@ -58,12 +74,12 @@ describe('CanvasService', () => {
     }
   });
 
-  it('activateMind creates the .chamber\\canvas directory', async () => {
+  it('activateMind creates the per-mind canvas directory under storageRoot', async () => {
     const mindPath = makeMindPath();
 
     await service.activateMind('mind-1', mindPath);
 
-    expect(fs.existsSync(path.join(mindPath, '.chamber', 'canvas'))).toBe(true);
+    expect(fs.existsSync(path.join(storageRoot, 'mind-1'))).toBe(true);
   });
 
   it('shows a wrapped canvas, starts the server, and opens the browser by default', async () => {
@@ -74,7 +90,7 @@ describe('CanvasService', () => {
       name: 'daily-plan',
     });
 
-    const contentPath = path.join(mindPath, '.chamber', 'canvas', 'daily-plan.html');
+    const contentPath = path.join(storageRoot, 'mind-1', 'daily-plan.html');
     const content = fs.readFileSync(contentPath, 'utf8');
 
     expect(server.start).toHaveBeenCalledOnce();
@@ -96,7 +112,7 @@ describe('CanvasService', () => {
       open_browser: false,
     });
 
-    const copied = fs.readFileSync(path.join(mindPath, '.chamber', 'canvas', 'copied.html'), 'utf8');
+    const copied = fs.readFileSync(path.join(storageRoot, 'mind-1', 'copied.html'), 'utf8');
     expect(copied).toBe('<html><body>From file</body></html>');
     expect(openedUrls).toHaveLength(0);
     expect(result).toMatch(/http:\/\/127\.0\.0\.1:4312\/mind-1\/copied\.html\?token=[A-Za-z0-9_-]+/);
@@ -114,7 +130,7 @@ describe('CanvasService', () => {
     expect(openedUrls).toHaveLength(0);
     const servedFilename = new URL(url).pathname.split('/').pop();
     expect(url).toMatch(/^http:\/\/127\.0\.0\.1:4312\/mind-1\/lens-[a-f0-9]{16}\.html\?token=[A-Za-z0-9_-]+$/);
-    expect(fs.readFileSync(path.join(mindPath, '.chamber', 'canvas', servedFilename ?? ''), 'utf8')).toContain('Command');
+    expect(fs.readFileSync(path.join(storageRoot, 'mind-1', servedFilename ?? ''), 'utf8')).toContain('Command');
     expect(server.reload).toHaveBeenCalledWith('mind-1', servedFilename);
   });
 
@@ -140,7 +156,7 @@ describe('CanvasService', () => {
       name: 'report',
     });
 
-    const content = fs.readFileSync(path.join(mindPath, '.chamber', 'canvas', 'report.html'), 'utf8');
+    const content = fs.readFileSync(path.join(storageRoot, 'mind-1', 'report.html'), 'utf8');
     expect(content).toContain('<h1>After</h1>');
     expect(server.reload).toHaveBeenCalledWith('mind-1', 'report.html');
     expect(result).toContain('updated');
@@ -160,7 +176,7 @@ describe('CanvasService', () => {
 
     expect(server.closeClients).toHaveBeenCalledWith('mind-1', 'report.html');
     expect(server.stop).toHaveBeenCalledOnce();
-    expect(fs.existsSync(path.join(mindPath, '.chamber', 'canvas', 'report.html'))).toBe(false);
+    expect(fs.existsSync(path.join(storageRoot, 'mind-1', 'report.html'))).toBe(false);
     expect(result).toContain('Server stopped');
   });
 
@@ -214,5 +230,74 @@ describe('CanvasService', () => {
     await expect(service.showCanvas('mind-1', mindPath, {
       name: 'empty',
     })).rejects.toThrow('canvas_show requires either "html" or "file"');
+  });
+
+  describe('symlink and escape rejection', () => {
+    it('rejects a canvas source file that is a symlink', async () => {
+      const mindPath = makeMindPath();
+      const realFile = path.join(mindPath, 'real.html');
+      fs.writeFileSync(realFile, '<html>Real</html>', 'utf8');
+      const linkPath = path.join(mindPath, 'linked.html');
+      const canCreate = tryCreateSymlink(realFile, linkPath);
+      if (!canCreate) return; // Skip on platforms requiring elevation.
+
+      await expect(service.showCanvas('mind-1', mindPath, {
+        file: linkPath,
+        name: 'from-link',
+        open_browser: false,
+      })).rejects.toThrow('symlink');
+    });
+
+    it('rejects a Lens canvas source that is a symlink inside the lens directory', async () => {
+      const mindPath = makeMindPath();
+      const lensDir = path.join(mindPath, '.github', 'lens', 'view-a');
+      fs.mkdirSync(lensDir, { recursive: true });
+      const realHtml = path.join(mindPath, 'real.html');
+      fs.writeFileSync(realHtml, '<html>Real</html>', 'utf8');
+      const linkPath = path.join(lensDir, 'index.html');
+      const canCreate = tryCreateSymlink(realHtml, linkPath);
+      if (!canCreate) return;
+
+      await expect(service.showLensCanvas('mind-1', mindPath, 'view-a', linkPath))
+        .rejects.toThrow('symlink');
+    });
+
+    it('rejects a Lens canvas source where an ancestor directory is a symlink', async () => {
+      const mindPath = makeMindPath();
+      const realDir = makeTempDir('chamber-canvas-real-');
+      fs.writeFileSync(path.join(realDir, 'index.html'), '<html>Escaped</html>', 'utf8');
+      const lensBase = path.join(mindPath, '.github', 'lens');
+      fs.mkdirSync(lensBase, { recursive: true });
+      const linkedViewDir = path.join(lensBase, 'escaped-view');
+      const canCreate = tryCreateSymlink(realDir, linkedViewDir);
+      if (!canCreate) return;
+
+      const sourcePath = path.join(linkedViewDir, 'index.html');
+      await expect(service.showLensCanvas('mind-1', mindPath, 'escaped-view', sourcePath))
+        .rejects.toThrow();
+    });
+  });
+
+  describe('generated canvas storage stays under storageRoot', () => {
+    it('canvas html files are written under storageRoot/<mindId>/ not mindPath', async () => {
+      const mindPath = makeMindPath();
+      await service.showCanvas('mind-1', mindPath, {
+        html: '<h1>Private</h1>',
+        name: 'private-canvas',
+        open_browser: false,
+      });
+
+      // File must exist under storageRoot, not under mindPath.
+      expect(fs.existsSync(path.join(storageRoot, 'mind-1', 'private-canvas.html'))).toBe(true);
+      expect(fs.existsSync(path.join(mindPath, '.chamber', 'canvas', 'private-canvas.html'))).toBe(false);
+    });
+
+    it('deleted canvas files are removed from storageRoot only', async () => {
+      const mindPath = makeMindPath();
+      await service.showCanvas('mind-1', mindPath, { html: '<p>X</p>', name: 'x', open_browser: false });
+      await service.closeCanvas('mind-1', mindPath, { name: 'x' });
+
+      expect(fs.existsSync(path.join(storageRoot, 'mind-1', 'x.html'))).toBe(false);
+    });
   });
 });

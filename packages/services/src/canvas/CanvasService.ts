@@ -4,12 +4,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Logger } from '../logger';
 import type { ChamberToolProvider } from '../chamberTools';
 import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
+import { assertContained, ContainmentError, writeAtomically } from '../fsContainment';
 
 const log = Logger.create('canvas');
 import type { Tool } from '../mind/types';
 import type { ExternalOpener } from '../ports';
 import { CanvasServer } from './CanvasServer';
-import { isPathInside } from './pathUtils';
 import { buildCanvasTools } from './tools';
 import type {
   CanvasAction,
@@ -22,10 +22,15 @@ import type {
   CanvasUpdateInput,
 } from './types';
 
-const CANVAS_DIR = path.join('.chamber', 'canvas');
 const VALID_CANVAS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export interface CanvasServiceOptions {
+  /**
+   * App-owned directory under which per-mind canvas storage is created.
+   * Defaults to a `.canvas` subdirectory of the current working directory
+   * when not supplied. Production usage must inject `userData/canvas`.
+   */
+  storageRoot?: string;
   onAction?: CanvasActionHandler;
   onActionStatus?: (status: CanvasActionStatusEvent) => void;
   openExternal?: ExternalOpener;
@@ -74,8 +79,11 @@ export class CanvasService implements ChamberToolProvider {
   private readonly openExternal: ExternalOpener;
   private readonly onAction: CanvasActionHandler;
   private readonly actionStatusListeners = new Set<(status: CanvasActionStatusEvent) => void>();
+  private readonly storageRoot: string;
 
   constructor(options: CanvasServiceOptions = {}) {
+    this.storageRoot = options.storageRoot ?? path.join(process.cwd(), '.canvas');
+
     this.onAction = options.onAction ?? ((action: CanvasAction) => {
       log.info('Action received:', action);
     });
@@ -118,7 +126,14 @@ export class CanvasService implements ChamberToolProvider {
 
     const contentDir = this.ensureMind(mindId, mindPath);
     const filename = `${input.name}.html`;
-    const targetPath = path.join(contentDir, filename);
+
+    // Validate destination is inside the private storage root before writing.
+    let targetPath: string;
+    try {
+      targetPath = assertContained(contentDir, filename);
+    } catch (err) {
+      throw new Error(`Canvas destination path rejected: ${err instanceof ContainmentError ? err.message : String(err)}`, { cause: err });
+    }
 
     if (input.file) {
       if (!path.isAbsolute(input.file)) {
@@ -127,9 +142,20 @@ export class CanvasService implements ChamberToolProvider {
       if (!fs.existsSync(input.file)) {
         throw new Error(`Canvas source file not found: ${input.file}`);
       }
-      fs.copyFileSync(input.file, targetPath);
+      // Reject symlinks in the source file — prevents agents from staging
+      // hostile content through a symlink to an attacker-controlled path.
+      try {
+        if (fs.lstatSync(input.file).isSymbolicLink()) {
+          throw new Error(`Canvas source file is a symlink and cannot be trusted: ${input.file}`);
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('symlink')) throw err;
+        throw new Error(`Canvas source file is inaccessible: ${input.file}`, { cause: err });
+      }
+      const content = fs.readFileSync(input.file);
+      writeAtomically(targetPath, content);
     } else {
-      fs.writeFileSync(targetPath, wrapHtml(input.name, input.html ?? '', input.title), 'utf8');
+      writeAtomically(targetPath, wrapHtml(input.name, input.html ?? '', input.title));
     }
 
     const port = await this.server.start();
@@ -155,17 +181,42 @@ export class CanvasService implements ChamberToolProvider {
       throw new Error('Canvas Lens source path must be absolute');
     }
     const lensDir = path.join(mindPath, '.github', 'lens');
-    if (!isPathInside(lensDir, sourcePath)) {
+
+    // Use realpath-based containment to reject symlink escapes in the source tree.
+    try {
+      assertContained(lensDir, sourcePath);
+    } catch {
       throw new Error('Canvas Lens source path must be inside the mind .github/lens directory');
     }
+
     if (!fs.existsSync(sourcePath)) {
       throw new Error(`Canvas Lens source file not found: ${sourcePath}`);
+    }
+
+    // Reject symlinks in the source file — the source tree is agent-managed and
+    // could have symlinks pointing to sensitive files outside the lens directory.
+    try {
+      if (fs.lstatSync(sourcePath).isSymbolicLink()) {
+        throw new Error(`Canvas Lens source file is a symlink: ${sourcePath}`);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('symlink')) throw err;
     }
 
     const contentDir = this.ensureMind(mindId, mindPath);
     const name = this.getLensCanvasName(viewId);
     const filename = `${name}.html`;
-    fs.copyFileSync(sourcePath, path.join(contentDir, filename));
+
+    // Validate destination is inside the private storage root.
+    let destPath: string;
+    try {
+      destPath = assertContained(contentDir, filename);
+    } catch (err) {
+      throw new Error(`Canvas destination path rejected: ${err instanceof ContainmentError ? err.message : String(err)}`, { cause: err });
+    }
+
+    const content = fs.readFileSync(sourcePath);
+    writeAtomically(destPath, content);
 
     const port = await this.server.start();
     const token = this.getExistingToken(mindId, name) ?? createCanvasToken();
@@ -189,11 +240,16 @@ export class CanvasService implements ChamberToolProvider {
     validateCanvasName(input.name);
     const contentDir = this.ensureMind(mindId, mindPath);
     const existing = this.requireCanvas(mindId, input.name);
-    fs.writeFileSync(
-      path.join(contentDir, existing.filename),
-      wrapHtml(input.name, input.html, input.title),
-      'utf8',
-    );
+
+    // Revalidate destination before write — closes check-to-use race.
+    let destPath: string;
+    try {
+      destPath = assertContained(contentDir, existing.filename);
+    } catch (err) {
+      throw new Error(`Canvas destination path rejected: ${err instanceof ContainmentError ? err.message : String(err)}`, { cause: err });
+    }
+
+    writeAtomically(destPath, wrapHtml(input.name, input.html, input.title));
     this.server.reload(mindId, existing.filename);
     return `Canvas **${input.name}** updated. Browser will auto-reload.`;
   }
@@ -281,7 +337,10 @@ export class CanvasService implements ChamberToolProvider {
 
   private ensureMind(mindId: string, mindPath: string): string {
     this.mindPaths.set(mindId, mindPath);
-    const contentDir = path.join(mindPath, CANVAS_DIR);
+    // Canvas files are stored under the app-owned private storage root, not
+    // inside the mind's workspace directory. This prevents an agent from
+    // creating symlinks inside its workspace to interfere with canvas storage.
+    const contentDir = path.join(this.storageRoot, mindId);
     fs.mkdirSync(contentDir, { recursive: true });
     return contentDir;
   }
@@ -295,8 +354,8 @@ export class CanvasService implements ChamberToolProvider {
   }
 
   private getContentDirForMind(mindId: string): string | null {
-    const mindPath = this.mindPaths.get(mindId);
-    return mindPath ? path.join(mindPath, CANVAS_DIR) : null;
+    if (!this.mindPaths.has(mindId)) return null;
+    return path.join(this.storageRoot, mindId);
   }
 
   private upsertCanvas(mindId: string, entry: CanvasEntry): void {

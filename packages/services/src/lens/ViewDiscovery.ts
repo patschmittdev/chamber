@@ -66,6 +66,17 @@ export class ViewDiscovery {
         const viewJsonPath = path.join(lensDir, entry.name, 'view.json');
         if (!fs.existsSync(viewJsonPath)) continue;
 
+        // Reject view.json that is itself a symlink — prevents agents from
+        // pointing manifests at files outside the lens directory.
+        try {
+          if (fs.lstatSync(viewJsonPath).isSymbolicLink()) {
+            log.warn(`Skipping symlinked Lens manifest ${viewJsonPath}`);
+            continue;
+          }
+        } catch {
+          continue;
+        }
+
         try {
           const raw = fs.readFileSync(viewJsonPath, 'utf-8');
           const basePath = path.join(lensDir, entry.name);
@@ -102,6 +113,14 @@ export class ViewDiscovery {
     const dataPath = path.join(view._basePath, view.source);
     if (!fs.existsSync(dataPath)) return null;
 
+    // Reject source files that are symlinks — prevents data exfiltration via
+    // symlink replacement after manifest discovery.
+    try {
+      if (fs.lstatSync(dataPath).isSymbolicLink()) return null;
+    } catch {
+      return null;
+    }
+
     try {
       const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
       return isRecord(data) ? data : null;
@@ -113,7 +132,14 @@ export class ViewDiscovery {
   getViewSourcePath(viewId: string, mindPath: string): string | null {
     const view = this.getViews(mindPath).find(v => v.id === viewId);
     if (!view || !view._basePath) return null;
-    return path.join(view._basePath, view.source);
+    const sourcePath = path.join(view._basePath, view.source);
+    // Revalidate before returning — reject symlinks installed after discovery.
+    try {
+      if (fs.existsSync(sourcePath) && fs.lstatSync(sourcePath).isSymbolicLink()) return null;
+    } catch {
+      return null;
+    }
+    return sourcePath;
   }
 
   async refreshView(viewId: string, mindPath: string): Promise<Record<string, unknown> | null> {
@@ -122,6 +148,16 @@ export class ViewDiscovery {
     if (!view || !view.prompt || !view._basePath) return this.getViewData(viewId, mindPath);
 
     const dataPath = path.join(view._basePath, view.source);
+
+    // Revalidate source before embedding in prompt — reject symlinks placed after discovery.
+    try {
+      if (fs.existsSync(dataPath) && fs.lstatSync(dataPath).isSymbolicLink()) {
+        throw new Error('Lens refresh source is a symlink');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('symlink')) throw err;
+    }
+
     const outputInstruction = view.view === 'canvas'
       ? `Write the Chamber-branded HTML output to: ${dataPath}`
       : `Write the JSON output to: ${dataPath}`;
@@ -145,6 +181,17 @@ export class ViewDiscovery {
     if (!view || !view._basePath) return this.getViewData(viewId, mindPath);
 
     const dataPath = path.join(view._basePath, view.source);
+
+    // Revalidate source before embedding in prompt.
+    try {
+      if (fs.existsSync(dataPath) && fs.lstatSync(dataPath).isSymbolicLink()) {
+        log.warn(`Lens action source is a symlink for ${viewId}`);
+        return null;
+      }
+    } catch {
+      return null;
+    }
+
     const fullPrompt = `The user is viewing "${view.name}" (source: ${dataPath}).\n\nAction requested: ${action}\n\nMake the requested change and write the updated JSON to: ${dataPath}`;
 
     try {
@@ -165,6 +212,17 @@ export class ViewDiscovery {
     if (!view || view.view !== 'canvas' || !view._basePath) return;
 
     const sourcePath = path.join(view._basePath, view.source);
+
+    // Revalidate source before embedding in prompt.
+    try {
+      if (fs.existsSync(sourcePath) && fs.lstatSync(sourcePath).isSymbolicLink()) {
+        log.warn(`Canvas action source is a symlink for ${viewId}`);
+        return;
+      }
+    } catch {
+      return;
+    }
+
     const fullPrompt = [
       `The user interacted with the Canvas Lens view "${view.name}" (source: ${sourcePath}).`,
       '',

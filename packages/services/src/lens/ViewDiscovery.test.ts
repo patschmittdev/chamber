@@ -11,6 +11,7 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  lstatSync: vi.fn().mockReturnValue({ isSymbolicLink: () => false }),
   watch: vi.fn().mockReturnValue({ close: vi.fn() }),
 }));
 
@@ -20,6 +21,15 @@ import { ViewDiscovery } from './ViewDiscovery';
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReaddirSync = vi.mocked(fs.readdirSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
+const mockLstatSync = vi.mocked(fs.lstatSync);
+
+function notSymlink(): ReturnType<typeof fs.lstatSync> {
+  return { isSymbolicLink: () => false } as ReturnType<typeof fs.lstatSync>;
+}
+
+function isSymlink(): ReturnType<typeof fs.lstatSync> {
+  return { isSymbolicLink: () => true } as ReturnType<typeof fs.lstatSync>;
+}
 
 describe('ViewDiscovery', () => {
   let discovery: ViewDiscovery;
@@ -28,6 +38,7 @@ describe('ViewDiscovery', () => {
     discovery = new ViewDiscovery();
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
+    mockLstatSync.mockReturnValue(notSymlink());
   });
 
   describe('scan', () => {
@@ -239,6 +250,61 @@ describe('ViewDiscovery', () => {
         .mockReturnValueOnce(JSON.stringify({ name: 'Traversal', icon: 'eye', view: 'briefing', source: '..\\data.json' }));
 
       await expect(discovery.scan('/tmp/test/mind')).resolves.toEqual([]);
+    });
+
+    it('skips a view whose view.json file is a symlink', async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = String(p);
+        if (s.endsWith(path.join('.github', 'lens'))) return true;
+        if (s.endsWith(path.join('linked-view', 'view.json'))) return true;
+        return false;
+      });
+      mockReaddirSync.mockReturnValue([
+        { name: 'linked-view', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      // view.json itself is a symlink.
+      mockLstatSync.mockReturnValue(isSymlink());
+
+      const views = await discovery.scan('/tmp/test/mind');
+      expect(views).toHaveLength(0);
+    });
+  });
+
+  describe('getViewData — symlink source rejection', () => {
+    async function setupView(): Promise<void> {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'test', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync.mockReturnValueOnce(JSON.stringify({
+        name: 'Test', icon: 'eye', view: 'briefing', source: 'data.json',
+      }));
+      await discovery.scan('/tmp/test/mind');
+    }
+
+    it('returns null when source file is a symlink installed after discovery', async () => {
+      await setupView();
+      // dataPath exists but is now a symlink.
+      mockReadFileSync.mockReturnValueOnce(JSON.stringify({ count: 42 }));
+      mockLstatSync.mockReturnValue(isSymlink());
+
+      expect(discovery.getViewData('test', '/tmp/test/mind')).toBeNull();
+    });
+  });
+
+  describe('getViewSourcePath — symlink source rejection', () => {
+    it('returns null when the source path is a symlink', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'v1', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync.mockReturnValue(JSON.stringify({ name: 'V1', icon: 'eye', view: 'form', source: 'data.json' }));
+      await discovery.scan('/tmp/test/mind');
+
+      // After discovery the file becomes a symlink.
+      mockLstatSync.mockReturnValue(isSymlink());
+
+      expect(discovery.getViewSourcePath('v1', '/tmp/test/mind')).toBeNull();
     });
   });
 

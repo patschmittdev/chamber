@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { URL } from 'node:url';
 import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
 import { canonicalRequestJson, parseCanvasActionRequest } from '@chamber/shared/canvas-action-types';
-import { isPathInside } from './pathUtils';
+import { assertContained } from '../fsContainment';
 import type { CanvasAction, CanvasActionHandler, CanvasActionStatusEvent, CanvasServerLike } from './types';
 
 const MIME_TYPES: Record<string, string> = {
@@ -592,13 +592,18 @@ export class CanvasServer implements CanvasServerLike {
     }
 
     const relativePath = segments.length === 0 ? 'index.html' : path.join(...segments);
-    const fullPath = path.resolve(contentDir, relativePath);
-    if (!isPathInside(contentDir, fullPath)) {
+    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+
+    // Use realpath-based containment to reject traversal, symlinks, and junctions.
+    let fullPath: string;
+    try {
+      fullPath = assertContained(contentDir, normalizedRelativePath);
+    } catch {
       res.writeHead(403);
       res.end('Forbidden');
       return;
     }
-    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+
     if (!this.options.authorizeRequest(mindId, normalizedRelativePath, token)) {
       res.writeHead(403);
       res.end('Forbidden');
