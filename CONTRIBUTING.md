@@ -47,7 +47,7 @@ Two Playwright projects live under [tests/e2e/](tests/e2e):
 | `npm run smoke:desktop` | Spawns the Electron desktop app, connects via CDP | working Electron build |
 | `npm run smoke:cross-surface-gate` | Deterministic cross-surface quality gate (required CI gate) | working Electron build |
 
-All scripts auto-install the Chromium headless shell on first run via `npm run playwright:install` (idempotent — fast no-op once the binary is present).
+All scripts auto-install the Chromium headless shell on first run via `npm run playwright:install` (idempotent: fast no-op once the binary is present).
 
 #### Cross-surface quality gate (required CI job)
 

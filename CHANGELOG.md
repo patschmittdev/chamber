@@ -116,9 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
-- **Require deterministic Electron cross-surface quality gate in CI** — Add a non-optional electron-cross-surface-gate Windows job to ci.yml that runs only cross-surface-quality-gate.spec.ts with one worker and zero retries. The job depends on alidate so it only fires after lint and unit tests pass. Add smoke:cross-surface-gate npm script for parity with local execution. Document local command, environment assumptions, and determinism policy in CONTRIBUTING.md.
-
-
+- **Require deterministic Electron cross-surface quality gate in CI** - Add a non-optional `electron-cross-surface-gate` Windows job to `ci.yml` that runs only `cross-surface-quality-gate.spec.ts` with one worker and zero retries. The job depends on `validate` so it only fires after lint and unit tests pass. Add `smoke:cross-surface-gate` npm script for parity with local execution. Document local command, environment assumptions, and determinism policy in `CONTRIBUTING.md`.
 
 ## [0.64.1] - 2026-06-01
 
