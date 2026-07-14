@@ -223,6 +223,11 @@ export const IPC = {
   CAPABILITIES: {
     LIST: 'capabilities:list',
   },
+  MIND_TRUST: {
+    STATUS: 'mind:trust:status',
+    GRANT: 'mind:trust:grant',
+    REVOKE: 'mind:trust:revoke',
+  },
 } as const;
 
 type IpcNamespace = typeof IPC;

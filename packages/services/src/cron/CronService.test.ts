@@ -127,3 +127,95 @@ describe('CronService (v2)', () => {
     await svc.releaseMind(mindId);
   });
 });
+
+describe('CronService — trust gate', () => {
+  function makeTrustService(trusted: boolean) {
+    return {
+      isMindTrustedForExecution: vi.fn(() => trusted),
+      registerMindLoad: vi.fn(),
+      getApprovedMcpServers: vi.fn(() => ({})),
+      grantTrust: vi.fn(),
+      revokeTrust: vi.fn(),
+      getTrustStatus: vi.fn(),
+      runMigration: vi.fn(),
+    };
+  }
+
+  it('skips all job registration for a pending (untrusted) mind', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    const trustService = makeTrustService(false);
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService,
+    });
+
+    // Pre-create a job via a trusted service instance sharing the same path
+    const trustedSvc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+    });
+    await trustedSvc.activateMind(mindId, mindPath);
+    trustedSvc.createJob(mindId, mindPath, {
+      name: 'job1',
+      schedule: '0 9 * * *',
+      scriptPath: '.chamber/automation/foo.ts',
+    });
+    await trustedSvc.releaseMind(mindId);
+
+    // activateMind on the gated service should skip all jobs
+    await svc.activateMind(mindId, mindPath);
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it('proceeds normally for a trusted mind', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    const trustService = makeTrustService(true);
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService,
+    });
+    await svc.activateMind(mindId, mindPath);
+    svc.createJob(mindId, mindPath, {
+      name: 'job1',
+      schedule: '0 9 * * *',
+      scriptPath: '.chamber/automation/foo.ts',
+    });
+    const list = svc.listJobs(mindId, mindPath);
+    expect(list).toHaveLength(1);
+    await svc.releaseMind(mindId);
+  });
+
+  it('cancelJobsForMind stops the scheduler without releasing stores', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+    });
+    await svc.activateMind(mindId, mindPath);
+    svc.createJob(mindId, mindPath, {
+      name: 'job1',
+      schedule: '0 9 * * *',
+      scriptPath: '.chamber/automation/foo.ts',
+    });
+
+    svc.cancelJobsForMind(mindId);
+
+    // Jobs are still listed (store not released), but scheduler is cleared
+    const list = svc.listJobs(mindId, mindPath);
+    expect(list).toHaveLength(1);
+    // nextRun may become null once scheduler is cleared
+    await svc.releaseMind(mindId);
+  });
+
+  it('does not throw when activateMind is called for a pending mind', async () => {
+    const trustService = makeTrustService(false);
+    const svc = new CronService({
+      scriptRunner: makeFakeRunner({ status: 'completed', graphId: 'g', output: '' }),
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService,
+    });
+    await expect(svc.activateMind(mindId, mindPath)).resolves.toBeUndefined();
+  });
+});

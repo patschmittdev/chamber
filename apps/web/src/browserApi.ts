@@ -488,6 +488,11 @@ export function installBrowserApi(): void {
     capabilities: {
       list: async () => unavailable('capabilities.list'),
     },
+    mindTrust: {
+      status: async () => unavailable('mindTrust.status'),
+      grant: async () => unavailable('mindTrust.grant'),
+      revoke: async () => unavailable('mindTrust.revoke'),
+    },
   };
   window.electronAPI = api;
   if (!window.desktop) {

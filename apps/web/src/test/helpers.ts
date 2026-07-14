@@ -498,6 +498,11 @@ export function mockElectronAPI(): ElectronAPI {
     capabilities: {
       list: vi.fn().mockResolvedValue({ items: [], sources: [] }),
     },
+    mindTrust: {
+      status: vi.fn().mockResolvedValue(null),
+      grant: vi.fn().mockResolvedValue(undefined),
+      revoke: vi.fn().mockResolvedValue(undefined),
+    },
   };
 }
 

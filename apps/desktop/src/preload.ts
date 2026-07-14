@@ -221,6 +221,11 @@ const electronAPI: ElectronAPI = {
   capabilities: {
     list: (query) => ipcRenderer.invoke(IPC.CAPABILITIES.LIST, query),
   },
+  mindTrust: {
+    status: (mindId: string) => ipcRenderer.invoke(IPC.MIND_TRUST.STATUS, mindId),
+    grant: (mindId: string) => ipcRenderer.invoke(IPC.MIND_TRUST.GRANT, mindId),
+    revoke: (mindId: string) => ipcRenderer.invoke(IPC.MIND_TRUST.REVOKE, mindId),
+  },
 };
 
 if (ipcRenderer.sendSync(IPC.E2E.IS_ENABLED) === true) {

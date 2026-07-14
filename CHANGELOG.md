@@ -100,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Harden npm dependency supply-chain security** — Remediates production and development audit findings, enforces a seven-day minimum package age, and updates affected Electron smoke coverage.
 - **Harden the loopback server surface** — Removes the dead POST /api/privileged keychain oracle that returned OS-keychain passwords in plaintext with zero callers, guards WebSocket message parsing against malformed frames that could crash the loopback server for every session, validates the Host header on HTTP and WebSocket upgrades to blunt DNS-rebind attacks, and documents the single-user WebSocket subscription trust boundary.
+- **Add per-mind execution trust boundary (Stage 1)** — Introduced MindTrustService with atomic JSON ledger. Cron job scheduling and MCP server startup now require an explicit per-mind trust grant. Pending or revoked minds silently skip all workspace execution. Existing locally registered minds receive a legacy trusted grant via idempotent migration. New IPC surface exposes trust status, grant, and revoke without leaking raw MCP configuration.
 
 ### Performance
 

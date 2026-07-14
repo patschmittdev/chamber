@@ -81,6 +81,7 @@ import type {
 import type { McpConnectorCheckResult, McpConnectorStatusResult } from './mcp-types';
 import type { Prompt, PromptMutationResult, PromptSaveRequest } from './prompt-types';
 import type { CapabilityInventoryQuery, CapabilityInventoryResult } from './capability-types';
+import type { MindTrustStatusResult } from './mind-trust-types';
 
 export interface ElectronAPI {
   chat: {
@@ -338,6 +339,23 @@ export interface ElectronAPI {
   capabilities: {
     /** Lists a renderer-safe projection of installed and available capabilities. */
     list: (query?: CapabilityInventoryQuery) => Promise<CapabilityInventoryResult>;
+  };
+  mindTrust: {
+    /**
+     * Returns the trust status for a mind. Returns null if the mind is not
+     * registered in the trust ledger. Never exposes raw MCP configuration,
+     * commands, arguments, environment, or paths.
+     */
+    status: (mindId: string) => Promise<MindTrustStatusResult | null>;
+    /**
+     * Grants execution trust to a pending mind. The trust service snapshots
+     * the mind's current MCP configuration fingerprints at grant time.
+     */
+    grant: (mindId: string) => Promise<void>;
+    /**
+     * Revokes trust for a mind and cancels any active Cron jobs for it.
+     */
+    revoke: (mindId: string) => Promise<void>;
   };
 }
 
