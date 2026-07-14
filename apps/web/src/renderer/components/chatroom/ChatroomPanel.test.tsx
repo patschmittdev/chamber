@@ -47,6 +47,15 @@ const MIND_B: MindContext = {
   status: 'ready',
 };
 
+function makeMind(id: number): MindContext {
+  return {
+    mindId: `mind-${id}`,
+    mindPath: `C:\\agents\\${id}`,
+    identity: { name: `Agent ${id}`, systemMessage: '' },
+    status: 'ready',
+  };
+}
+
 function renderPanel(stateOverrides: Partial<AppState> = {}, api?: ElectronAPI) {
   const mock = installElectronAPI(api);
   return {
@@ -81,6 +90,30 @@ describe('ChatroomPanel', () => {
     renderPanel({ minds: [MIND_A, MIND_B] }, api);
     expect(screen.getByText('The Dude')).toBeTruthy();
     expect(screen.getByText('Jarvis')).toBeTruthy();
+  });
+
+  it('shows a visible +N participant affordance when agents exceed the inline limit', () => {
+    const minds = Array.from({ length: 12 }, (_, index) => makeMind(index + 1));
+    renderPanel({ minds }, api);
+
+    expect(screen.getByRole('button', { name: '+4' })).toBeTruthy();
+    expect(screen.queryByText('Agent 12')).toBeNull();
+  });
+
+  it('expands hidden participants after clicking the +N affordance', async () => {
+    const minds = Array.from({ length: 12 }, (_, index) => makeMind(index + 1));
+    renderPanel({ minds }, api);
+    const overflowButton = screen.getByRole('button', { name: '+4' });
+    const participantBar = overflowButton.parentElement;
+    expect(participantBar?.querySelectorAll('button[aria-pressed]').length).toBe(8);
+
+    await act(async () => {
+      fireEvent.click(overflowButton);
+    });
+
+    expect(participantBar?.querySelectorAll('button[aria-pressed]').length).toBe(12);
+    expect(screen.queryByRole('button', { name: '+4' })).toBeNull();
+    expect(screen.getByRole('button', { name: /show less/i })).toBeTruthy();
   });
 
   // 3. User messages

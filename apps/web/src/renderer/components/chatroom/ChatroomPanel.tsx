@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState, useAppDispatch, getPlainContent } from '../../lib/store';
 import { ChatInput } from '../chat/ChatInput';
 import { StreamingMessage } from '../chat/StreamingMessage';
@@ -13,41 +13,14 @@ import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
 import { useUserProfile } from '../../hooks/useUserProfile';
 import { AGENT_COLORS, agentColor } from '../chat/agentColors';
+import {
+  createModeratorDecisionCache,
+  partitionParticipantOverflow,
+  type ModeratorDecision,
+} from './chatroomPerformance';
 
 function profileDisplayName(profile: AgentProfileSummary | undefined, fallback: string): string {
   return profile?.displayName?.trim() || fallback;
-}
-
-// ---------------------------------------------------------------------------
-// Moderator message detection & parsing
-// ---------------------------------------------------------------------------
-
-interface ModeratorDecision {
-  nextSpeaker: string;
-  direction: string;
-  action: string;
-}
-
-function parseModeratorJson(text: string): ModeratorDecision | null {
-  const match = text.match(/\{[\s\S]*?"next_speaker"[\s\S]*?\}/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]) as Record<string, unknown>;
-    return {
-      nextSpeaker: typeof parsed.next_speaker === 'string' ? parsed.next_speaker : '',
-      direction: typeof parsed.direction === 'string' ? parsed.direction : '',
-      action: typeof parsed.action === 'string' ? parsed.action : 'direct',
-    };
-  } catch {
-    return null;
-  }
-}
-
-function isModeratorMessage(message: ChatroomMessage, moderatorMindId?: string): boolean {
-  if (message.role !== 'assistant') return false;
-  if (moderatorMindId && message.sender?.mindId !== moderatorMindId) return false;
-  const text = getPlainContent(message);
-  return parseModeratorJson(text) !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,11 +34,19 @@ function ParticipantBar({ minds, streamingByMind, disabledMindIds, profileByMind
   profileByMindId: Record<string, AgentProfileSummary>;
   onToggle: (mindId: string, enabled: boolean) => void;
 }) {
-  if (minds.length === 0) return null;
+  const [showAll, setShowAll] = useState(false);
+  const PARTICIPANT_INLINE_LIMIT = 8;
   const disabledSet = new Set(disabledMindIds);
+  const { visible, hiddenCount } = useMemo(
+    () => partitionParticipantOverflow(minds, PARTICIPANT_INLINE_LIMIT),
+    [minds],
+  );
+  const shownMinds = showAll ? minds : visible;
+  if (minds.length === 0) return null;
+
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-border overflow-x-auto shrink-0">
-      {minds.map((mind, i) => {
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-border shrink-0 flex-wrap">
+      {shownMinds.map((mind, i) => {
         const streaming = streamingByMind[mind.mindId];
         const disabled = disabledSet.has(mind.mindId);
         const profile = profileByMindId[mind.mindId];
@@ -105,6 +86,24 @@ function ParticipantBar({ minds, streamingByMind, disabledMindIds, profileByMind
           </button>
         );
       })}
+      {!showAll && hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="inline-flex items-center text-xs font-medium rounded-full px-2.5 py-1 border border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+        >
+          +{hiddenCount}
+        </button>
+      )}
+      {showAll && hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(false)}
+          className="inline-flex items-center text-xs font-medium rounded-full px-2.5 py-1 border border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+        >
+          Show less
+        </button>
+      )}
     </div>
   );
 }
@@ -113,11 +112,15 @@ function ParticipantBar({ minds, streamingByMind, disabledMindIds, profileByMind
 // ModeratorDecisionBubble — compact system message for moderator routing
 // ---------------------------------------------------------------------------
 
-function ModeratorDecisionBubble({ message, minds }: { message: ChatroomMessage; minds: MindContext[] }) {
-  const text = getPlainContent(message);
-  const decision = parseModeratorJson(text);
-  if (!decision) return null;
-
+function ModeratorDecisionBubble({
+  message,
+  minds,
+  decision,
+}: {
+  message: ChatroomMessage;
+  minds: MindContext[];
+  decision: ModeratorDecision;
+}) {
   const color = agentColor(minds, message.sender?.mindId ?? '');
   const moderatorName = message.sender?.name ?? 'Moderator';
 
@@ -276,11 +279,42 @@ function ChatroomMessageList({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAutoScrolling = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
+  const decisionCacheRef = useRef(createModeratorDecisionCache());
 
   useEffect(() => {
-    if (isAutoScrolling.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const validMessageIds = new Set(messages.map((message) => message.id));
+    decisionCacheRef.current.prune(validMessageIds);
+  }, [messages]);
+
+  useEffect(() => {
+    if (!isAutoScrolling.current || !scrollRef.current) {
+      return;
     }
+
+    const runAnimationFrame = window.requestAnimationFrame
+      ? window.requestAnimationFrame.bind(window)
+      : (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 16);
+    const cancelAnimationFrameWrite = window.cancelAnimationFrame
+      ? window.cancelAnimationFrame.bind(window)
+      : (id: number) => window.clearTimeout(id);
+
+    if (scrollFrameRef.current !== null) {
+      cancelAnimationFrameWrite(scrollFrameRef.current);
+    }
+
+    scrollFrameRef.current = runAnimationFrame(() => {
+      if (!scrollRef.current) return;
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollFrameRef.current = null;
+    });
+
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrameWrite(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
   }, [messages, activeSpeaker]);
 
   const handleScroll = () => {
@@ -289,22 +323,52 @@ function ChatroomMessageList({
     isAutoScrolling.current = scrollHeight - scrollTop - clientHeight < 100;
   };
 
+  const rows = useMemo(() => {
+    const decisionCache = decisionCacheRef.current;
+    return messages.map((message) => {
+      const text = getPlainContent(message);
+      if (moderatorMindId && message.role === 'assistant') {
+        const decision = decisionCache.get(message.id, text);
+        if (decision && message.sender?.mindId === moderatorMindId) {
+          return { kind: 'moderator' as const, message, decision };
+        }
+      }
+
+      const isUser = message.role === 'user';
+      const senderProfile = !isUser && message.sender ? profileByMindId[message.sender.mindId] : undefined;
+      const senderName = isUser
+        ? (message.sender?.name ?? 'You')
+        : profileDisplayName(senderProfile, message.sender?.name ?? 'Unknown');
+      const color = isUser ? undefined : agentColor(minds, message.sender?.mindId ?? '');
+      const avatarDataUrl = isUser ? userProfile?.avatarDataUrl : senderProfile?.avatarDataUrl;
+      return {
+        kind: 'message' as const,
+        message,
+        isUser,
+        senderName,
+        senderColor: color,
+        avatarDataUrl,
+        userText: isUser ? text : null,
+      };
+    });
+  }, [messages, minds, moderatorMindId, profileByMindId, userProfile]);
+
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
       <div className="max-w-3xl mx-auto space-y-6">
-        {messages.map((message) => {
-          // Moderator routing messages → compact system bubble
-          if (moderatorMindId && isModeratorMessage(message, moderatorMindId)) {
-            return <ModeratorDecisionBubble key={message.id} message={message} minds={minds} />;
+        {rows.map((row) => {
+          if (row.kind === 'moderator') {
+            return (
+              <ModeratorDecisionBubble
+                key={row.message.id}
+                message={row.message}
+                minds={minds}
+                decision={row.decision}
+              />
+            );
           }
 
-          const isUser = message.role === 'user';
-          const senderProfile = !isUser && message.sender ? profileByMindId[message.sender.mindId] : undefined;
-          const senderName = isUser
-            ? (message.sender?.name ?? 'You')
-            : profileDisplayName(senderProfile, message.sender?.name ?? 'Unknown');
-          const color = isUser ? undefined : agentColor(minds, message.sender?.mindId ?? '');
-          const avatarDataUrl = isUser ? userProfile?.avatarDataUrl : senderProfile?.avatarDataUrl;
+          const { message, isUser, senderName, senderColor, avatarDataUrl, userText } = row;
 
           return (
             <div key={message.id} className="flex gap-3">
@@ -314,7 +378,7 @@ function ChatroomMessageList({
                 avatarDataUrl={avatarDataUrl}
                 className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium shrink-0 mt-0.5"
                 fallbackClassName={cn(isUser && 'bg-secondary text-secondary-foreground')}
-                style={isUser ? undefined : { backgroundColor: color, color: '#fff' }}
+                style={isUser ? undefined : { backgroundColor: senderColor, color: '#fff' }}
                 fallback={isUser ? 'Y' : senderName.charAt(0).toUpperCase()}
               />
 
@@ -323,7 +387,7 @@ function ChatroomMessageList({
                 <div className="flex items-center gap-2 mb-1">
                   <span
                     className="text-sm font-medium"
-                    style={isUser ? undefined : { color }}
+                    style={isUser ? undefined : { color: senderColor }}
                   >
                     {senderName}
                   </span>
@@ -336,7 +400,7 @@ function ChatroomMessageList({
                   <CollapsibleMessage message={message} />
                 ) : (
                   <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {getPlainContent(message)}
+                    {userText}
                   </p>
                 )}
               </div>
