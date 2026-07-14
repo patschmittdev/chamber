@@ -11,6 +11,7 @@ import {
   categoryForTab,
   useCapabilityInventory,
 } from './CapabilityInventory';
+import { CuratedDirectory } from './CuratedDirectory';
 import { McpServersTab } from './McpServersTab';
 import { ToolsTab } from './ToolsTab';
 import { SkillsTab } from './SkillsTab';
@@ -101,6 +102,14 @@ export function ExtensionsView() {
           <CapabilityCategoryNavigation items={inventory.result.items} />
           <TabsContent value={activeTab} className="mt-4 flex flex-col gap-6">
             <CapabilityInventoryPanel activeTab={activeTab} inventory={inventory} />
+
+            <CuratedDirectory
+              inventory={inventory}
+              onManageTools={() => {
+                setActiveTab('tools');
+                setManagementTab('tools');
+              }}
+            />
 
             <section className="rounded-xl border border-border bg-card">
               <div className="flex flex-wrap items-center justify-between gap-3 p-4">
