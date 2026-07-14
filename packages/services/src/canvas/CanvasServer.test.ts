@@ -513,5 +513,59 @@ describe('CanvasServer', () => {
       expect(html).toContain('chamber:canvas-action-request');
     });
   });
+
+  describe('symlink containment in static file serving', () => {
+    function tryCreateSymlink(target: string, linkPath: string): boolean {
+      try {
+        fs.symlinkSync(target, linkPath);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    it('rejects a symlinked file inside the content directory', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+
+      // Place a real file outside the mind dir.
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-canvas-outside-'));
+      tempDirs.push(outsideDir);
+      const secretFile = path.join(outsideDir, 'secret.txt');
+      fs.writeFileSync(secretFile, 'top secret', 'utf8');
+
+      // Create a symlink inside the content dir pointing to the secret file.
+      const linkPath = path.join(mindDir, 'secret-link.html');
+      const canCreate = tryCreateSymlink(secretFile, linkPath);
+      if (!canCreate) return; // Skip if symlinks require elevation.
+
+      tokens.set('mind-1:secret-link.html', 'secret-token');
+      const port = await server.start();
+      const response = await fetch(`http://127.0.0.1:${port}/mind-1/secret-link.html?token=secret-token`);
+
+      expect(response.status).toBe(403);
+      expect(await response.text()).toBe('Forbidden');
+    });
+
+    it('rejects a request where an ancestor directory inside the content dir is a symlink', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+
+      const realSubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-canvas-sub-'));
+      tempDirs.push(realSubDir);
+      fs.writeFileSync(path.join(realSubDir, 'page.html'), '<html>Sub</html>', 'utf8');
+
+      // Symlink a subdirectory inside the mind dir to realSubDir.
+      const linkedSub = path.join(mindDir, 'sub');
+      const canCreate = tryCreateSymlink(realSubDir, linkedSub);
+      if (!canCreate) return;
+
+      tokens.set('mind-1:sub/page.html', 'secret-token');
+      const port = await server.start();
+      const response = await fetch(`http://127.0.0.1:${port}/mind-1/sub/page.html?token=secret-token`);
+
+      expect(response.status).toBe(403);
+    });
+  });
 });
 

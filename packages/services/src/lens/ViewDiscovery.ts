@@ -1,10 +1,11 @@
 // Lens view discovery — scans minds for view.json manifests, reads view data, handles prompt refresh.
 // Per-mind storage: views and watchers keyed by mindPath.
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { CanvasActionRequest } from '@chamber/shared/canvas-action-types';
 import type { LensViewManifest } from '@chamber/shared/types';
+import { assertContained } from '../fsContainment';
 import { Logger } from '../logger';
 
 const log = Logger.create('ViewDiscovery');
@@ -66,6 +67,17 @@ export class ViewDiscovery {
         const viewJsonPath = path.join(lensDir, entry.name, 'view.json');
         if (!fs.existsSync(viewJsonPath)) continue;
 
+        // Reject view.json that is itself a symlink — prevents agents from
+        // pointing manifests at files outside the lens directory.
+        try {
+          if (fs.lstatSync(viewJsonPath).isSymbolicLink()) {
+            log.warn(`Skipping symlinked Lens manifest ${viewJsonPath}`);
+            continue;
+          }
+        } catch {
+          continue;
+        }
+
         try {
           const raw = fs.readFileSync(viewJsonPath, 'utf-8');
           const basePath = path.join(lensDir, entry.name);
@@ -99,7 +111,15 @@ export class ViewDiscovery {
     if (!view || !view._basePath) return null;
     if (view.view === 'canvas') return null;
 
-    const dataPath = path.join(view._basePath, view.source);
+    // assertContained walks every path component (not just the terminal node) to reject
+    // intermediate symlinks that could escape the lens directory.
+    let dataPath: string;
+    try {
+      dataPath = assertContained(view._basePath, view.source);
+    } catch {
+      return null;
+    }
+
     if (!fs.existsSync(dataPath)) return null;
 
     try {
@@ -113,7 +133,13 @@ export class ViewDiscovery {
   getViewSourcePath(viewId: string, mindPath: string): string | null {
     const view = this.getViews(mindPath).find(v => v.id === viewId);
     if (!view || !view._basePath) return null;
-    return path.join(view._basePath, view.source);
+    // Revalidate before returning — assertContained walks all components to reject
+    // symlinks installed at any level after discovery.
+    try {
+      return assertContained(view._basePath, view.source);
+    } catch {
+      return null;
+    }
   }
 
   async refreshView(viewId: string, mindPath: string): Promise<Record<string, unknown> | null> {
@@ -121,7 +147,14 @@ export class ViewDiscovery {
     const view = views.find(v => v.id === viewId);
     if (!view || !view.prompt || !view._basePath) return this.getViewData(viewId, mindPath);
 
-    const dataPath = path.join(view._basePath, view.source);
+    // assertContained revalidates all path components before embedding in prompt.
+    let dataPath: string;
+    try {
+      dataPath = assertContained(view._basePath, view.source);
+    } catch (err) {
+      throw new Error('Lens refresh source path rejected', { cause: err });
+    }
+
     const outputInstruction = view.view === 'canvas'
       ? `Write the Chamber-branded HTML output to: ${dataPath}`
       : `Write the JSON output to: ${dataPath}`;
@@ -144,7 +177,14 @@ export class ViewDiscovery {
     const view = views.find(v => v.id === viewId);
     if (!view || !view._basePath) return this.getViewData(viewId, mindPath);
 
-    const dataPath = path.join(view._basePath, view.source);
+    // assertContained revalidates all path components before embedding in prompt.
+    let dataPath: string;
+    try {
+      dataPath = assertContained(view._basePath, view.source);
+    } catch {
+      return null;
+    }
+
     const fullPrompt = `The user is viewing "${view.name}" (source: ${dataPath}).\n\nAction requested: ${action}\n\nMake the requested change and write the updated JSON to: ${dataPath}`;
 
     try {
@@ -164,7 +204,14 @@ export class ViewDiscovery {
     const view = views.find(v => v.id === viewId);
     if (!view || view.view !== 'canvas' || !view._basePath) return;
 
-    const sourcePath = path.join(view._basePath, view.source);
+    // assertContained revalidates all path components before embedding in prompt.
+    let sourcePath: string;
+    try {
+      sourcePath = assertContained(view._basePath, view.source);
+    } catch {
+      return;
+    }
+
     const fullPrompt = [
       `The user interacted with the Canvas Lens view "${view.name}" (source: ${sourcePath}).`,
       '',

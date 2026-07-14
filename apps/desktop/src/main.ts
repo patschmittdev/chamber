@@ -544,6 +544,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     }),
   });
   canvasService = new CanvasService({
+    storageRoot: path.join(appPaths.userData, 'canvas'),
     onAction: async (action) => {
       if (!action.lensViewId) {
         log.info('Canvas action received:', action);
