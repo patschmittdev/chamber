@@ -484,6 +484,9 @@ export function installBrowserApi(): void {
       save: async () => ({ success: false, error: promptLibraryBrowserError }),
       delete: async () => ({ success: false, error: promptLibraryBrowserError }),
     },
+    capabilities: {
+      list: async () => unavailable('capabilities.list'),
+    },
   };
   window.electronAPI = api;
   if (!window.desktop) {

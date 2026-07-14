@@ -38,6 +38,7 @@ import {
   AttachmentToolProvider,
   AuthService,
   CanvasService,
+  CapabilityInventoryService,
   ChamberCopilotService,
   listStoredGitHubCredentials,
   ChatroomService,
@@ -66,6 +67,7 @@ import {
   MindScaffold,
   MindSkillAuthoring,
   MindSkillDiscovery,
+  listMcpServerSummaries,
   readMcpServers,
   writeMcpServers,
   TaskManager,
@@ -144,6 +146,7 @@ import { setupUserProfileIPC } from './main/ipc/userProfile';
 import { setupSkillsIPC } from './main/ipc/skills';
 import { setupMcpIPC } from './main/ipc/mcp';
 import { setupPromptsIPC } from './main/ipc/prompts';
+import { setupCapabilitiesIPC } from './main/ipc/capabilities';
 import { setupVoiceIPC } from './main/ipc/voice';
 import { setupAppearanceIPC } from './main/ipc/appearance';
 
@@ -276,6 +279,8 @@ let mindProfileService: MindProfileService;
 let mindMemoryService: MindMemoryService;
 let userProfileService: UserProfileService;
 let promptLibraryService: PromptLibraryService;
+let capabilityInventoryService: CapabilityInventoryService;
+let skillDiscovery: MindSkillDiscovery;
 let microsoftGraphProfileImporter: MicrosoftGraphProfileImporter;
 let chatService: ChatService;
 let a2aRelayModeService: A2ARelayModeService;
@@ -464,6 +469,16 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   });
   userProfileService = new UserProfileService(configService);
   promptLibraryService = new PromptLibraryService(new PromptLibraryStore(configService.getConfigDir()));
+  skillDiscovery = new MindSkillDiscovery();
+  capabilityInventoryService = new CapabilityInventoryService({
+    listSkills: (mindPath) => skillDiscovery.listDetails(mindPath),
+    listMarketplaceSkills: () => marketplaceSkillCatalog.listSkills(),
+    listMcpServers: listMcpServerSummaries,
+    listTools: () => toolsService.listInventory(),
+    listPrompts: () => promptLibraryService.list(),
+    listLensViews: (mindPath) => viewDiscovery.getViews(mindPath),
+    isLensViewEnabled: (mindId, viewId) => lensPreferencesService.isViewEnabled(mindId, viewId),
+  });
   microsoftGraphProfileImporter = new MicrosoftGraphProfileImporter(
     userProfileService,
     new MsalBrokerGraphTokenProvider({
@@ -989,7 +1004,6 @@ app.on('ready', async () => {
   }
 
   // --- IPC adapters (thin, parameter-injected) ---
-  const skillDiscovery = new MindSkillDiscovery();
   const skillAuthoring = new MindSkillAuthoring();
   setupAppearanceIPC(appearanceService);
   setupChatIPC(chatService, mindManager);
@@ -1051,6 +1065,10 @@ app.on('ready', async () => {
     { read: readMcpServers, write: writeMcpServers },
   );
   setupPromptsIPC(promptLibraryService);
+  setupCapabilitiesIPC(
+    { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
+    capabilityInventoryService,
+  );
   setupAuthIPC(authService, mindManager, async () => {
     await chamberCopilotService?.resetAuthState();
   });

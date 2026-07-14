@@ -214,6 +214,9 @@ export const IPC = {
     SAVE: 'prompts:save',
     DELETE: 'prompts:delete',
   },
+  CAPABILITIES: {
+    LIST: 'capabilities:list',
+  },
 } as const;
 
 type IpcNamespace = typeof IPC;

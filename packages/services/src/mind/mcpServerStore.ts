@@ -30,6 +30,16 @@ const log = Logger.create('mcpServerStore');
 
 type RawServer = Record<string, unknown>;
 
+/**
+ * Safe summary of a configured MCP server for capability inventory displays.
+ * It intentionally excludes commands, URLs, headers, environment values, and
+ * all preserved configuration fields.
+ */
+export interface McpServerSummary {
+  readonly name: string;
+  readonly transport: McpServerEntry['transport'];
+}
+
 /** Whether the on-disk file could be safely parsed and round-tripped. */
 type RawConfigStatus = 'empty' | 'loaded' | 'unreadable';
 
@@ -65,12 +75,18 @@ export function readMcpServers(mindPath: string): McpServerEntry[] {
       `Cannot read ${MCP_CONFIG_FILENAME}: it is not valid JSON. Fix or remove the file to manage MCP servers.`,
     );
   }
+
   const entries: McpServerEntry[] = [];
   for (const [name, raw] of Object.entries(config.servers)) {
     if (!isManageable(raw)) continue;
     entries.push(toEntry(name, raw));
   }
   return entries.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Returns only non-sensitive configured-server metadata for inventory reads. */
+export function listMcpServerSummaries(mindPath: string): McpServerSummary[] {
+  return readMcpServers(mindPath).map(({ name, transport }) => ({ name, transport }));
 }
 
 /**

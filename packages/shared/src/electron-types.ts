@@ -80,6 +80,7 @@ import type {
 } from './skill-types';
 import type { McpServerEntry } from './mcp-types';
 import type { Prompt, PromptMutationResult, PromptSaveRequest } from './prompt-types';
+import type { CapabilityInventoryQuery, CapabilityInventoryResult } from './capability-types';
 
 export interface ElectronAPI {
   chat: {
@@ -337,6 +338,10 @@ export interface ElectronAPI {
      * success. Desktop-backed; returns a failure result in browser mode.
      */
     delete: (id: string) => Promise<PromptMutationResult>;
+  };
+  capabilities: {
+    /** Lists a renderer-safe projection of installed and available capabilities. */
+    list: (query?: CapabilityInventoryQuery) => Promise<CapabilityInventoryResult>;
   };
 }
 
