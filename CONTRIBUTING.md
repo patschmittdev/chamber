@@ -45,8 +45,36 @@ Two Playwright projects live under [tests/e2e/](tests/e2e):
 |---|---|---|
 | `npm run smoke:web` | Vite web shell + fake-chat server | nothing extra |
 | `npm run smoke:desktop` | Spawns the Electron desktop app, connects via CDP | working Electron build |
+| `npm run smoke:cross-surface-gate` | Deterministic cross-surface quality gate (required CI gate) | working Electron build |
 
-Both auto-install the Chromium headless shell on first run via `npm run playwright:install` (idempotent — fast no-op once the binary is present).
+All scripts auto-install the Chromium headless shell on first run via `npm run playwright:install` (idempotent: fast no-op once the binary is present).
+
+#### Cross-surface quality gate (required CI job)
+
+The `electron-cross-surface-gate` CI job runs on every pull request and is
+required for merge. It covers Extension scope, keyboard navigation, rail
+resizing, and Settings task routing without credentials or live SDK calls.
+
+Run it locally with:
+
+```bash
+npm run smoke:cross-surface-gate
+```
+
+Environment requirements:
+
+- Windows x64 or macOS arm64 (the Electron binary targets those platforms).
+- No GitHub credentials or Copilot account required. The spec seeds an
+  isolated mind under a temp directory and navigates the UI via keyboard.
+- The first run downloads the pinned WTD development runtime from the public
+  `ianphil/ttasks-wtd` repository as part of `npm start`. Subsequent runs
+  skip the download if the runtime is already present.
+
+The gate runs a single Playwright worker (`--workers=1`) with zero retries
+(`--retries=0`). Selectors are role-based and stable. Do not add sleeps,
+broad retries, or animation-timing assertions to this spec. If a transient
+startup failure is observed and reproduced, document the evidence before
+adding a narrow retry with trace retention.
 
 ### Smoke tests
 
@@ -58,6 +86,7 @@ Run the smoke test that matches the surface you touched:
 | `npm run smoke:server-sdk` | Loopback server SDK smoke |
 | `npm run smoke:web` | Browser app smoke |
 | `npm run smoke:desktop` | Electron desktop app smoke |
+| `npm run smoke:cross-surface-gate` | Deterministic cross-surface quality gate (required CI) |
 | `npm run smoke:packaged-runtime` | Packaged app/runtime smoke |
 
 Useful environment variables:
