@@ -132,6 +132,59 @@ describe('ViewDiscovery', () => {
       ]);
     });
 
+    it('accepts Canvas Lens appearance values and keeps omitted appearance compatible', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'inherited', isDirectory: () => true },
+        { name: 'fixed', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync
+        .mockReturnValueOnce(JSON.stringify({
+          name: 'Inherited Canvas',
+          icon: 'layout',
+          view: 'canvas',
+          source: 'index.html',
+        }))
+        .mockReturnValueOnce(JSON.stringify({
+          name: 'Fixed Canvas',
+          icon: 'layout',
+          view: 'canvas',
+          source: 'index.html',
+          appearance: 'light',
+        }));
+
+      const views = await discovery.scan('/tmp/test/mind');
+
+      expect(views[0]).toEqual(expect.objectContaining({ id: 'inherited' }));
+      expect(views[0]).not.toHaveProperty('appearance');
+      expect(views[1]).toEqual(expect.objectContaining({ id: 'fixed', appearance: 'light' }));
+    });
+
+    it('skips invalid and non-Canvas appearance declarations', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'invalid', isDirectory: () => true },
+        { name: 'non-canvas', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync
+        .mockReturnValueOnce(JSON.stringify({
+          name: 'Invalid Canvas',
+          icon: 'layout',
+          view: 'canvas',
+          source: 'index.html',
+          appearance: 'system',
+        }))
+        .mockReturnValueOnce(JSON.stringify({
+          name: 'Non Canvas',
+          icon: 'table',
+          view: 'table',
+          source: 'data.json',
+          appearance: 'dark',
+        }));
+
+      await expect(discovery.scan('/tmp/test/mind')).resolves.toEqual([]);
+    });
+
     it('skips Canvas Lens manifests with non-html sources', async () => {
       mockExistsSync.mockReturnValue(true);
       mockReaddirSync.mockReturnValue([

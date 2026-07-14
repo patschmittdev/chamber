@@ -613,6 +613,11 @@ export interface LensViewManifest {
   description?: string;
   view: 'form' | 'table' | 'briefing' | 'status-board' | 'list' | 'monitor' | 'detail' | 'timeline' | 'editor' | 'canvas';
   source: string;
+  /**
+   * Canvas Lenses inherit Chamber's resolved appearance unless they deliberately
+   * request a fixed light or dark appearance.
+   */
+  appearance?: 'inherit' | 'light' | 'dark';
   schema?: Record<string, unknown>;
   prompt?: string;
   refreshOn?: 'click' | 'interval';
@@ -625,6 +630,15 @@ export interface CanvasLensAction {
   data?: unknown;
   intent?: string;
   correlationId?: string;
+}
+
+export type CanvasLensActionStatus = 'accepted' | 'running' | 'completed' | 'failed';
+
+export interface CanvasLensActionStatusEvent {
+  mindId: string;
+  viewId: string;
+  actionId: string;
+  status: CanvasLensActionStatus;
 }
 
 export interface LensViewVisibility {

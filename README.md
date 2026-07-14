@@ -145,7 +145,7 @@ Marketplace plugin manifests can also declare CLI tools. Chamber supports npm-gl
 - Mind directories are user-local and should not contain secrets committed to source.
 - Tool execution is gated through Chamber's approval and observability layers.
 - Canvas content is sandboxed away from Electron main-process APIs.
-- Lens manifests validate before rendering.
+- Lens manifests validate before rendering. Canvas Lenses inherit Chamber's selected appearance by default; use `"appearance": "light"` or `"appearance": "dark"` in a Canvas `view.json` only when a fixed appearance is intentional.
 
 ## License
 

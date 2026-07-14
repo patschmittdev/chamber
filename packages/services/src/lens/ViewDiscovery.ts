@@ -241,9 +241,13 @@ function parseLensViewManifest(value: unknown, id: string, basePath: string): Le
   if (!isLensViewType(value.view)) return null;
   if (!isSafeRelativeSource(value.source)) return null;
   if (value.view === 'canvas' && !isHtmlSource(value.source)) return null;
+  if ('appearance' in value && (value.view !== 'canvas' || !isCanvasAppearance(value.appearance))) return null;
 
   const description = typeof value.description === 'string' && value.description.trim().length > 0
     ? value.description.trim()
+    : undefined;
+  const appearance = value.view === 'canvas' && isCanvasAppearance(value.appearance)
+    ? value.appearance
     : undefined;
 
   return {
@@ -255,6 +259,7 @@ function parseLensViewManifest(value: unknown, id: string, basePath: string): Le
     view: value.view,
     source: value.source,
     _basePath: basePath,
+    ...(appearance ? { appearance } : {}),
   };
 }
 
@@ -270,6 +275,10 @@ function isSafeRelativeSource(value: unknown): value is string {
 
 function isHtmlSource(value: string): boolean {
   return path.extname(value).toLowerCase() === '.html';
+}
+
+function isCanvasAppearance(value: unknown): value is NonNullable<LensViewManifest['appearance']> {
+  return value === 'inherit' || value === 'light' || value === 'dark';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -289,6 +289,7 @@ export function mockElectronAPI(): ElectronAPI {
       ),
       onViewsChanged: vi.fn().mockReturnValue(vi.fn()),
       onVisibilityChanged: vi.fn().mockReturnValue(vi.fn()),
+      onCanvasActionStatus: vi.fn().mockReturnValue(vi.fn()),
     },
     auth: {
       getStatus: vi.fn().mockResolvedValue({ authenticated: true }),

@@ -12,6 +12,8 @@ import { isPathInside } from './pathUtils';
 import { buildCanvasTools } from './tools';
 import type {
   CanvasAction,
+  CanvasActionHandler,
+  CanvasActionStatusEvent,
   CanvasCloseInput,
   CanvasEntry,
   CanvasServerLike,
@@ -23,7 +25,8 @@ const CANVAS_DIR = path.join('.chamber', 'canvas');
 const VALID_CANVAS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export interface CanvasServiceOptions {
-  onAction?: (action: CanvasAction) => void;
+  onAction?: CanvasActionHandler;
+  onActionStatus?: (status: CanvasActionStatusEvent) => void;
   openExternal?: ExternalOpener;
   server?: CanvasServerLike;
 }
@@ -68,7 +71,8 @@ export class CanvasService implements ChamberToolProvider {
   private readonly lensViewIdsByCanvas = new Map<string, Map<string, string>>();
   private readonly server: CanvasServerLike;
   private readonly openExternal: ExternalOpener;
-  private readonly onAction: (action: CanvasAction) => void;
+  private readonly onAction: CanvasActionHandler;
+  private readonly actionStatusListeners = new Set<(status: CanvasActionStatusEvent) => void>();
 
   constructor(options: CanvasServiceOptions = {}) {
     this.onAction = options.onAction ?? ((action: CanvasAction) => {
@@ -78,8 +82,10 @@ export class CanvasService implements ChamberToolProvider {
     this.server = options.server ?? new CanvasServer({
       resolveContentDir: (mindId) => this.getContentDirForMind(mindId),
       onAction: (action) => this.onAction(this.decorateCanvasAction(action)),
+      onActionStatus: (status) => this.publishActionStatus(this.decorateCanvasActionStatus(status)),
       authorizeRequest: (mindId, filename, token) => this.isAuthorizedCanvasRequest(mindId, filename, token),
     });
+    if (options.onActionStatus) this.actionStatusListeners.add(options.onActionStatus);
     this.openExternal = options.openExternal ?? {
       open: () => {
         throw new Error('CanvasService requires an ExternalOpener adapter');
@@ -236,6 +242,11 @@ export class CanvasService implements ChamberToolProvider {
     return `${lines.join('\n')}\n\n${status}`;
   }
 
+  subscribeToActionStatus(listener: (status: CanvasActionStatusEvent) => void): () => void {
+    this.actionStatusListeners.add(listener);
+    return () => this.actionStatusListeners.delete(listener);
+  }
+
   private async closeAllCanvases(mindId: string): Promise<string> {
     const canvases = this.canvases.get(mindId);
     if (!canvases || canvases.size === 0) {
@@ -297,6 +308,21 @@ export class CanvasService implements ChamberToolProvider {
   private decorateCanvasAction(action: CanvasAction): CanvasAction {
     const lensViewId = this.lensViewIdsByCanvas.get(action.mindId)?.get(action.canvas);
     return lensViewId ? { ...action, lensViewId } : action;
+  }
+
+  private decorateCanvasActionStatus(status: CanvasActionStatusEvent): CanvasActionStatusEvent {
+    const lensViewId = this.lensViewIdsByCanvas.get(status.mindId)?.get(status.canvas);
+    return lensViewId ? { ...status, lensViewId } : status;
+  }
+
+  private publishActionStatus(status: CanvasActionStatusEvent): void {
+    for (const listener of this.actionStatusListeners) {
+      try {
+        listener(status);
+      } catch (error) {
+        log.warn('Failed to publish Canvas action status:', error);
+      }
+    }
   }
 
   private getExistingToken(mindId: string, name: string): string | null {

@@ -38,10 +38,16 @@ function createMindManager() {
   };
 }
 
-function createCanvasService(): CanvasService {
+function createCanvasService(): CanvasService & { emitActionStatus: (status: { mindId: string; canvas: string; actionId: string; status: 'completed'; lensViewId: string }) => void } {
+  let listener: ((status: { mindId: string; canvas: string; actionId: string; status: 'completed'; lensViewId: string }) => void) | null = null;
   return {
     showLensCanvas: vi.fn().mockResolvedValue(null),
-  } as unknown as CanvasService;
+    subscribeToActionStatus: vi.fn((next: (status: { mindId: string; canvas: string; actionId: string; status: 'completed'; lensViewId: string }) => void) => {
+      listener = next;
+      return vi.fn();
+    }),
+    emitActionStatus: (status: { mindId: string; canvas: string; actionId: string; status: 'completed'; lensViewId: string }) => listener?.(status),
+  } as unknown as CanvasService & { emitActionStatus: (status: { mindId: string; canvas: string; actionId: string; status: 'completed'; lensViewId: string }) => void };
 }
 
 function createPreferences(): LensPreferencesService {
@@ -76,7 +82,7 @@ describe('setupLensIPC', () => {
   it('persists view visibility and broadcasts the change', async () => {
     const preferences = createPreferences();
     const send = vi.fn();
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ webContents: { send } }] as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { send } }] as never);
     setupLensIPC(createDiscovery(), createMindManager(), createCanvasService(), preferences);
 
     await expect(getHandler(IPC.LENS.SET_VIEW_ENABLED)(EVT, 'briefing', false, 'mind-a')).resolves.toEqual({
@@ -107,6 +113,28 @@ describe('setupLensIPC', () => {
 
     await expect(getHandler(IPC.LENS.GET_DISABLED_VIEW_IDS)(EVT, 42)).rejects.toThrow(/lens:getDisabledViewIds/);
     expect(preferences.getDisabledViewIds).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts Canvas action statuses from the trusted service callback', () => {
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([{ isDestroyed: () => false, webContents: { send } }] as never);
+    const canvasService = createCanvasService();
+
+    setupLensIPC(createDiscovery(), createMindManager(), canvasService, createPreferences());
+    canvasService.emitActionStatus({
+      actionId: 'action-1',
+      canvas: 'lens-abc.html',
+      lensViewId: 'command-center',
+      mindId: 'mind-a',
+      status: 'completed',
+    });
+
+    expect(send).toHaveBeenCalledWith(IPC.LENS.CANVAS_ACTION_STATUS, {
+      actionId: 'action-1',
+      mindId: 'mind-a',
+      status: 'completed',
+      viewId: 'command-center',
+    });
   });
 });
 

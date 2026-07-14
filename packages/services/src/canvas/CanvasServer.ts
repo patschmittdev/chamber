@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { URL } from 'node:url';
 import { isPathInside } from './pathUtils';
-import type { CanvasAction, CanvasServerLike } from './types';
+import type { CanvasAction, CanvasActionHandler, CanvasActionStatusEvent, CanvasServerLike } from './types';
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -19,7 +20,8 @@ const MIME_TYPES: Record<string, string> = {
 
 interface CanvasServerOptions {
   resolveContentDir: (mindId: string) => string | null;
-  onAction: (action: CanvasAction) => void;
+  onAction: CanvasActionHandler;
+  onActionStatus: (status: CanvasActionStatusEvent) => void;
   authorizeRequest: (mindId: string, filename: string, token: string | null) => boolean;
 }
 
@@ -40,6 +42,16 @@ const CHAMBER_CANVAS_STYLE = `
   --ch-radius: 0.75rem;
   --ch-font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --ch-font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+:root[data-chamber-theme="light"] {
+  color-scheme: light;
+  --ch-background: oklch(0.985 0.002 260);
+  --ch-foreground: oklch(0.145 0.008 260);
+  --ch-card: oklch(1 0 0);
+  --ch-border: oklch(0.88 0.008 260);
+  --ch-muted: oklch(0.94 0.006 260);
+  --ch-muted-foreground: oklch(0.45 0.012 260);
+  --ch-accent: oklch(0.92 0.008 260);
 }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
@@ -88,13 +100,40 @@ function buildBridgeScript(filename: string): string {
     if (e.data === 'close') { window.close(); }
   };
 
+  function emitActionStatus(payload) {
+   if (!payload || typeof payload.actionId !== 'string') return;
+   if (payload.status !== 'accepted' && payload.status !== 'running' && payload.status !== 'completed' && payload.status !== 'failed') return;
+   window.dispatchEvent(new CustomEvent('chamber:canvas-action-status', { detail: payload }));
+  }
+
+  es.addEventListener('action-status', function(e) {
+   try {
+     emitActionStatus(JSON.parse(e.data));
+   } catch (_) {
+     // Ignore malformed loopback events rather than exposing untrusted payloads.
+   }
+  });
+
+  window.addEventListener('message', function(e) {
+   if (e.source !== window.parent) return;
+   var payload = e.data;
+   if (!payload || payload.type !== 'chamber:canvas-appearance') return;
+   if (payload.theme !== 'light' && payload.theme !== 'dark') return;
+   document.documentElement.dataset.chamberTheme = payload.theme;
+  });
+
   window.canvas = {
-    sendAction: function(name, data) {
-      return fetch('_action?canvas=' + encodeURIComponent(canvasFile) + '&token=' + encodeURIComponent(canvasToken), {
+   sendAction: function(name, data) {
+     return fetch('_action?canvas=' + encodeURIComponent(canvasFile) + '&token=' + encodeURIComponent(canvasToken), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: name, data: data || {}, timestamp: Date.now() })
       });
+    },
+    onActionStatus: function(listener) {
+      var handler = function(e) { listener(e.detail); };
+      window.addEventListener('chamber:canvas-action-status', handler);
+      return function() { window.removeEventListener('chamber:canvas-action-status', handler); };
     }
   };
 })();
@@ -297,17 +336,21 @@ export class CanvasServer implements CanvasServerLike {
     try {
       const body = await readRequestBody(req);
       const parsed = JSON.parse(body) as Record<string, unknown>;
-      this.options.onAction({
+      const actionId = randomUUID();
+      const action: CanvasAction = {
         mindId,
         canvas: filename,
         action: typeof parsed.action === 'string' ? parsed.action : 'unknown',
         data: parsed.data,
         timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now(),
-      });
-      res.writeHead(200, {
+        actionId,
+      };
+      this.publishActionStatus(action, 'accepted');
+      res.writeHead(202, {
         'Content-Type': 'application/json',
       });
-      res.end('{"ok":true}');
+      res.end(JSON.stringify({ ok: true, actionId, status: 'accepted' }));
+      void this.dispatchAction(action);
     } catch {
       res.writeHead(400);
       res.end('{"error":"invalid json"}');
@@ -371,6 +414,36 @@ export class CanvasServer implements CanvasServerLike {
         } catch {
           // Ignore client disconnect races during broadcast.
         }
+      }
+    }
+  }
+
+  private async dispatchAction(action: CanvasAction): Promise<void> {
+    this.publishActionStatus(action, 'running');
+    try {
+      await this.options.onAction(action);
+      this.publishActionStatus(action, 'completed');
+    } catch {
+      this.publishActionStatus(action, 'failed');
+    }
+  }
+
+  private publishActionStatus(action: CanvasAction, status: CanvasActionStatusEvent['status']): void {
+    const statusEvent: CanvasActionStatusEvent = {
+      mindId: action.mindId,
+      canvas: action.canvas,
+      actionId: action.actionId,
+      status,
+    };
+    this.options.onActionStatus(statusEvent);
+    const clients = this.sseClients.get(this.clientKey(action.mindId, action.canvas));
+    if (!clients) return;
+    const payload = JSON.stringify({ actionId: action.actionId, status });
+    for (const client of clients) {
+      try {
+        client.write(`event: action-status\ndata: ${payload}\n\n`);
+      } catch {
+        // Ignore client disconnect races while publishing a bounded status.
       }
     }
   }

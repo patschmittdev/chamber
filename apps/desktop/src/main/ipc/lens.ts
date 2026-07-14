@@ -90,4 +90,17 @@ export function setupLensIPC(
       win.webContents.send(IPC.LENS.VIEWS_CHANGED, views, mindId);
     }
   });
+
+  canvasService.subscribeToActionStatus((status) => {
+    if (!status.lensViewId) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      win.webContents.send(IPC.LENS.CANVAS_ACTION_STATUS, {
+        mindId: status.mindId,
+        viewId: status.lensViewId,
+        actionId: status.actionId,
+        status: status.status,
+      });
+    }
+  });
 }
