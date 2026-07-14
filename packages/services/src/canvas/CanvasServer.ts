@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { URL } from 'node:url';
+import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
+import { parseCanvasActionRequest } from '@chamber/shared/canvas-action-types';
 import { isPathInside } from './pathUtils';
 import type { CanvasAction, CanvasActionHandler, CanvasActionStatusEvent, CanvasServerLike } from './types';
 
@@ -100,12 +102,72 @@ body {
 .ch-badge { border: 1px solid var(--ch-border); border-radius: 999px; display: inline-flex; padding: 0.125rem 0.5rem; color: var(--ch-muted-foreground); }
 </style>`;
 
+// ---------------------------------------------------------------------------
+// Pending grant registry
+// ---------------------------------------------------------------------------
+
+const GRANT_TTL_MS = 30_000;
+
+interface StoredGrant {
+  grant: CanvasGestureGrant;
+  used: boolean;
+  registeredAt: number;
+}
+
+class PendingGrantRegistry {
+  private readonly entries = new Map<string, StoredGrant>();
+
+  register(grant: CanvasGestureGrant): void {
+    this.prune();
+    this.entries.set(grant.nonce, { grant, used: false, registeredAt: Date.now() });
+  }
+
+  /**
+   * Validates the grant against the expected mindId, marks it as used if
+   * valid. Returns an error string if invalid, or null if valid.
+   */
+  validateAndConsume(grant: CanvasGestureGrant, expectedMindId: string): string | null {
+    this.prune();
+    const stored = this.entries.get(grant.nonce);
+    if (!stored) {
+       return 'Grant nonce not registered';
+    }
+    if (stored.used) {
+       return 'Grant nonce already used';
+    }
+    if (Date.now() > stored.grant.expiresAt) {
+       return 'Grant expired';
+    }
+    if (stored.grant.mindId !== expectedMindId) {
+       return 'Grant mindId does not match request';
+    }
+    stored.used = true;
+    return null;
+  }
+
+  private prune(): void {
+    const cutoff = Date.now() - GRANT_TTL_MS;
+    for (const [nonce, entry] of this.entries) {
+       if (entry.registeredAt < cutoff) {
+         this.entries.delete(nonce);
+       }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bridge script injected into every Canvas HTML document
+// ---------------------------------------------------------------------------
+
 function buildBridgeScript(filename: string): string {
   return `
 <script>
 (function() {
   var canvasFile = ${JSON.stringify(filename)};
   var canvasToken = new URLSearchParams(location.search).get('token') || '';
+  var parentOrigin = null; // Set on first trusted appearance message from the parent
+  var pendingGrant = null; // Single-use grant received from the parent renderer
+
   var es = new EventSource('_sse?canvas=' + encodeURIComponent(canvasFile) + '&token=' + encodeURIComponent(canvasToken));
   es.onmessage = function(e) {
     if (e.data === 'reload') { location.reload(); }
@@ -120,34 +182,126 @@ function buildBridgeScript(filename: string): string {
 
   es.addEventListener('action-status', function(e) {
    try {
-     emitActionStatus(JSON.parse(e.data));
+      emitActionStatus(JSON.parse(e.data));
    } catch (_) {
-     // Ignore malformed loopback events rather than exposing untrusted payloads.
+      // Ignore malformed loopback events rather than exposing untrusted payloads.
    }
   });
 
   window.addEventListener('message', function(e) {
    if (e.source !== window.parent) return;
+   if (!e.origin || e.origin === 'null') return;
+
    var payload = e.data;
-   if (!payload || payload.type !== 'chamber:canvas-appearance') return;
-   if (payload.theme !== 'light' && payload.theme !== 'dark') return;
-   document.documentElement.dataset.chamberTheme = payload.theme;
+   if (!payload || typeof payload !== 'object') return;
+
+   if (payload.type === 'chamber:canvas-appearance') {
+      if (payload.theme !== 'light' && payload.theme !== 'dark') return;
+      // Record the trusted parent origin on first valid appearance message.
+      if (parentOrigin === null) parentOrigin = e.origin;
+      if (e.origin !== parentOrigin) return;
+      document.documentElement.dataset.chamberTheme = payload.theme;
+      return;
+   }
+
+   if (payload.type === 'chamber:canvas-gesture-grant') {
+      // Only accept from the established trusted parent origin.
+      if (parentOrigin !== null && e.origin !== parentOrigin) return;
+      var grant = payload.grant;
+      if (!grant || typeof grant !== 'object') return;
+      if (typeof grant.nonce !== 'string' || !grant.nonce) return;
+      if (typeof grant.expiresAt !== 'number' || Date.now() > grant.expiresAt) return;
+      // Store for single use.
+      pendingGrant = grant;
+   }
   });
 
   window.canvas = {
-   sendAction: function(name, data) {
-     return fetch('_action?canvas=' + encodeURIComponent(canvasFile) + '&token=' + encodeURIComponent(canvasToken), {
+   /**
+    * DEPRECATED: Canvas scripts must call requestAction() instead.
+    * This method is kept for backwards compatibility but always rejects to
+    * surface the migration message clearly.
+    */
+   sendAction: function(_name, _data) {
+      return Promise.reject(new Error(
+        'Action requires a renderer gesture grant. See Canvas API migration notes.'
+      ));
+   },
+
+   /**
+    * Request an action. The Canvas bridge notifies the parent renderer, which
+    * shows an Approve button. Once the user approves, the renderer sends a
+    * gesture grant back and the action is dispatched automatically.
+    *
+    * @param {object} request - CanvasActionRequest (schemaVersion, variant, label, fields)
+    * @param {function=} onResult - Called with { status: 'approved'|'rejected' }
+    */
+   requestAction: function(request, onResult) {
+      if (!parentOrigin) {
+        if (onResult) onResult({ status: 'rejected', reason: 'parent origin not established' });
+        return;
+      }
+      // Store callback so it can be called when the grant arrives.
+      window.canvas._pendingRequest = request;
+      window.canvas._pendingOnResult = onResult || null;
+      window.parent.postMessage({
+        type: 'chamber:canvas-action-request',
+        request: request
+      }, parentOrigin);
+   },
+
+   /**
+    * Dispatch an action using the pending grant that was sent by the renderer.
+    * Called internally when the grant arrives after requestAction().
+    * Canvas scripts can also call this directly if they already hold a grant.
+    *
+    * @param {object} grant - CanvasGestureGrant
+    * @param {object} request - CanvasActionRequest
+    */
+   dispatchAction: function(grant, request) {
+      if (!grant || typeof grant.nonce !== 'string') {
+        return Promise.reject(new Error('Invalid grant'));
+      }
+      return fetch('_action?canvas=' + encodeURIComponent(canvasFile) + '&token=' + encodeURIComponent(canvasToken), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: name, data: data || {}, timestamp: Date.now() })
+        body: JSON.stringify({ request: request, grant: grant, timestamp: Date.now() })
       });
-    },
-    onActionStatus: function(listener) {
+   },
+
+   onActionStatus: function(listener) {
       var handler = function(e) { listener(e.detail); };
       window.addEventListener('chamber:canvas-action-status', handler);
       return function() { window.removeEventListener('chamber:canvas-action-status', handler); };
-    }
+   },
+
+   // Internal: set by requestAction, cleared after use.
+   _pendingRequest: null,
+   _pendingOnResult: null,
   };
+
+  // When the renderer sends a grant in response to requestAction(), auto-dispatch.
+  window.addEventListener('message', function(e) {
+   if (e.source !== window.parent) return;
+   if (!e.origin || e.origin === 'null') return;
+   if (parentOrigin !== null && e.origin !== parentOrigin) return;
+   var payload = e.data;
+   if (!payload || payload.type !== 'chamber:canvas-gesture-grant') return;
+
+   var storedRequest = window.canvas._pendingRequest;
+   var storedCallback = window.canvas._pendingOnResult;
+   if (!storedRequest) return;
+
+   // Clear before dispatch to prevent double use.
+   window.canvas._pendingRequest = null;
+   window.canvas._pendingOnResult = null;
+
+   window.canvas.dispatchAction(payload.grant, storedRequest).then(function(r) {
+      if (storedCallback) storedCallback({ status: r.ok ? 'approved' : 'rejected' });
+   }).catch(function() {
+      if (storedCallback) storedCallback({ status: 'rejected' });
+   });
+  });
 })();
 </script>`;
 }
@@ -194,8 +348,18 @@ export class CanvasServer implements CanvasServerLike {
   private server: Server | null = null;
   private port: number | null = null;
   private readonly sseClients = new Map<string, Set<CanvasClient>>();
+  private readonly grantRegistry = new PendingGrantRegistry();
 
   constructor(private readonly options: CanvasServerOptions) {}
+
+  /**
+   * Register a gesture grant issued by the renderer. Must be called before the
+   * renderer transmits the grant to the Canvas iframe so the server can validate
+   * it when the action arrives.
+   */
+  registerGrant(grant: CanvasGestureGrant): void {
+    this.grantRegistry.register(grant);
+  }
 
   async start(): Promise<number> {
     if (this.server) {
@@ -345,28 +509,71 @@ export class CanvasServer implements CanvasServerLike {
       return;
     }
 
+    let body: string;
     try {
-      const body = await readRequestBody(req);
-      const parsed = JSON.parse(body) as Record<string, unknown>;
-      const actionId = randomUUID();
-      const action: CanvasAction = {
-        mindId,
-        canvas: filename,
-        action: typeof parsed.action === 'string' ? parsed.action : 'unknown',
-        data: parsed.data,
-        timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now(),
-        actionId,
-      };
-      this.publishActionStatus(action, 'accepted');
-      res.writeHead(202, {
-        'Content-Type': 'application/json',
-      });
-      res.end(JSON.stringify({ ok: true, actionId, status: 'accepted' }));
-      void this.dispatchAction(action);
+      body = await readRequestBody(req);
+    } catch {
+      res.writeHead(400);
+      res.end('{"error":"request body too large or unreadable"}');
+      return;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(body) as Record<string, unknown>;
     } catch {
       res.writeHead(400);
       res.end('{"error":"invalid json"}');
+      return;
     }
+
+    // --- Gesture grant validation ---
+    const rawGrant = parsed.grant;
+    if (!rawGrant || typeof rawGrant !== 'object' || Array.isArray(rawGrant)) {
+      res.writeHead(403);
+      res.end(JSON.stringify({
+        error: 'Action requires a renderer gesture grant. See Canvas API migration notes.',
+      }));
+      return;
+    }
+    const grant = rawGrant as Record<string, unknown>;
+    if (typeof grant.nonce !== 'string' || !grant.nonce ||
+        typeof grant.mindId !== 'string' || typeof grant.expiresAt !== 'number') {
+      res.writeHead(403);
+      res.end(JSON.stringify({ error: 'Malformed gesture grant' }));
+      return;
+    }
+    const grantError = this.grantRegistry.validateAndConsume(grant as unknown as CanvasGestureGrant, mindId);
+    if (grantError) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ error: `Invalid gesture grant: ${grantError}` }));
+      return;
+    }
+
+    // --- Bounded action schema validation ---
+    const rawRequest = parsed.request;
+    let actionRequest: ReturnType<typeof parseCanvasActionRequest>;
+    try {
+      actionRequest = parseCanvasActionRequest(rawRequest);
+    } catch (err) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ error: `Invalid action request: ${err instanceof Error ? err.message : 'parse error'}` }));
+      return;
+    }
+
+    const actionId = randomUUID();
+    const action: CanvasAction = {
+      mindId,
+      canvas: filename,
+      action: actionRequest.variant,
+      data: { label: actionRequest.label, fields: actionRequest.fields },
+      timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now(),
+      actionId,
+    };
+    this.publishActionStatus(action, 'accepted');
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, actionId, status: 'accepted' }));
+    void this.dispatchAction(action);
   }
 
   private handleStaticFile(res: ServerResponse, mindId: string, segments: string[], token: string | null): void {

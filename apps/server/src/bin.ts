@@ -110,6 +110,7 @@ mindManager.on('mind:unloaded', (mindId: string) => {
 });
 viewDiscovery.setRefreshHandler({
   sendBackgroundPrompt: (mindPath, prompt) => mindManager.sendBackgroundPrompt(mindPath, prompt),
+  sendCanvasActionPrompt: (mindPath, prompt) => mindManager.sendBackgroundPromptNoTools(mindPath, prompt),
 });
 
 // Surfaces the loopback server intentionally does not yet implement. Throwing

@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
 import { CanvasServer } from './CanvasServer';
 
 const tempDirs: string[] = [];
@@ -124,11 +125,22 @@ describe('CanvasServer', () => {
     const action = deferred();
     onAction.mockReturnValueOnce(action.promise);
 
+    const now = Date.now();
+    const grant: CanvasGestureGrant = {
+      mindId: 'mind-1',
+      viewId: 'v',
+      actionVariant: 'user-action',
+      nonce: 'test-nonce-accepts-' + now,
+      expiresAt: now + 5000,
+      issuedAt: now,
+    };
+    server.registerGrant(grant);
+
     const port = await server.start();
     const response = await fetch(`http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`, {
       body: JSON.stringify({
-        action: 'button-clicked',
-        data: { id: 'approve' },
+        request: { schemaVersion: 1, variant: 'user-action', label: 'button-clicked', fields: { id: 'approve' } },
+        grant,
         timestamp: 123,
       }),
       headers: {
@@ -144,9 +156,9 @@ describe('CanvasServer', () => {
       status: 'accepted',
     });
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'button-clicked',
+      action: 'user-action',
       canvas: 'report.html',
-      data: { id: 'approve' },
+      data: { label: 'button-clicked', fields: { id: 'approve' } },
       mindId: 'mind-1',
       timestamp: 123,
     }));
@@ -161,6 +173,17 @@ describe('CanvasServer', () => {
     const action = deferred();
     onAction.mockReturnValueOnce(action.promise);
 
+    const now = Date.now();
+    const grant: CanvasGestureGrant = {
+      mindId: 'mind-1',
+      viewId: 'v',
+      actionVariant: 'user-action',
+      nonce: 'test-nonce-lifecycle-' + now,
+      expiresAt: now + 5000,
+      issuedAt: now,
+    };
+    server.registerGrant(grant);
+
     const port = await server.start();
     const stream = await fetch(`http://127.0.0.1:${port}/mind-1/_sse?canvas=report.html&token=secret-token`);
     const reader = stream.body?.getReader();
@@ -168,7 +191,7 @@ describe('CanvasServer', () => {
     await readChunk(reader);
 
     const response = await fetch(`http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`, {
-      body: JSON.stringify({ action: 'add-todo', data: { title: 'Write tests' } }),
+      body: JSON.stringify({ request: { schemaVersion: 1, variant: 'user-action', label: 'add-todo', fields: { title: 'Write tests' } }, grant }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
@@ -223,5 +246,225 @@ describe('CanvasServer', () => {
 
     expect(response.status).toBe(403);
     expect(await response.text()).toBe('Forbidden');
+  });
+
+  describe('gesture grant validation', () => {
+    function makeGrant(overrides: Partial<CanvasGestureGrant> = {}): CanvasGestureGrant {
+      return {
+        mindId: 'mind-1',
+        viewId: 'command-center',
+        actionVariant: 'user-action',
+        nonce: 'test-nonce-' + Math.random().toString(36).slice(2),
+        expiresAt: Date.now() + 5000,
+        issuedAt: Date.now(),
+        ...overrides,
+      };
+    }
+
+    function validRequest() {
+      return {
+        request: {
+          schemaVersion: 1,
+          variant: 'user-action',
+          label: 'submit-form',
+          fields: { id: 'item-1' },
+        },
+      };
+    }
+
+    it('rejects a token-only action without a grant before invoking any callback', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ action: 'button-clicked', data: {} }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain('renderer gesture grant');
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired grant', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      const expiredGrant = makeGrant({ expiresAt: Date.now() - 1 });
+      server.registerGrant(expiredGrant);
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ ...validRequest(), grant: expiredGrant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json() as { error: string };
+      expect(body.error).toMatch(/grant/i);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('rejects a replayed nonce (used grant)', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+      onAction.mockResolvedValue(undefined);
+
+      const port = await server.start();
+      const grant = makeGrant();
+      server.registerGrant(grant);
+
+      // First use — should succeed
+      const first = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ ...validRequest(), grant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+      expect(first.status).toBe(202);
+
+      // Second use of same nonce — must be rejected
+      const second = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ ...validRequest(), grant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+      expect(second.status).toBe(403);
+      const body = await second.json() as { error: string };
+      expect(body.error).toMatch(/grant/i);
+    });
+
+    it('rejects a grant with a mismatched mindId', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      // Grant is for mind-2 but action targets mind-1
+      const grant = makeGrant({ mindId: 'mind-2' });
+      server.registerGrant(grant);
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ ...validRequest(), grant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(403);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unregistered grant (nonce not in registry)', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      const grant = makeGrant(); // Not registered with server.registerGrant()
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ ...validRequest(), grant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(403);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('accepts a valid grant and a bounded action request', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+      onAction.mockResolvedValue(undefined);
+
+      const port = await server.start();
+      const grant = makeGrant();
+      server.registerGrant(grant);
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ ...validRequest(), grant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(202);
+      const body = await response.json() as { ok: boolean; actionId: string; status: string };
+      expect(body.ok).toBe(true);
+      expect(body.status).toBe('accepted');
+      expect(onAction).toHaveBeenCalledOnce();
+      // The action passed to onAction should contain the parsed request data
+      const [calledAction] = onAction.mock.calls[0] as [{ action: string; data: unknown }];
+      expect(calledAction.action).toBe('user-action');
+    });
+
+    it('rejects an action request with an unknown variant', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      const grant = makeGrant();
+      server.registerGrant(grant);
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({
+            request: { schemaVersion: 1, variant: 'exec-shell', command: 'rm -rf /' },
+            grant,
+          }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it('the bridge script returns the migration error for legacy sendAction calls', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      fs.writeFileSync(path.join(mindDir, 'report.html'), '<html><body>Hi</body></html>', 'utf8');
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      const response = await fetch(`http://127.0.0.1:${port}/mind-1/report.html?token=secret-token`);
+      const html = await response.text();
+
+      expect(html).toContain('renderer gesture grant');
+      expect(html).toContain('Canvas API migration notes');
+      // New API should be present
+      expect(html).toContain('dispatchAction');
+      expect(html).toContain('chamber:canvas-action-request');
+    });
   });
 });

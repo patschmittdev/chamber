@@ -83,6 +83,7 @@ const electronAPI: ElectronAPI = {
     onViewsChanged: (callback) => createIpcListener(ipcRenderer, IPC.LENS.VIEWS_CHANGED, callback),
     onVisibilityChanged: (callback) => createIpcListener(ipcRenderer, IPC.LENS.VISIBILITY_CHANGED, callback),
     onCanvasActionStatus: (callback) => createIpcListener(ipcRenderer, IPC.LENS.CANVAS_ACTION_STATUS, callback),
+    registerCanvasGrant: (grant) => ipcRenderer.invoke(IPC.LENS.CANVAS_REGISTER_GRANT, grant),
   },
   auth: {
     getStatus: () => ipcRenderer.invoke(IPC.AUTH.GET_STATUS),

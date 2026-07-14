@@ -32,6 +32,7 @@ class MockCanvasServer implements CanvasServerLike {
 
   readonly getPort = vi.fn(() => this.port);
   readonly isRunning = vi.fn(() => this.port !== null);
+  readonly registerGrant = vi.fn();
 }
 
 describe('CanvasService', () => {
