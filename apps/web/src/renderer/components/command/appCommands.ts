@@ -235,7 +235,7 @@ function agentCommands(context: CommandContext): Command[] {
       keywords: ['memory', 'working memory', 'notes', 'rules', 'log'],
       run: () => {
         context.dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'settings' });
-        context.dispatch({ type: 'SET_PENDING_SETTINGS_INTENT', payload: { section: 'agents', mindId } });
+        context.dispatch({ type: 'SET_PENDING_SETTINGS_INTENT', payload: { section: 'agents', mindId, tab: 'memory' } });
       },
     });
   }

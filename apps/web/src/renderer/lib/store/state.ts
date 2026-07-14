@@ -98,7 +98,7 @@ export interface AppState {
    * sidebar "Manage" action) set this to open a specific settings section,
    * optionally preselecting an agent. SettingsLayout applies it, then clears it.
    */
-  pendingSettingsIntent: { section: string; mindId?: string } | null;
+  pendingSettingsIntent: { section: string; mindId?: string; tab?: string } | null;
   /**
    * One-shot deep-link target for the Extensions view. Commands (e.g. the
    * "New skill" command) set this to open a specific tab and optionally request
@@ -157,7 +157,7 @@ export type AppAction =
   | { type: 'SET_AVAILABLE_MODELS'; payload: ModelInfo[] }
   | { type: 'SET_SELECTED_MODEL'; payload: string | null }
   | { type: 'SET_ACTIVE_VIEW'; payload: LensView }
-  | { type: 'SET_PENDING_SETTINGS_INTENT'; payload: { section: string; mindId?: string } | null }
+  | { type: 'SET_PENDING_SETTINGS_INTENT'; payload: { section: string; mindId?: string; tab?: string } | null }
   | { type: 'SET_PENDING_EXTENSIONS_INTENT'; payload: { tab: ExtensionsTab; action?: 'create-skill' | 'create-prompt' } | null }
   | { type: 'SET_FEATURE_FLAGS'; payload: AppFeatureFlags }
   | { type: 'SET_DISCOVERED_VIEWS'; payload: LensViewManifest[] }

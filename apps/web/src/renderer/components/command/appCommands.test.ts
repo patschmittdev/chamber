@@ -275,7 +275,7 @@ describe('buildCommandItems', () => {
     expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'settings' });
     expect(dispatch).toHaveBeenCalledWith({
       type: 'SET_PENDING_SETTINGS_INTENT',
-      payload: { section: 'agents', mindId: mind.mindId },
+      payload: { section: 'agents', mindId: mind.mindId, tab: 'memory' },
     });
   });
 

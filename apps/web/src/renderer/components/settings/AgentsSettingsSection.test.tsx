@@ -121,7 +121,7 @@ describe('AgentsSettingsSection', () => {
     expect(await screen.findByRole('button', { name: /SOUL.md/ })).toBeTruthy();
   });
 
-  it('summarizes working memory and renders file contents on the Overview tab', async () => {
+  it('renders file contents on the Memory tab', async () => {
     (api.mindMemory.read as ReturnType<typeof vi.fn>).mockResolvedValue({
       mindId: 'ada-1',
       present: true,
@@ -170,11 +170,45 @@ describe('AgentsSettingsSection', () => {
         />
       </AppStateProvider>,
     );
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Memory' }));
     expect(screen.getByText('Working memory')).toBeTruthy();
     expect(screen.getByText('C:\\agents\\ada\\.working-memory')).toBeTruthy();
     expect(screen.getByText('Active')).toBeTruthy();
     expect(await screen.findByText('Roadmap note')).toBeTruthy();
     expect(screen.getByText('No rules file yet.')).toBeTruthy();
+  });
+
+  it('opens on the Memory tab when initialSelectedTab is "memory"', async () => {
+    (api.mindMemory.read as ReturnType<typeof vi.fn>).mockResolvedValue({
+      mindId: 'ada-1',
+      present: true,
+      files: [
+        { name: 'memory.md', label: 'Memory', present: true, content: '# Deep-link note', truncated: false, mtimeMs: null },
+        { name: 'rules.md', label: 'Rules', present: false, content: '', truncated: false, mtimeMs: null },
+        { name: 'log.md', label: 'Log', present: false, content: '', truncated: false, mtimeMs: null },
+      ],
+    });
+    render(
+      <AppStateProvider
+        testInitialState={{
+          minds,
+          agentProfileByMindId: {
+            'ada-1': { mindId: 'ada-1', displayName: 'Ada', avatarDataUrl: null },
+            'boru-2': { mindId: 'boru-2', displayName: 'Boru', avatarDataUrl: null },
+          },
+        }}
+      >
+        <AgentsSettingsSection
+          minds={minds}
+          initialSelectedMindId="ada-1"
+          initialSelectedTab="memory"
+          precedenceByMindId={precedenceByMindId}
+          savingMindId={null}
+          onToggleInheritance={vi.fn().mockResolvedValue(undefined)}
+        />
+      </AppStateProvider>,
+    );
+    expect(await screen.findByText('Deep-link note')).toBeTruthy();
   });
 
   it('lists the agent models on the Model tab', async () => {
