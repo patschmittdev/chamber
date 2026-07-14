@@ -386,9 +386,10 @@ export function mockElectronAPI(): ElectronAPI {
       } }),
     },
     tools: {
-      list: vi.fn().mockResolvedValue([]),
-      install: vi.fn().mockResolvedValue({ success: false, error: 'not stubbed' }),
-      uninstall: vi.fn().mockResolvedValue({ success: true }),
+      listOperations: vi.fn().mockResolvedValue({ tools: [], sources: [] }),
+      install: vi.fn().mockResolvedValue({ status: 'failed', action: 'install' }),
+      update: vi.fn().mockResolvedValue({ status: 'failed', action: 'update' }),
+      remove: vi.fn().mockResolvedValue({ status: 'failed', action: 'remove' }),
     },
     tasks: {
       list: vi.fn().mockResolvedValue([]),
@@ -486,8 +487,8 @@ export function mockElectronAPI(): ElectronAPI {
       save: vi.fn().mockResolvedValue({ success: true }),
     },
     mcp: {
-      getServers: vi.fn().mockResolvedValue([]),
-      setServers: vi.fn().mockResolvedValue([]),
+      listStatus: vi.fn().mockResolvedValue({ connectors: [], sourceStatus: 'ready' }),
+      checkConnector: vi.fn().mockResolvedValue({ status: 'connector-not-found' }),
     },
     prompts: {
       list: vi.fn().mockResolvedValue([]),

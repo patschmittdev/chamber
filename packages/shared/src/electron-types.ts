@@ -64,8 +64,8 @@ import type {
   MindWorkingMemory,
   ModelInfo,
   StartupProgressEvent,
-  ToolActionResult,
-  ToolCatalogEntry,
+  ToolOperationListResult,
+  ToolOperationResult,
   UserProfile,
   UserProfileImportResult,
   UserProfileSaveRequest,
@@ -78,7 +78,7 @@ import type {
   SkillSaveResult,
   SkillSource,
 } from './skill-types';
-import type { McpServerEntry } from './mcp-types';
+import type { McpConnectorCheckResult, McpConnectorStatusResult } from './mcp-types';
 import type { Prompt, PromptMutationResult, PromptSaveRequest } from './prompt-types';
 import type { CapabilityInventoryQuery, CapabilityInventoryResult } from './capability-types';
 
@@ -194,9 +194,10 @@ export interface ElectronAPI {
     importFromMicrosoft: () => Promise<UserProfileImportResult>;
   };
   tools: {
-    list: () => Promise<ToolCatalogEntry[]>;
-    install: (toolId: string, marketplaceId?: string) => Promise<ToolActionResult>;
-    uninstall: (toolId: string) => Promise<{ success: boolean; error?: string }>;
+    listOperations: () => Promise<ToolOperationListResult>;
+    install: (toolId: string, marketplaceId: string) => Promise<ToolOperationResult>;
+    update: (toolId: string, marketplaceId: string) => Promise<ToolOperationResult>;
+    remove: (toolId: string, marketplaceId: string) => Promise<ToolOperationResult>;
   };
   tasks: {
     list: (mindId: string) => Promise<LedgerRecord[]>;
@@ -306,18 +307,13 @@ export interface ElectronAPI {
     save: (request: SkillSaveRequest) => Promise<SkillSaveResult>;
   };
   mcp: {
+    /** Lists configuration and connection state without exposing connector configuration. */
+    listStatus: (mindId?: string) => Promise<McpConnectorStatusResult>;
     /**
-     * Reads the configured MCP servers from a mind's `.mcp.json`. Defaults to
-     * the active mind when `mindId` is omitted. Returns [] when no mind is
-     * resolved or the file is absent/invalid.
+     * Uses Chamber's existing bounded SDK session path. It confirms only that
+     * configuration applied, never live remote connection health.
      */
-    getServers: (mindId?: string) => Promise<McpServerEntry[]>;
-    /**
-     * Replaces the MCP server set in a mind's `.mcp.json` and returns the
-     * persisted, normalized list. Non-managed per-server fields (tools,
-     * timeout, cwd) are preserved for servers kept on the same transport.
-     */
-    setServers: (servers: McpServerEntry[], mindId?: string) => Promise<McpServerEntry[]>;
+    checkConnector: (connectorName: string, mindId?: string) => Promise<McpConnectorCheckResult>;
   };
   prompts: {
     /**

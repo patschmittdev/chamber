@@ -624,6 +624,38 @@ export type ToolActionResult =
   | { success: true; tool: InstalledTool }
   | { success: false; error: string };
 
+/**
+ * Renderer-safe marketplace tool metadata. Installation instructions and
+ * executable paths stay in the source-specific service.
+ */
+export interface ToolOperationEntry {
+  readonly id: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly marketplaceId: string;
+  readonly marketplaceLabel: string;
+  readonly installation: 'installed' | 'available';
+  readonly updateAvailable: boolean;
+}
+
+export interface ToolOperationListResult {
+  readonly tools: readonly ToolOperationEntry[];
+  readonly sources: readonly {
+    id: string;
+    label: string;
+    status: 'healthy' | 'disabled' | 'error';
+    capabilityCount?: number;
+  }[];
+}
+
+/** A display-safe outcome for a bounded marketplace tool operation. */
+export type ToolOperationResult =
+  | { readonly status: 'completed'; readonly action: 'install' | 'update' | 'remove' }
+  | { readonly status: 'already-current'; readonly action: 'update' }
+  | { readonly status: 'not-installed'; readonly action: 'update' | 'remove' }
+  | { readonly status: 'not-available'; readonly action: 'install' | 'update' }
+  | { readonly status: 'failed'; readonly action: 'install' | 'update' | 'remove' };
+
 export interface LensViewManifest {
   id: string;
   name: string;

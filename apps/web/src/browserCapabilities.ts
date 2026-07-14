@@ -160,9 +160,10 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     importFromMicrosoft: { status: 'desktop-only' },
   },
   tools: {
-    list: { status: 'planned' },
+    listOperations: { status: 'desktop-only' },
     install: { status: 'desktop-only' },
-    uninstall: { status: 'desktop-only' },
+    update: { status: 'desktop-only' },
+    remove: { status: 'desktop-only' },
   },
   tasks: {
     list: { status: 'planned' },
@@ -250,9 +251,8 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     save: { status: 'planned' },
   },
   mcp: {
-    getServers: { status: 'planned' },
-    // Converted from an echo stub that silently dropped edits.
-    setServers: { status: 'planned', rejects: true },
+    listStatus: { status: 'desktop-only' },
+    checkConnector: { status: 'desktop-only' },
   },
   prompts: {
     // User-scoped prompt library is desktop-backed. No server route is wired yet,

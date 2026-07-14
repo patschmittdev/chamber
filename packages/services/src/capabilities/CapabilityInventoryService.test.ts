@@ -224,6 +224,7 @@ function tool(): ToolInventoryEntry {
     marketplaceLabel: 'Example catalog',
     status: 'installed',
     installedVersion: '1.0.0',
+    updateAvailable: false,
   };
 }
 

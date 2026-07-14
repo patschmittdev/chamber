@@ -364,9 +364,10 @@ export function installBrowserApi(): void {
       }),
     },
     tools: {
-      list: async () => [],
-      install: async () => ({ success: false, error: 'Tool install is desktop-only in browser mode.' }),
-      uninstall: async () => ({ success: false, error: 'Tool uninstall is desktop-only in browser mode.' }),
+      listOperations: async () => ({ tools: [], sources: [] }),
+      install: async () => ({ status: 'failed', action: 'install' }),
+      update: async () => ({ status: 'failed', action: 'update' }),
+      remove: async () => ({ status: 'failed', action: 'remove' }),
     },
     tasks: {
       list: async () => [],
@@ -472,8 +473,8 @@ export function installBrowserApi(): void {
     },
     mcp: {
       // Web host has no on-disk mind directory to read or write .mcp.json.
-      getServers: async () => [],
-      setServers: async () => unavailable('mcp.setServers'),
+      listStatus: async () => ({ connectors: [], sourceStatus: 'ready' }),
+      checkConnector: async () => ({ status: 'connector-not-found' }),
     },
     prompts: {
       // User-scoped prompt library is desktop-backed; the browser host has no

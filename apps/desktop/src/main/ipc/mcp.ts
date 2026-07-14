@@ -1,7 +1,11 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC, parseIpcArgs } from '@chamber/shared';
-import type { McpServerEntry } from '@chamber/shared/mcp-types';
+import type {
+  McpConnectorCheckResult,
+  McpConnectorStatusResult,
+  McpServerEntry,
+} from '@chamber/shared/mcp-types';
 
 /**
  * Resolves mind identity for MCP config access. The active mind is used when a
@@ -16,6 +20,11 @@ export interface McpIpcMindProvider {
 export interface McpServerStorePort {
   read(mindPath: string): McpServerEntry[];
   write(mindPath: string, servers: McpServerEntry[]): McpServerEntry[];
+}
+
+export interface McpConnectorOperationsPort {
+  list(mindPath: string): McpConnectorStatusResult;
+  check(mindId: string, mindPath: string, connectorName: string): Promise<McpConnectorCheckResult>;
 }
 
 const preservedSchema = z.object({
@@ -48,7 +57,11 @@ const entriesSchema: z.ZodType<McpServerEntry[]> = z.array(
 
 const optionalMindIdSchema = z.string().min(1, 'must be a non-empty string').optional();
 
-export function setupMcpIPC(mindProvider: McpIpcMindProvider, store: McpServerStorePort): void {
+export function setupMcpIPC(
+  mindProvider: McpIpcMindProvider,
+  store: McpServerStorePort,
+  operations: McpConnectorOperationsPort,
+): void {
   const resolveMindPath = (mindId?: string): string | undefined => {
     const id = mindId ?? mindProvider.getActiveMindId() ?? undefined;
     return id ? mindProvider.getMindPath(id) : undefined;
@@ -69,5 +82,26 @@ export function setupMcpIPC(mindProvider: McpIpcMindProvider, store: McpServerSt
       throw new Error('No mind selected to save MCP servers for');
     }
     return store.write(mindPath, servers);
+  });
+
+  ipcMain.handle(IPC.MCP.LIST_STATUS, async (_event, rawMindId: unknown) => {
+    const mindId = parseIpcArgs(IPC.MCP.LIST_STATUS, optionalMindIdSchema, rawMindId);
+    const mindPath = resolveMindPath(mindId);
+    if (!mindPath) return { connectors: [], sourceStatus: 'ready' } satisfies McpConnectorStatusResult;
+    return operations.list(mindPath);
+  });
+
+  ipcMain.handle(IPC.MCP.CHECK_CONNECTOR, async (_event, rawConnectorName: unknown, rawMindId: unknown) => {
+    const connectorName = parseIpcArgs(
+      IPC.MCP.CHECK_CONNECTOR,
+      z.string().trim().min(1, 'must be a non-empty string').max(120),
+      rawConnectorName,
+    );
+    const mindId = parseIpcArgs(IPC.MCP.CHECK_CONNECTOR, optionalMindIdSchema, rawMindId);
+    const resolvedMindId = mindId ?? mindProvider.getActiveMindId();
+    if (!resolvedMindId) return { status: 'connector-not-found' } satisfies McpConnectorCheckResult;
+    const mindPath = resolveMindPath(resolvedMindId);
+    if (!mindPath) return { status: 'connector-not-found' } satisfies McpConnectorCheckResult;
+    return operations.check(resolvedMindId, mindPath, connectorName);
   });
 }

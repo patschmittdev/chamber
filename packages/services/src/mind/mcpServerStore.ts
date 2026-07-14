@@ -18,6 +18,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
+  McpConnectorStatus,
+  McpConnectorStatusResult,
   McpHttpType,
   McpPreservedServerFields,
   McpServerEntry,
@@ -90,6 +92,45 @@ export function listMcpServerSummaries(mindPath: string): McpServerSummary[] {
 }
 
 /**
+ * Returns connector status without transferring executable commands, endpoints,
+ * credentials, or configuration values to the renderer.
+ */
+export function listMcpConnectorStatuses(mindPath: string): McpConnectorStatusResult {
+  const config = readRawConfig(path.join(mindPath, MCP_CONFIG_FILENAME));
+  if (config.status === 'unreadable') {
+    return { connectors: [], sourceStatus: 'needs-attention' };
+  }
+
+  const connectors: McpConnectorStatus[] = [];
+  for (const [name, raw] of Object.entries(config.servers)) {
+    if (!isDisplaySafeName(name)) continue;
+    const parsed = mcpServerSchema.safeParse(raw);
+    if (!parsed.success) {
+      connectors.push({
+        name,
+        transport: 'unknown',
+        configuration: 'needs-attention',
+        connection: 'unknown',
+      });
+      continue;
+    }
+    connectors.push({
+      name,
+      transport: 'command' in parsed.data ? 'stdio' : 'http',
+      configuration: 'ready',
+      connection: 'unknown',
+    });
+  }
+  connectors.sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    connectors,
+    sourceStatus: connectors.some((connector) => connector.configuration === 'needs-attention')
+      ? 'needs-attention'
+      : 'ready',
+  };
+}
+
+/**
  * Replaces the *manageable* MCP server set in `mindPath`'s `.mcp.json` and
  * returns the persisted, normalized list. Raw entries the runtime rejects are
  * preserved verbatim; managed entries are replaced/added by name and removed by
@@ -154,21 +195,21 @@ function readRawConfig(filePath: string): RawConfig {
   let text: string;
   try {
     text = fs.readFileSync(filePath, 'utf-8');
-  } catch (err) {
-    log.warn(`Failed to read ${filePath}; refusing to manage it:`, err);
+  } catch {
+    log.warn('MCP configuration is unreadable; refusing to manage it.');
     return { status: 'unreadable', top: {}, servers: {} };
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
-  } catch (err) {
-    log.warn(`Invalid JSON in ${filePath}; refusing to manage it:`, err);
+  } catch {
+    log.warn('MCP configuration is unreadable; refusing to manage it.');
     return { status: 'unreadable', top: {}, servers: {} };
   }
 
   if (!isRecord(parsed)) {
-    log.warn(`${filePath} is not a JSON object; refusing to manage it.`);
+    log.warn('MCP configuration is unreadable; refusing to manage it.');
     return { status: 'unreadable', top: {}, servers: {} };
   }
 
@@ -176,7 +217,7 @@ function readRawConfig(filePath: string): RawConfig {
   // A present-but-malformed `mcpServers` means we don't understand the file's
   // shape; refuse rather than clobber it with our own map.
   if (mcpServers !== undefined && !isRecord(mcpServers)) {
-    log.warn(`${filePath} has a non-object mcpServers; refusing to manage it.`);
+    log.warn('MCP configuration is unreadable; refusing to manage it.');
     return { status: 'unreadable', top: {}, servers: {} };
   }
 
@@ -266,4 +307,8 @@ function toStringRecord(value: unknown): Record<string, string> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isDisplaySafeName(value: string): boolean {
+  return value.trim().length > 0 && value.length <= 120;
 }
