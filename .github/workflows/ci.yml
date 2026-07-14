@@ -57,3 +57,34 @@ jobs:
       - name: Package
         if: steps.version-bump.outputs.run-package == 'true'
         run: npm run package
+
+  electron-cross-surface-gate:
+    runs-on: windows-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npm run playwright:install
+
+      - name: Run cross-surface quality gate
+        run: npm run smoke:cross-surface-gate
+
+      - name: Upload test traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-cross-surface-traces
+          path: test-results/playwright
+          if-no-files-found: ignore
+          retention-days: 7
