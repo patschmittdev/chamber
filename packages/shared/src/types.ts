@@ -18,6 +18,25 @@ export type {
   SkillValidationError,
 } from './skill-types';
 export type { Prompt, PromptMutationResult, PromptSaveRequest } from './prompt-types';
+export type {
+  CapabilityActivationState,
+  CapabilityAvailabilityState,
+  CapabilityCompatibility,
+  CapabilityDeclaration,
+  CapabilityHealth,
+  CapabilityInstallationState,
+  CapabilityInventoryItem,
+  CapabilityInventoryQuery,
+  CapabilityInventoryResult,
+  CapabilityInventorySourceStatus,
+  CapabilityKind,
+  CapabilityLifecycle,
+  CapabilityProvenance,
+  CapabilityProvenanceKind,
+  CapabilityRef,
+  CapabilityRequirement,
+  CapabilityScope,
+} from './capability-types';
 
 // Shared types across main, preload, and renderer processes
 

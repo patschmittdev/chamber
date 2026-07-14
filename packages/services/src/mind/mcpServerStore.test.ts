@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { McpServerEntry } from '@chamber/shared/mcp-types';
-import { readMcpServers, writeMcpServers } from './mcpServerStore';
+import { listMcpServerSummaries, readMcpServers, writeMcpServers } from './mcpServerStore';
 import { loadMcpServersFromMindPath, MCP_CONFIG_FILENAME } from './mcpConfig';
 
 describe('mcpServerStore', () => {
@@ -32,6 +32,33 @@ describe('mcpServerStore', () => {
   describe('readMcpServers', () => {
     it('returns an empty array when the file is absent', () => {
       expect(readMcpServers(tmpDir)).toEqual([]);
+    });
+
+    it('returns inventory summaries without connector configuration or credentials', () => {
+      writeFile({
+        mcpServers: {
+          remote: {
+            type: 'http',
+            url: 'https://mcp.example.test/private',
+            headers: { Authorization: 'super-secret-token' },
+          },
+          files: {
+            command: 'npx',
+            args: ['-y', 'filesystem'],
+            env: { API_KEY: 'super-secret-token' },
+          },
+        },
+      });
+
+      const serialized = JSON.stringify(listMcpServerSummaries(tmpDir));
+
+      expect(JSON.parse(serialized)).toEqual([
+        { name: 'files', transport: 'stdio' },
+        { name: 'remote', transport: 'http' },
+      ]);
+      expect(serialized).not.toContain('super-secret-token');
+      expect(serialized).not.toContain('mcp.example.test');
+      expect(serialized).not.toContain('npx');
     });
 
     it('surfaces stdio and http servers sorted by name', () => {

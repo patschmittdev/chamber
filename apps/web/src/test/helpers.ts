@@ -494,6 +494,9 @@ export function mockElectronAPI(): ElectronAPI {
       save: vi.fn().mockResolvedValue({ success: true, prompts: [] }),
       delete: vi.fn().mockResolvedValue({ success: true, prompts: [] }),
     },
+    capabilities: {
+      list: vi.fn().mockResolvedValue({ items: [], sources: [] }),
+    },
   };
 }
 

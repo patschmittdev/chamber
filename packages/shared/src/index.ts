@@ -1,4 +1,5 @@
 export * from './types';
+export * from './capability-types';
 export * from './appearance-types';
 export * from './mcp-types';
 export * from './model-selection';

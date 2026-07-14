@@ -50,6 +50,7 @@ describe('ElectronAPI contract', () => {
     expectTypeOf<ElectronAPI['voice']['endSession']>().parameter(0).toEqualTypeOf<{ readonly sessionId: string }>();
     expectTypeOf<ElectronAPI['voice']['onTranscript']>().toBeFunction();
     expectTypeOf<ElectronAPI['app']['getFeatureFlags']>().toBeFunction();
+    expectTypeOf<ElectronAPI['capabilities']['list']>().toBeFunction();
   });
 
   it('declares window.electronAPI as ElectronAPI globally', () => {

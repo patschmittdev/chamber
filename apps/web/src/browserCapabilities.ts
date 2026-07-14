@@ -262,6 +262,9 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     save: { status: 'planned' },
     delete: { status: 'planned' },
   },
+  capabilities: {
+    list: { status: 'desktop-only', rejects: true },
+  },
 } satisfies BrowserCapabilityManifest;
 
 type ManifestRecord = Record<string, Record<string, BrowserCapability>>;

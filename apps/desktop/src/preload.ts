@@ -217,6 +217,9 @@ const electronAPI: ElectronAPI = {
     save: (request: PromptSaveRequest) => ipcRenderer.invoke(IPC.PROMPTS.SAVE, request),
     delete: (id: string) => ipcRenderer.invoke(IPC.PROMPTS.DELETE, id),
   },
+  capabilities: {
+    list: (query) => ipcRenderer.invoke(IPC.CAPABILITIES.LIST, query),
+  },
 };
 
 if (ipcRenderer.sendSync(IPC.E2E.IS_ENABLED) === true) {

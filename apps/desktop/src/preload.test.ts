@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppearanceBridge } from '@chamber/shared/electron-types';
+import type { AppearanceBridge, ElectronAPI } from '@chamber/shared/electron-types';
 import type { AppearanceSnapshot } from '@chamber/shared/appearance-types';
 
 const initialSnapshot: AppearanceSnapshot = {
@@ -85,5 +85,17 @@ describe('desktop preload appearance bridge', () => {
 
     unsubscribe();
     expect(electronMocks.ipcRenderer.removeListener).toHaveBeenCalledWith('appearance:changed', handler);
+  });
+
+  it('exposes the read-only capability inventory bridge', async () => {
+    await import('./preload');
+    const api = electronMocks.exposed.get('electronAPI') as ElectronAPI;
+
+    await api.capabilities.list({ mindId: 'lucy', availability: 'installed' });
+
+    expect(electronMocks.ipcRenderer.invoke).toHaveBeenCalledWith('capabilities:list', {
+      mindId: 'lucy',
+      availability: 'installed',
+    });
   });
 });
