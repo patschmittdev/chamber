@@ -125,6 +125,28 @@ describe('GenesisGate', () => {
     });
   });
 
+  it('hides landing after add resolves even if follow-up list hydration is still pending', async () => {
+    (api.mind.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValue('C:\\test\\mind');
+    (api.mind.add as ReturnType<typeof vi.fn>).mockResolvedValue(existingMind);
+    let listCallCount = 0;
+    (api.mind.list as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      listCallCount++;
+      if (listCallCount <= 1) return Promise.resolve([]);
+      return new Promise(() => {});
+    });
+
+    renderWithProvider(<GenesisGate><div>App</div></GenesisGate>);
+
+    await waitFor(() => {
+      expect(screen.getByText('Open Existing', { exact: false })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText('Open Existing', { exact: false }));
+
+    await waitFor(() => {
+      expect(screen.getByText('App')).toBeTruthy();
+    });
+  });
+
   it('shows Chamber loading screen during account switching instead of landing screen', async () => {
     render(
       <AppStateProvider testInitialState={{

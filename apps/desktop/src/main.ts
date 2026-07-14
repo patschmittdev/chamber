@@ -1135,6 +1135,11 @@ app.on('ready', async () => {
   if (shouldMinimizeToTray) {
     appTray = createAppTray({
       showMainWindow,
+      stopChatroomRun: () => {
+        chatroomService.stopAll();
+      },
+      isChatroomRunning: () => chatroomService.isRunning(),
+      getReadyMindCount: () => mindManager.listMinds().filter((mind) => mind.status === 'ready').length,
       quit: requestQuit,
     }, windowIcon);
   }

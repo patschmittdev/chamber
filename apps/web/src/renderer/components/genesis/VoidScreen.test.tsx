@@ -63,4 +63,16 @@ describe('VoidScreen', () => {
 
     expect((await screen.findByRole('status')).textContent).toBe('Check your GitHub sign-in or repository access.');
   });
+
+  it('does not duplicate the systems initializing boot line under StrictMode effect replay', async () => {
+    render(
+      <React.StrictMode>
+        <VoidScreen onBegin={vi.fn()} onAddMarketplace={vi.fn().mockResolvedValue({ success: true, message: 'ok' })} />
+      </React.StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('> systems initializing...')).toHaveLength(1);
+    });
+  });
 });

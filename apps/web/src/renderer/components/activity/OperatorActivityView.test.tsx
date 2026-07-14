@@ -88,6 +88,19 @@ describe('OperatorActivityView', () => {
     expect(await screen.findByText(/Activity snapshot is stale/)).toBeTruthy();
   });
 
+  it('guards non-positive updatedAt timestamps as unavailable instead of relative time text', async () => {
+    const api = mockElectronAPI();
+    api.operatorActivity.getSnapshot = vi.fn().mockResolvedValue(makeSnapshot({
+      updatedAt: '1970-01-01T00:00:00.000Z',
+      chatroom: { runId: null, state: 'idle', updatedAt: '1970-01-01T00:00:00.000Z' },
+    }));
+    installElectronAPI(api);
+
+    render(<OperatorActivityView />);
+
+    expect(await screen.findByText('Snapshot updated Unavailable')).toBeTruthy();
+  });
+
   it('marks a mounted fresh snapshot stale when no update arrives', async () => {
     vi.useFakeTimers();
     const updatedAt = '2026-07-12T17:30:00.000Z';

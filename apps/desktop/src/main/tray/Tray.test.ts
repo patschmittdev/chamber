@@ -1,19 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NativeImage } from 'electron';
 
-const { getFileIcon, createFromDataURL } = vi.hoisted(() => ({
+const {
+  getFileIcon,
+  createFromDataURL,
+  buildFromTemplate,
+  trayCtor,
+} = vi.hoisted(() => ({
   getFileIcon: vi.fn(),
   createFromDataURL: vi.fn(),
+  buildFromTemplate: vi.fn(),
+  trayCtor: vi.fn(function TrayMock(this: {
+    setToolTip: ReturnType<typeof vi.fn>;
+    setContextMenu: ReturnType<typeof vi.fn>;
+    on: ReturnType<typeof vi.fn>;
+  }) {
+    this.setToolTip = vi.fn();
+    this.setContextMenu = vi.fn();
+    this.on = vi.fn();
+  }),
 }));
 
 vi.mock('electron', () => ({
   app: { getFileIcon },
   nativeImage: { createFromDataURL },
-  Menu: { buildFromTemplate: vi.fn() },
-  Tray: vi.fn(),
+  Menu: { buildFromTemplate },
+  Tray: trayCtor,
 }));
 
-import { loadAppIcon } from './Tray';
+import { createAppTray, loadAppIcon } from './Tray';
 
 function makeIcon(empty = false): NativeImage {
   const icon = {
@@ -91,4 +106,57 @@ describe('loadAppIcon', () => {
       expect(createFromDataURL).toHaveBeenCalledTimes(1);
       expect(icon).toBe(fallbackIcon);
     }));
+});
+
+describe('createAppTray', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    buildFromTemplate.mockReturnValue('menu');
+  });
+
+  it('builds a tray menu with status and actionable controls when chatroom is running', () => {
+    const showMainWindow = vi.fn();
+    const stopChatroomRun = vi.fn();
+    const quit = vi.fn();
+    const tray = createAppTray(
+      {
+        showMainWindow,
+        stopChatroomRun,
+        isChatroomRunning: () => true,
+        getReadyMindCount: () => 3,
+        quit,
+      },
+      makeIcon(false),
+    );
+
+    const template = buildFromTemplate.mock.calls[0][0] as Array<{ label?: string; enabled?: boolean }>;
+    expect(template[0]).toMatchObject({ label: 'Agents: 3 ready | Chatroom: running', enabled: false });
+    expect(template[3]).toMatchObject({ label: 'Stop chatroom run', enabled: true });
+
+    const trayInstance = trayCtor.mock.results[0]?.value as {
+      setToolTip: ReturnType<typeof vi.fn>;
+      setContextMenu: ReturnType<typeof vi.fn>;
+      on: ReturnType<typeof vi.fn>;
+    };
+    expect(trayInstance.setToolTip).toHaveBeenCalledWith('Chamber (Agents: 3 ready | Chatroom: running)');
+    expect(trayInstance.setContextMenu).toHaveBeenCalledWith('menu');
+    expect(trayInstance.on).toHaveBeenCalledWith('click', showMainWindow);
+    expect(tray).toBe(trayInstance);
+  });
+
+  it('disables stop action when no chatroom run is active', () => {
+    createAppTray(
+      {
+        showMainWindow: vi.fn(),
+        stopChatroomRun: vi.fn(),
+        isChatroomRunning: () => false,
+        getReadyMindCount: () => 1,
+        quit: vi.fn(),
+      },
+      makeIcon(false),
+    );
+
+    const template = buildFromTemplate.mock.calls[0][0] as Array<{ label?: string; enabled?: boolean }>;
+    expect(template[3]).toMatchObject({ label: 'No chatroom run in progress', enabled: false });
+  });
 });

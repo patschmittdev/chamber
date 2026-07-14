@@ -12,6 +12,7 @@ export function ExtensionsView() {
   const { pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
   const [activeTab, setActiveTab] = useState('mcp');
+  const [intentElapsedSeconds, setIntentElapsedSeconds] = useState(0);
 
   useEffect(() => {
     if (!pendingExtensionsIntent) return;
@@ -23,6 +24,19 @@ export function ExtensionsView() {
       dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
     }
   }, [pendingExtensionsIntent, dispatch]);
+
+  useEffect(() => {
+    if (!pendingExtensionsIntent?.action) {
+      setIntentElapsedSeconds(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setIntentElapsedSeconds((seconds) => seconds + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingExtensionsIntent?.action]);
+
+  const intentElapsedLabel = `${Math.floor(intentElapsedSeconds / 60)}:${String(intentElapsedSeconds % 60).padStart(2, '0')}`;
 
   return (
     <div className="flex-1 overflow-auto bg-background">
@@ -36,6 +50,11 @@ export function ExtensionsView() {
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Manage the MCP servers, tools, skills, prompts, and Lens views that extend Chamber.
             </p>
+            {pendingExtensionsIntent?.action ? (
+              <p role="status" className="mt-2 text-xs text-muted-foreground">
+                Applying shortcut action... {intentElapsedLabel}
+              </p>
+            ) : null}
           </div>
         </header>
 

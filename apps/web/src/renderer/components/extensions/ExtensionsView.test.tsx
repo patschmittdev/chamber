@@ -2,11 +2,15 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
 import { AppStateProvider } from '../../lib/store';
 import { ExtensionsView } from './ExtensionsView';
+
+vi.mock('./SkillsTab', () => ({
+  SkillsTab: () => <div>Skills content</div>,
+}));
 
 function renderView(api: ReturnType<typeof mockElectronAPI>) {
   installElectronAPI(api);
@@ -22,6 +26,10 @@ describe('ExtensionsView', () => {
 
   beforeEach(() => {
     api = mockElectronAPI();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the header and all four tabs', () => {
@@ -53,5 +61,23 @@ describe('ExtensionsView', () => {
 
     expect(screen.getByRole('tab', { name: 'Skills' }).getAttribute('data-state')).toBe('active');
     expect(screen.getByRole('tab', { name: 'MCP servers' }).getAttribute('data-state')).toBe('inactive');
+  });
+
+  it('shows elapsed reassurance while a one-shot action intent is pending', async () => {
+    vi.useFakeTimers();
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ pendingExtensionsIntent: { tab: 'skills', action: 'create-skill' } }}>
+        <ExtensionsView />
+      </AppStateProvider>,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('Applying shortcut action... 0:00');
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(screen.getByRole('status').textContent).toContain('0:05');
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useAppState, useAppDispatch } from '../lib/store';
-import { selectPreferredMind } from '../lib/mindSelection';
+import { openExistingMind } from '../lib/openExistingMind';
 
 export function useAgentStatus() {
   const { minds } = useAppState();
@@ -41,14 +41,13 @@ export function useAgentStatus() {
   const selectMindDirectory = useCallback(async () => {
     const dirPath = await window.electronAPI.mind.selectDirectory();
     if (dirPath) {
-      const openedMind = await window.electronAPI.mind.add(dirPath);
-      const loadedMinds = await window.electronAPI.mind.list();
-      dispatch({ type: 'SET_MINDS', payload: loadedMinds });
-      const mindToSelect = selectPreferredMind(loadedMinds, openedMind);
-      if (mindToSelect) dispatch({ type: 'SET_ACTIVE_MIND', payload: mindToSelect.mindId });
+      await openExistingMind(dirPath, {
+        existingMinds: minds,
+        dispatch,
+      });
     }
     return dirPath;
-  }, [dispatch]);
+  }, [dispatch, minds]);
 
   return { minds, selectMindDirectory };
 }
