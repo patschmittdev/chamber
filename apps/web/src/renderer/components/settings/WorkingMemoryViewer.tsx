@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Brain, RefreshCw } from 'lucide-react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type {
   MindInstructionPrecedence,
   MindWorkingMemory,
@@ -15,6 +14,7 @@ import { TooltipFor } from '../ui/tooltip';
 
 const PROSE_CLASS =
   'prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed [overflow-wrap:anywhere]';
+const MEMORY_LOAD_ERROR = 'Could not load working memory. Try again.';
 
 function formatTimestamp(ms: number): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -58,8 +58,8 @@ export function WorkingMemoryViewer({ mindId, precedence }: WorkingMemoryViewerP
           setLastFetchedAt(Date.now());
         }
       })
-      .catch((loadError: unknown) => {
-        if (!cancelled) setError(getErrorMessage(loadError));
+      .catch(() => {
+        if (!cancelled) setError(MEMORY_LOAD_ERROR);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -105,7 +105,7 @@ export function WorkingMemoryViewer({ mindId, precedence }: WorkingMemoryViewerP
       {layer ? (
         <>
           <p className="mt-1 text-xs text-muted-foreground">{layer.description}</p>
-          <p className="mt-2 break-all font-mono text-[11px] text-muted-foreground">{layer.source}</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">Managed within this agent.</p>
         </>
       ) : (
         <p className="mt-1 text-xs text-muted-foreground">
@@ -135,7 +135,7 @@ export function WorkingMemoryViewer({ mindId, precedence }: WorkingMemoryViewerP
           />
         ) : memory ? (
           memory.files.map((file) => (
-            <MemoryFile key={file.name} file={file} memorySrc={layer?.source} />
+            <MemoryFile key={file.name} file={file} />
           ))
         ) : null}
       </div>
@@ -158,12 +158,7 @@ function MemoryLoadingSkeleton() {
   );
 }
 
-function buildFullPath(memorySrc: string, fileName: string): string {
-  const sep = memorySrc.includes('\\') ? '\\' : '/';
-  return `${memorySrc}${sep}${fileName}`;
-}
-
-function MemoryFile({ file, memorySrc }: { file: MindWorkingMemoryFile; memorySrc?: string }) {
+function MemoryFile({ file }: { file: MindWorkingMemoryFile }) {
   const hasContent = file.present && file.content.trim().length > 0;
 
   return (
@@ -190,11 +185,6 @@ function MemoryFile({ file, memorySrc }: { file: MindWorkingMemoryFile; memorySr
             {file.truncated ? (
               <div className="mt-2 rounded border border-border/60 bg-muted/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
                 <span className="font-medium">File truncated</span> — showing the beginning only.
-                {memorySrc ? (
-                  <span className="ml-1 break-all font-mono">
-                    {buildFullPath(memorySrc, file.name)}
-                  </span>
-                ) : null}
               </div>
             ) : null}
           </>

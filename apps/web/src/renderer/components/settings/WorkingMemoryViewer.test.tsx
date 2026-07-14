@@ -48,11 +48,12 @@ describe('WorkingMemoryViewer', () => {
     api = installElectronAPI();
   });
 
-  it('shows the status badge and source path from the precedence layer', () => {
+  it('shows the status badge without exposing the agent-managed source path', () => {
     render(<WorkingMemoryViewer mindId="ada-1" precedence={precedenceWithMemory('ada-1')} />);
     expect(screen.getByText('Working memory')).toBeTruthy();
     expect(screen.getByText('Active')).toBeTruthy();
-    expect(screen.getByText('C:\\agents\\ada\\.working-memory')).toBeTruthy();
+    expect(screen.getByText('Managed within this agent.')).toBeTruthy();
+    expect(screen.queryByText('C:\\agents\\ada\\.working-memory')).toBeNull();
   });
 
   it('shows a refresh button', () => {
@@ -84,11 +85,12 @@ describe('WorkingMemoryViewer', () => {
     expect(screen.queryByText(/loading memory/i)).toBeNull();
   });
 
-  it('shows an Alert on read failure, not a plain paragraph', async () => {
-    (api.mindMemory.read as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Mind ada-1 not found'));
+  it('shows a bounded Alert on read failure', async () => {
+    (api.mindMemory.read as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('C:\\agents\\ada\\memory.md not found'));
     render(<WorkingMemoryViewer mindId="ada-1" precedence={precedenceWithMemory('ada-1')} />);
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Mind ada-1 not found');
+    expect(alert.textContent).toContain('Could not load working memory. Try again.');
+    expect(alert.textContent).not.toContain('C:\\agents\\ada\\memory.md');
   });
 
   it('shows EmptyState when the .working-memory directory is absent', async () => {
@@ -119,12 +121,12 @@ describe('WorkingMemoryViewer', () => {
     expect(modifiedElements.length).toBeGreaterThan(0);
   });
 
-  it('includes the full file path in the truncation notice as an open-full affordance', async () => {
+  it('keeps truncation notices free of local paths', async () => {
     (api.mindMemory.read as ReturnType<typeof vi.fn>).mockResolvedValue(memory());
     render(<WorkingMemoryViewer mindId="ada-1" precedence={precedenceWithMemory('ada-1')} />);
     await screen.findByText('Roadmap note');
     const truncationEl = screen.getByText(/file truncated/i).closest('div');
-    expect(truncationEl?.textContent).toContain('log.md');
+    expect(truncationEl?.textContent).not.toContain('C:\\agents\\ada');
   });
 
   it('does not show raw filenames as prominent section labels', async () => {

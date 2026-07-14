@@ -115,7 +115,8 @@ describe('AddAccountModal', () => {
       ctx.emit({ step: 'error', error: 'Timed out waiting for authorization' });
     });
 
-    expect(await screen.findByText('Timed out waiting for authorization')).toBeTruthy();
+    expect(await screen.findByText('Authentication failed. Try again.')).toBeTruthy();
+    expect(screen.queryByText('Timed out waiting for authorization')).toBeNull();
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
   });
 

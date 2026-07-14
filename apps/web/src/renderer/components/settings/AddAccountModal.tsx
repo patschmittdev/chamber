@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 
 import {
   Dialog,
@@ -71,7 +70,7 @@ export function AddAccountModal({ open, openId, onClose, onRetry }: Props) {
         setStage('waiting');
         onClose();
       } else if (progress.step === 'error') {
-        setError(progress.error ?? 'Authentication failed.');
+        setError('Authentication failed. Try again.');
         setStage('error');
       }
     });
@@ -85,9 +84,9 @@ export function AddAccountModal({ open, openId, onClose, onRetry }: Props) {
             setStage((prev) => (prev === 'error' ? prev : 'error'));
             setError((prev) => prev ?? 'Authentication did not complete.');
           }
-        } catch (err) {
+        } catch {
           if (cancelled) return;
-          setError(getErrorMessage(err));
+          setError('Authentication failed. Try again.');
           setStage('error');
         }
       })();

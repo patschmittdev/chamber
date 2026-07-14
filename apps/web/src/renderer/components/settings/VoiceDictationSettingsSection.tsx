@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import {
   VOICE_DICTATION_MODEL_ID,
   type VoiceDictationConfig,
@@ -229,28 +228,28 @@ export function VoiceDictationSettingsSection() {
       .then((savedConfig) => {
         if (!cancelled) setConfig(normalizeConfig(savedConfig));
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setMessage(`Unable to load voice dictation settings: ${getErrorMessage(err)}`);
+      .catch(() => {
+        if (!cancelled) setMessage('Could not load voice dictation settings. Try again.');
       });
 
     void window.electronAPI.voice.getPermissionState()
       .then((state) => {
         if (!cancelled) setPermissionState(state);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setMessage(`Unable to read microphone permission: ${getErrorMessage(err)}`);
+      .catch(() => {
+        if (!cancelled) setMessage('Could not read microphone permission. Try again.');
       });
 
     void window.electronAPI.voice.getModelStatus(VOICE_DICTATION_MODEL_ID)
       .then((status) => {
         if (!cancelled && !receivedModelProgress) setModelStatus(status);
       })
-      .catch((err: unknown) => {
+      .catch(() => {
         if (!cancelled && !receivedModelProgress) {
           setModelStatus({
             id: VOICE_DICTATION_MODEL_ID,
             status: 'error',
-            errorMessage: getErrorMessage(err),
+            errorMessage: 'Could not load transcription model status. Try again.',
           });
         }
       });
@@ -259,8 +258,8 @@ export function VoiceDictationSettingsSection() {
       .then((devices) => {
         if (!cancelled) setAudioInputDevices(devices);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setMessage(`Unable to list input devices: ${getErrorMessage(err)}`);
+      .catch(() => {
+        if (!cancelled) setMessage('Could not list input devices. Try again.');
       });
 
     const unsubscribeConfig = window.electronAPI.voice.onConfigChanged((nextConfig) => {
@@ -292,8 +291,8 @@ export function VoiceDictationSettingsSection() {
     setMessage(null);
     try {
       await window.electronAPI.voice.saveConfig(nextConfig);
-    } catch (err) {
-      setMessage(`Unable to save voice dictation settings: ${getErrorMessage(err)}`);
+    } catch {
+      setMessage('Could not save voice dictation settings. Try again.');
     }
   };
 
@@ -312,8 +311,8 @@ export function VoiceDictationSettingsSection() {
       await window.electronAPI.voice.openMicPreferences();
       const nextState = await window.electronAPI.voice.getPermissionState();
       setPermissionState(nextState);
-    } catch (err) {
-      setMessage(`Unable to open microphone preferences: ${getErrorMessage(err)}`);
+    } catch {
+      setMessage('Could not open microphone preferences. Try again.');
     }
   };
 
@@ -325,10 +324,10 @@ export function VoiceDictationSettingsSection() {
       if (result.success) {
         setMicTest({ status: 'success', result });
       } else {
-        setMicTest({ status: 'error', message: result.error });
+        setMicTest({ status: 'error', message: 'Microphone test failed. Try again.' });
       }
-    } catch (err) {
-      setMicTest({ status: 'error', message: getErrorMessage(err) });
+    } catch {
+      setMicTest({ status: 'error', message: 'Microphone test failed. Try again.' });
     }
   };
 
@@ -352,11 +351,11 @@ export function VoiceDictationSettingsSection() {
       }
       const refreshed = await window.electronAPI.voice.getModelStatus(VOICE_DICTATION_MODEL_ID);
       setModelStatus(refreshed);
-    } catch (err) {
+    } catch {
       setModelStatus({
         id: VOICE_DICTATION_MODEL_ID,
         status: 'error',
-        errorMessage: getErrorMessage(err),
+        errorMessage: 'Could not update the transcription model. Try again.',
       });
     } finally {
       setModelActionBusy(false);
@@ -467,8 +466,8 @@ export function VoiceDictationSettingsSection() {
                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${modelProgress ?? 0}%` }} />
               </div>
             ) : null}
-            {modelStatus?.status === 'error' && modelStatus.errorMessage ? (
-              <p role="alert" className="text-xs text-destructive">{modelStatus.errorMessage}</p>
+            {modelStatus?.status === 'error' ? (
+              <p role="alert" className="text-xs text-destructive">Transcription model needs attention. Try again.</p>
             ) : null}
             <button
               type="button"

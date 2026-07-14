@@ -86,7 +86,8 @@ describe('LocalLlmSettingsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /Test connection/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Endpoint returned HTTP 502/i)).toBeTruthy();
+      expect(screen.getByText(/Connection test failed/i)).toBeTruthy();
+      expect(screen.queryByText(/Endpoint returned HTTP 502/i)).toBeNull();
     });
     expect((screen.getByRole('button', { name: /Apply/i }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -149,7 +150,7 @@ describe('LocalLlmSettingsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /Test connection/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Invalid JSON/i)).toBeTruthy();
+      expect(screen.getByText('Enter valid JSON for custom headers.')).toBeTruthy();
     });
     expect(api.byoLlm.probe).not.toHaveBeenCalled();
   });

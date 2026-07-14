@@ -60,9 +60,10 @@ test.describe('electron Settings marketplace management smoke', () => {
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
     await page.getByRole('button', { name: 'Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await page.getByRole('button', { name: 'Sources & security' }).click();
     await expect(page.getByText('Public Genesis Minds')).toBeVisible();
 
-    const publicRow = rowForMarketplaceUrl(page, 'https://github.com/ianphil/genesis-minds');
+    const publicRow = rowForMarketplace(page, 'Public Genesis Minds');
     await expect(publicRow.getByText(/Enabled.*Default/)).toBeVisible();
     await expect(publicRow.getByRole('button', { name: 'Remove' })).toHaveCount(0);
 
@@ -70,7 +71,7 @@ test.describe('electron Settings marketplace management smoke', () => {
     await page.getByRole('button', { name: 'Add', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Added agency-microsoft/genesis-minds', { timeout: 90_000 });
 
-    const internalRow = rowForMarketplaceUrl(page, internalMarketplaceUrl);
+    const internalRow = rowForMarketplace(page, 'agency-microsoft/genesis-minds');
     await expect(internalRow.getByText('Enabled')).toBeVisible();
     await expectTemplateSources(page, [internalMarketplaceId, publicMarketplaceId]);
 
@@ -86,13 +87,13 @@ test.describe('electron Settings marketplace management smoke', () => {
 
     await internalRow.getByRole('button', { name: 'Remove' }).click();
     await expect(page.getByRole('status')).toContainText('Removed agency-microsoft/genesis-minds');
-    await expect(page.getByText(internalMarketplaceUrl)).toHaveCount(0);
+    await expect(rowForMarketplace(page, 'agency-microsoft/genesis-minds')).toHaveCount(0);
     await expectTemplateSources(page, [publicMarketplaceId]);
   });
 });
 
-function rowForMarketplaceUrl(page: Awaited<ReturnType<typeof findRendererPage>>, marketplaceUrl: string) {
-  return page.getByText(marketplaceUrl, { exact: true })
+function rowForMarketplace(page: Awaited<ReturnType<typeof findRendererPage>>, label: string) {
+  return page.getByText(label, { exact: true })
     .locator('xpath=ancestor::div[contains(@class,"rounded-lg") and contains(@class,"border")][1]');
 }
 

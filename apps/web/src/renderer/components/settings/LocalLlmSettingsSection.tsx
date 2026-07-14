@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type { ByoLlmConfig, ByoLlmProbeResult } from '@chamber/shared/types';
 import { cn } from '../../lib/utils';
 
@@ -118,8 +117,8 @@ export function LocalLlmSettingsSection() {
         headers[k] = v;
       }
       return { headers, error: null };
-    } catch (err) {
-      return { error: `Invalid JSON: ${getErrorMessage(err)}` };
+    } catch {
+      return { error: 'Enter valid JSON for custom headers.' };
     }
   };
 
@@ -166,26 +165,26 @@ export function LocalLlmSettingsSection() {
         if (!cfg) return;
         const saveResult = await window.electronAPI.byoLlm.save(cfg);
         if (!saveResult.success) {
-          setStatusMessage(saveResult.error ?? 'Failed to save BYO LLM config.');
+          setStatusMessage('Could not save provider settings. Try again.');
           return;
         }
         const restartResult = await window.electronAPI.byoLlm.restartAgents();
         setStatusMessage(
           restartResult.success
             ? `BYO LLM settings applied. Refreshed ${restartResult.restartedCount} BYO-selected agent(s).`
-            : `Saved, but agent refresh failed: ${restartResult.error ?? 'unknown error'}`,
+            : 'Provider settings were saved, but affected agents could not refresh. Try again.',
         );
       } else {
         const result = await window.electronAPI.byoLlm.disable();
         if (!result.success) {
-          setStatusMessage(result.error ?? 'Failed to disable BYO LLM.');
+          setStatusMessage('Could not disable the provider. Try again.');
           return;
         }
         const restartResult = await window.electronAPI.byoLlm.restartAgents();
         setStatusMessage(
           restartResult.success
             ? `BYO LLM disabled. Refreshed ${restartResult.restartedCount} BYO-selected agent(s).`
-            : `Disabled, but agent refresh failed: ${restartResult.error ?? 'unknown error'}`,
+            : 'The provider was disabled, but affected agents could not refresh. Try again.',
         );
       }
     } finally {
@@ -450,7 +449,9 @@ export function LocalLlmSettingsSection() {
           </p>
         ) : null}
         {probe.status === 'error' && probe.result && !probe.result.ok ? (
-          <p role="alert" className="text-sm text-destructive">{probe.result.error}</p>
+          <p role="alert" className="text-sm text-destructive">
+            Connection test failed. Review the provider settings and try again.
+          </p>
         ) : null}
         {statusMessage ? (
           <p role="status" className="text-sm text-muted-foreground">{statusMessage}</p>

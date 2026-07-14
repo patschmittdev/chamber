@@ -82,7 +82,8 @@ describe('AgentsSettingsSection', () => {
     const list = screen.getByRole('list', { name: /agents/i });
     fireEvent.click(within(list).getByText('Boru'));
     expect(screen.getByRole('heading', { name: 'Boru' })).toBeTruthy();
-    expect(screen.getByText('C:\\agents\\boru')).toBeTruthy();
+    expect(screen.getByText('Managed locally')).toBeTruthy();
+    expect(screen.queryByText('C:\\agents\\boru')).toBeNull();
   });
 
   it('restarts the selected agent through the profile bridge', async () => {
@@ -172,7 +173,7 @@ describe('AgentsSettingsSection', () => {
     );
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Memory' }));
     expect(screen.getByText('Working memory')).toBeTruthy();
-    expect(screen.getByText('C:\\agents\\ada\\.working-memory')).toBeTruthy();
+    expect(screen.getByText('Managed within this agent.')).toBeTruthy();
     expect(screen.getByText('Active')).toBeTruthy();
     expect(await screen.findByText('Roadmap note')).toBeTruthy();
     expect(screen.getByText('No rules file yet.')).toBeTruthy();

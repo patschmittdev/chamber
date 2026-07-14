@@ -15,17 +15,18 @@ import type { MindContext, MindInstructionPrecedence } from '@chamber/shared/typ
 // Settings is now tabbed. Tests that assert on Account / Marketplaces /
 // feature-specific content must first activate that tab (the Profile tab is the
 // default). Profile-tab tests don't need this helper.
-function gotoTab(label: 'Profile' | 'Custom instructions' | 'Account' | 'Marketplaces' | 'Appearance' | 'Local LLM' | 'Voice dictation') {
+function gotoTab(label: 'Profile' | 'Custom instructions' | 'Agents' | 'Account' | 'Appearance' | 'Models and providers' | 'Sources & security') {
   const nav = screen.getByRole('navigation', { name: /settings sections/i });
   fireEvent.click(within(nav).getByRole('button', { name: label }));
 }
 
 function StateProbe() {
-  const { activeView, pendingExtensionsIntent } = useAppState();
+  const { activeView, pendingExtensionsIntent, pendingSettingsIntent } = useAppState();
   return (
     <>
       <div data-testid="active-view">{activeView}</div>
       <div data-testid="pending-extensions">{pendingExtensionsIntent?.tab ?? 'none'}</div>
+      <div data-testid="pending-settings">{pendingSettingsIntent?.section ?? 'none'}</div>
     </>
   );
 }
@@ -176,6 +177,37 @@ describe('SettingsView', () => {
     });
   });
 
+  it('organizes settings by workspace, agents, models, and sources tasks', async () => {
+    render(
+      <AppStateProvider testInitialState={{ featureFlags: { switchboardRelay: false, byoLlm: true, chamberCopilot: false, voiceDictation: true, wtdTopology: false } }}>
+        <SettingsView />
+      </AppStateProvider>,
+    );
+
+    const nav = screen.getByRole('navigation', { name: /settings sections/i });
+    expect(within(nav).getByRole('heading', { name: 'Workspace' })).toBeTruthy();
+    expect(within(nav).getByRole('heading', { name: 'Agents' })).toBeTruthy();
+    expect(within(nav).getByRole('heading', { name: 'Models and providers' })).toBeTruthy();
+    expect(within(nav).getByRole('heading', { name: 'Sources and security' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Appearance' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Account' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Agents' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Models and providers' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Sources & security' })).toBeTruthy();
+  });
+
+  it('migrates legacy marketplace deep links to Sources & security', async () => {
+    render(
+      <AppStateProvider testInitialState={{ pendingSettingsIntent: { section: 'marketplaces' } }}>
+        <SettingsView />
+        <StateProbe />
+      </AppStateProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Sources & security' })).toBeTruthy();
+    expect(screen.getByTestId('pending-settings').textContent).toBe('none');
+  });
+
   it('hides Local & Custom LLM settings when BYO LLM is feature-flagged off', async () => {
     render(<SettingsView />);
     await screen.findByRole('heading', { name: /settings/i });
@@ -188,7 +220,7 @@ describe('SettingsView', () => {
         <SettingsView />
       </AppStateProvider>,
     );
-    gotoTab('Local LLM');
+    gotoTab('Models and providers');
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /local & custom llm/i })).toBeTruthy();
     });
@@ -211,8 +243,8 @@ describe('SettingsView', () => {
         <SettingsView />
       </AppStateProvider>,
     );
-    expect(screen.getByRole('button', { name: 'Voice dictation' })).toBeTruthy();
-    gotoTab('Voice dictation');
+    expect(screen.getByRole('button', { name: 'Sources & security' })).toBeTruthy();
+    gotoTab('Sources & security');
     expect(await screen.findByTestId('voice-dictation-settings-section')).toBeTruthy();
   });
 
@@ -313,7 +345,7 @@ describe('SettingsView', () => {
     expect(screen.getByText(/imported microsoft 365 profile/i)).toBeTruthy();
   });
 
-  it('shows Microsoft import errors without overwriting fields', async () => {
+  it('shows bounded Microsoft import errors without overwriting fields', async () => {
     (api.userProfile.importFromMicrosoft as ReturnType<typeof vi.fn>).mockResolvedValue({
       success: false,
       error: 'Microsoft Graph profile request failed (403).',
@@ -332,7 +364,8 @@ describe('SettingsView', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /import from work account/i }));
 
-    expect(await screen.findByText('Microsoft Graph profile request failed (403).')).toBeTruthy();
+    expect(await screen.findByText('Could not update your profile. Try again.')).toBeTruthy();
+    expect(screen.queryByText('Microsoft Graph profile request failed (403).')).toBeNull();
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('');
   });
 
@@ -612,10 +645,10 @@ describe('SettingsView', () => {
     ]);
 
     render(<SettingsView />);
-    gotoTab('Marketplaces');
+    gotoTab('Sources & security');
 
     expect(await screen.findByText('Public Genesis Minds')).toBeTruthy();
-    expect(screen.getByText('https://github.com/ianphil/genesis-minds')).toBeTruthy();
+    expect(screen.queryByText('https://github.com/ianphil/genesis-minds')).toBeNull();
   });
 
   it('adds a marketplace from settings and refreshes the list', async () => {
@@ -636,7 +669,7 @@ describe('SettingsView', () => {
       ]);
 
     render(<SettingsView />);
-    gotoTab('Marketplaces');
+    gotoTab('Sources & security');
 
     fireEvent.change(await screen.findByLabelText('Marketplace repository URL'), {
       target: { value: 'https://github.com/agency-microsoft/genesis-minds' },
@@ -664,7 +697,7 @@ describe('SettingsView', () => {
     (api.marketplace.listGenesisRegistries as ReturnType<typeof vi.fn>).mockResolvedValue([agencyMarketplace]);
 
     render(<SettingsView />);
-    gotoTab('Marketplaces');
+    gotoTab('Sources & security');
 
     await screen.findByText('agency-microsoft/genesis-minds');
     fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
@@ -678,7 +711,7 @@ describe('SettingsView', () => {
     });
   });
 
-  it('cross-links from Marketplaces back to Extensions skills', async () => {
+  it('cross-links enrolled sources to the curated Extensions directory', async () => {
     (api.marketplace.listGenesisRegistries as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
     render(
@@ -687,11 +720,25 @@ describe('SettingsView', () => {
         <StateProbe />
       </AppStateProvider>,
     );
-    gotoTab('Marketplaces');
+    gotoTab('Sources & security');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Extensions skills' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Browse source offerings' }));
     expect(screen.getByTestId('active-view').textContent).toBe('extensions');
     expect(screen.getByTestId('pending-extensions').textContent).toBe('skills');
+  });
+
+  it('shows a bounded marketplace load error without exposing raw details', async () => {
+    (api.marketplace.listGenesisRegistries as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('C:\\operators\\private\\sources\\catalog.json returned a secret response'),
+    );
+    render(
+      <AppStateProvider testInitialState={{ pendingSettingsIntent: { section: 'marketplaces' } }}>
+        <SettingsView />
+      </AppStateProvider>,
+    );
+
+    expect(await screen.findByText('Could not load enrolled sources. Try again.')).toBeTruthy();
+    expect(screen.queryByText(/C:\\operators|secret response/)).toBeNull();
   });
 
   describe('Appearance section', () => {

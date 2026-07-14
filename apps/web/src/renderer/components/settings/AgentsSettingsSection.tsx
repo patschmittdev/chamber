@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type { MindContext, MindInstructionPrecedence } from '@chamber/shared/types';
 import { cn } from '@/renderer/lib/utils';
 import type { AgentProfileSummary } from '../../lib/store/state';
@@ -108,8 +107,8 @@ export function AgentsSettingsSection({
     try {
       await window.electronAPI.mindProfile.restart(mindId);
       setActionMessage({ mindId, text: 'Restart requested. The agent will reload with its latest configuration.' });
-    } catch (error) {
-      setActionMessage({ mindId, text: getErrorMessage(error) });
+    } catch {
+      setActionMessage({ mindId, text: 'Could not restart this agent. Try again.' });
     } finally {
       setRestartingMindId(null);
     }
@@ -253,7 +252,7 @@ function AgentDetail({
 
         <TabsContent value="overview" className="mt-3 space-y-4">
           <dl className="grid gap-3 sm:grid-cols-2">
-            <DetailField label="Agent folder" value={mind.mindPath} mono />
+            <DetailField label="Storage" value="Managed locally" />
             <DetailField label="Status" value={status.label} />
             <DetailField label="Model" value={model} />
             <DetailField label="Mind ID" value={mind.mindId} mono />
@@ -314,4 +313,3 @@ function DetailField({ label, value, mono }: DetailFieldProps) {
     </div>
   );
 }
-

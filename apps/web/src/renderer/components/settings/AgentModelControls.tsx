@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import {
   modelSelectionEqualsModel,
   modelSelectionKeyFromModel,
@@ -38,8 +37,8 @@ export function AgentModelControls({ mind }: AgentModelControlsProps) {
       .then((list) => {
         if (!cancelled) setModels(list);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(getErrorMessage(err));
+      .catch(() => {
+        if (!cancelled) setError('Could not load models for this agent. Try again.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -83,8 +82,8 @@ export function AgentModelControls({ mind }: AgentModelControlsProps) {
       if (isActiveMind) {
         dispatch({ type: 'SET_SELECTED_MODEL', payload: key });
       }
-    } catch (err) {
-      setError(getErrorMessage(err));
+    } catch {
+      setError('Could not update this agent model. Try again.');
     } finally {
       setApplying(false);
       if (isActiveMind) {

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import type { MindContext } from '@chamber/shared/types';
 import { useAppDispatch } from '../../lib/store';
 import {
@@ -42,8 +41,8 @@ export function AgentDangerZone({ mind, displayName }: AgentDangerZoneProps) {
       await window.electronAPI.mind.remove(mind.mindId);
       dispatch({ type: 'REMOVE_MIND', payload: mind.mindId });
       setConfirmOpen(false);
-    } catch (err) {
-      setError(getErrorMessage(err));
+    } catch {
+      setError('Could not remove this agent. Try again.');
     } finally {
       setRemoving(false);
     }
