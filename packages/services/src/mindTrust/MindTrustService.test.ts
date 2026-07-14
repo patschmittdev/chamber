@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { MCPServerConfig } from '@github/copilot-sdk';
-import { MindTrustService, computeMcpServerFingerprint } from './MindTrustService';
+import { MindTrustService, computeMcpServerFingerprint, resolveCanonicalPath } from './MindTrustService';
 import { MindTrustLedger, TRUST_LEDGER_FILENAME } from './MindTrustLedger';
 import type { MindTrustRecord } from './types';
 
@@ -38,7 +38,8 @@ describe('MindTrustService', () => {
       expect(ledger.records).toHaveLength(1);
       expect(ledger.records[0]?.mindId).toBe('mind-1');
       expect(ledger.records[0]?.status).toBe('pending');
-      expect(ledger.records[0]?.resolvedPath).toBe(mindPath);
+      // resolvedPath is canonicalized (realpathSync + lowercase on Windows)
+      expect(ledger.records[0]?.resolvedPath).toBe(resolveCanonicalPath(mindPath));
     });
 
     it('writes atomically via .tmp rename', () => {
@@ -172,6 +173,20 @@ describe('MindTrustService', () => {
 
       const wrongPath = path.join(tmpDir, 'other-dir');
       expect(svc.isMindTrustedForExecution('mind-1', wrongPath)).toBe(false);
+    });
+
+    it('normalizes the loaded path via realpathSync so migration-stored canonical paths match', () => {
+      // Simulate: migration stored the realpath, but registerMindLoad receives
+      // an already-resolved path (realpathSync returns it unchanged here).
+      const svc = new MindTrustService(tmpDir, noMcpServers);
+      svc.registerMindLoad('mind-1', mindPath, 'local');
+      svc.grantTrust('mind-1');
+
+      // Re-instantiate to force a reload from the ledger, then re-register
+      // with the same real path (simulates post-migration load).
+      const svc2 = new MindTrustService(tmpDir, noMcpServers);
+      svc2.registerMindLoad('mind-1', mindPath, 'local');
+      expect(svc2.isMindTrustedForExecution('mind-1', mindPath)).toBe(true);
     });
   });
 

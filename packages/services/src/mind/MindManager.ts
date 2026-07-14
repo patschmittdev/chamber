@@ -1943,8 +1943,11 @@ export class MindManager extends EventEmitter {
   ): Promise<CopilotSession> {
     this.assertResumeSessionPolicy(kind);
     const rawMcpServers = loadMcpServersFromMindPath(mindPath);
-    const mcpServers = (this.trustService && mindId)
-      ? this.trustService.getApprovedMcpServers(mindId, mindPath, rawMcpServers)
+    // Fail-closed: if trustService is present, always filter regardless of
+    // whether mindId was threaded through. An absent mindId maps to an empty
+    // record (no such mind registered), so getApprovedMcpServers returns {}.
+    const mcpServers = this.trustService
+      ? this.trustService.getApprovedMcpServers(mindId ?? '', mindPath, rawMcpServers)
       : rawMcpServers;
     const skillDirectories = this.getMindSkillDirectories(mindPath);
     const chamberMindConfig = loadChamberMindConfig(mindPath);

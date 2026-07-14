@@ -37,7 +37,11 @@ export class MindTrustService implements IMindTrustService {
     this.loadRecords();
   }
 
-  registerMindLoad(mindId: string, resolvedPath: string, source: MindSourceCategory): void {
+  registerMindLoad(mindId: string, rawPath: string, source: MindSourceCategory): void {
+    // Normalize to the canonical realpath so comparisons against migration-time
+    // records (which also use realpathSync.native) are consistent even when the
+    // caller provides a symlinked path.
+    const resolvedPath = resolveCanonicalPath(rawPath) ?? rawPath;
     this.loadedPaths.set(mindId, resolvedPath);
 
     const existing = this.records.get(mindId);
@@ -200,6 +204,12 @@ export class MindTrustService implements IMindTrustService {
       try {
         mcpServers = readMcpServers(resolvedPath);
       } catch (err) {
+        // Intentional: if MCP config is unreadable during migration, we still
+        // grant the mind trusted status (preserving Cron execution) but store
+        // zero approved MCP fingerprints. The user will see MCP tools absent
+        // and can re-trust to pick up a fresh snapshot. We do NOT downgrade to
+        // pending here to avoid forcing re-trust prompts on every startup for
+        // minds that have no .mcp.json at all.
         log.warn(`Migration: failed to read MCP servers for mind ${id} at ${resolvedPath}:`, err);
       }
 
