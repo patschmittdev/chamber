@@ -12,7 +12,7 @@ describe('reservedViewIds', () => {
     expect(isReservedViewId('extensions')).toBe(true);
   });
 
-  it('reserves the operator activity route id', () => {
+  it('keeps the legacy activity id reserved while ViewRouter migrates it to chat', () => {
     expect(isReservedViewId('activity')).toBe(true);
   });
 

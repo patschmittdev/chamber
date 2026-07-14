@@ -103,6 +103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Virtualize the chat transcript and make streaming updates O(1)** - Window the transcript and conversation history so only near-viewport rows mount, layered on the existing row memoization and content-visibility hints, and locate per-delta message updates through a cached id-to-index map instead of rescanning the whole array. Removes the long-task and DOM-growth cost measured under live token streaming.
 
+### Removed
+
+- **Removed the Operator Activity surface** — Simplified the desktop shell and migrated legacy Activity selections to Chat.
+
+
 ## [0.64.1] - 2026-06-01
 
 ### Fixed

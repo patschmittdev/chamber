@@ -21,6 +21,12 @@ import { LocalLlmSettingsSection } from './LocalLlmSettingsSection';
 import { Skeleton } from '../ui/skeleton';
 import { VoiceDictationSettingsSection } from './VoiceDictationSettingsSection';
 const ADD_ACCOUNT_VALUE = '__add-account__';
+const SETTINGS_SECTION_TITLE_CLASS = 'text-xl font-semibold tracking-tight text-foreground';
+const SETTINGS_SECTION_DESCRIPTION_CLASS = 'text-sm text-muted-foreground';
+const SETTINGS_CARD_CLASS = 'rounded-xl border border-border bg-card p-5';
+const SETTINGS_FIELD_LABEL_CLASS = 'text-xs font-medium text-muted-foreground';
+const SETTINGS_FIELD_INPUT_CLASS = 'mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20';
+const SETTINGS_FIELD_TEXTAREA_CLASS = 'mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20';
 
 export function SettingsView() {
   const { featureFlags, minds } = useAppState();
@@ -260,10 +266,10 @@ export function SettingsView() {
           {activeSection === 'profile' && (
             <section className="space-y-3">
               <header>
-                <h2 className="text-lg font-semibold text-foreground">Profile</h2>
-                <p className="text-xs text-foreground/60">How Chamber addresses you and what your agents know about you.</p>
+                <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Profile</h2>
+                <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>How Chamber addresses you and what your agents know about you.</p>
               </header>
-              <div className="rounded-lg border border-border bg-card p-4">
+              <div className={SETTINGS_CARD_CLASS}>
                 <div className="flex items-start gap-4">
                   <button
                     type="button"
@@ -285,7 +291,7 @@ export function SettingsView() {
 
                   <div className="min-w-0 flex-1 space-y-3">
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground" htmlFor="profile-name">
+                      <label className={SETTINGS_FIELD_LABEL_CLASS} htmlFor="profile-name">
                         Name
                       </label>
                       <input
@@ -294,13 +300,13 @@ export function SettingsView() {
                         value={profileName}
                         onChange={(event) => setProfileName(event.target.value)}
                         placeholder="How Chamber should address you"
-                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                        className={SETTINGS_FIELD_INPUT_CLASS}
                       />
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground" htmlFor="profile-work">
+                        <label className={SETTINGS_FIELD_LABEL_CLASS} htmlFor="profile-work">
                           Work
                         </label>
                         <input
@@ -309,11 +315,11 @@ export function SettingsView() {
                           value={profileWork}
                           onChange={(event) => setProfileWork(event.target.value)}
                           placeholder="Role, team, or company"
-                          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                          className={SETTINGS_FIELD_INPUT_CLASS}
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground" htmlFor="profile-location">
+                        <label className={SETTINGS_FIELD_LABEL_CLASS} htmlFor="profile-location">
                           Location
                         </label>
                         <input
@@ -322,13 +328,13 @@ export function SettingsView() {
                           value={profileLocation}
                           onChange={(event) => setProfileLocation(event.target.value)}
                           placeholder="City, office, or timezone"
-                          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                          className={SETTINGS_FIELD_INPUT_CLASS}
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground" htmlFor="profile-about">
+                      <label className={SETTINGS_FIELD_LABEL_CLASS} htmlFor="profile-about">
                         About
                       </label>
                       <textarea
@@ -337,7 +343,7 @@ export function SettingsView() {
                         onChange={(event) => setProfileAbout(event.target.value)}
                         placeholder="A little context your agents should know about you"
                         rows={3}
-                        className="mt-1 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                        className={`${SETTINGS_FIELD_TEXTAREA_CLASS} resize-none`}
                       />
                     </div>
 
@@ -375,12 +381,12 @@ export function SettingsView() {
           {activeSection === 'custom-instructions' && (
             <section className="space-y-3">
               <header>
-                <h2 className="text-lg font-semibold text-foreground">Custom instructions</h2>
-                <p className="text-xs text-foreground/60">Global guidance Chamber adds to every mind&apos;s system message, no matter which agent you chat with.</p>
+                <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Custom instructions</h2>
+                <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>Global guidance Chamber adds to every mind&apos;s system message, no matter which agent you chat with.</p>
               </header>
-              <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <div className={`${SETTINGS_CARD_CLASS} space-y-3`}>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="custom-instructions">
+                  <label className={SETTINGS_FIELD_LABEL_CLASS} htmlFor="custom-instructions">
                     Instructions for all minds
                   </label>
                   <textarea
@@ -389,7 +395,7 @@ export function SettingsView() {
                     onChange={(event) => setCustomInstructions(event.target.value)}
                     placeholder="e.g. Keep answers concise. Prefer TypeScript examples. Ask before making large changes."
                     rows={8}
-                    className="mt-1 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                    className={`${SETTINGS_FIELD_TEXTAREA_CLASS} resize-y`}
                   />
                 </div>
                 <div className="flex items-center gap-3">
@@ -433,10 +439,10 @@ export function SettingsView() {
           {activeSection === 'account' && (
             <section className="space-y-3">
               <header>
-                <h2 className="text-lg font-semibold text-foreground">Account</h2>
-                <p className="text-xs text-foreground/60">Which GitHub identity is signed in.</p>
+                <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Account</h2>
+                <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>Which GitHub identity is signed in.</p>
               </header>
-              <div className="rounded-lg border border-border bg-card p-4">
+              <div className={SETTINGS_CARD_CLASS}>
                 {loading ? (
                   <div className="flex items-center justify-between gap-4">
                     <div className="space-y-2">
@@ -501,8 +507,8 @@ export function SettingsView() {
           {activeSection === 'marketplaces' && (
             <section className="space-y-3">
               <header>
-                <h2 className="text-lg font-semibold text-foreground">Marketplaces</h2>
-                <p className="text-xs text-foreground/60">Repositories Chamber pulls Genesis mind templates from.</p>
+                <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Marketplaces</h2>
+                <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>Repositories Chamber pulls Genesis mind templates from.</p>
                 <div className="mt-2">
                   <button
                     type="button"
@@ -516,7 +522,7 @@ export function SettingsView() {
                   </button>
                 </div>
               </header>
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+              <div className={`${SETTINGS_CARD_CLASS} space-y-4`}>
                 <form className="flex gap-2" onSubmit={(event) => { void handleAddMarketplace(event); }}>
                   <input
                     type="url"
@@ -524,7 +530,7 @@ export function SettingsView() {
                     onChange={(event) => setMarketplaceUrl(event.target.value)}
                     placeholder="https://github.com/agency-microsoft/genesis-minds"
                     aria-label="Marketplace repository URL"
-                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-muted-foreground"
+                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                   />
                   <button type="submit" className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent">
                     Add
@@ -629,7 +635,7 @@ interface SettingsLayoutProps {
 }
 
 function resolveInitialSection(
-  intent: { section: string; mindId?: string } | null,
+  intent: { section: string; mindId?: string; tab?: string } | null,
   railItems: SettingsRailItem[],
 ): SettingsSectionId {
   const target = intent ? railItems.find((item) => item.id === intent.section) : undefined;
@@ -687,12 +693,17 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
     }
   }, [activeSection, railItems]);
 
+  const activeSectionLabel = railItems.find((item) => item.id === activeSection)?.label ?? 'Settings';
+
   return (
-    <div className="flex-1 flex min-h-0">
+    <div className="flex min-h-0 flex-1">
       <nav
         aria-label="Settings sections"
-        className="w-44 shrink-0 flex flex-col gap-0.5 border-r border-border px-3 py-6 text-sm"
+        className="flex w-56 shrink-0 flex-col gap-1 border-r border-border bg-card/20 px-3 py-5"
       >
+        <div className="px-2 pb-3">
+          <p className="text-lg font-semibold tracking-tight text-foreground">Settings</p>
+        </div>
         {railItems.map((item) => (
           <button
             key={item.id}
@@ -700,26 +711,29 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
             onClick={() => setActiveSection(item.id)}
             aria-current={activeSection === item.id ? 'page' : undefined}
             className={
-              'relative rounded-md px-3 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring '
+              'relative rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring '
               + 'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:rounded-r-full before:bg-primary before:transition-all before:duration-200 '
               + (activeSection === item.id
                 ? 'bg-selected text-foreground font-medium before:h-4 before:opacity-100'
-                : 'text-foreground/70 hover:bg-hover hover:text-foreground before:h-0 before:opacity-0')
+                : 'text-muted-foreground hover:bg-hover hover:text-foreground before:h-0 before:opacity-0')
             }
           >
             {item.label}
           </button>
         ))}
-        <div className="mt-auto pt-4 text-center text-[10px] text-foreground/50">
+        <div className="mt-auto pt-4 px-2 text-xs text-muted-foreground">
           Chamber v{APP_VERSION}
         </div>
       </nav>
       <div className="flex-1 overflow-y-auto">
-        <h1 className="sr-only">Settings</h1>
         {/* Keying on activeSection restarts the `view-enter` animation
          * (defined in index.css) every time the user picks a new tab,
          * matching the activity-bar transitions. */}
-        <div key={activeSection} className="view-enter p-6 max-w-3xl space-y-6">
+        <div key={activeSection} className="view-enter mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
+          <header className="space-y-1">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground">Settings</h2>
+            <p className="text-sm text-muted-foreground">{activeSectionLabel}</p>
+          </header>
           {children(activeSection, deepLinkMindId, deepLinkToken, deepLinkTab)}
         </div>
       </div>

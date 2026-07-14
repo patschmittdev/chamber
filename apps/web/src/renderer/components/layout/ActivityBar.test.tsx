@@ -108,13 +108,6 @@ describe('ActivityBar', () => {
     expect(screen.getByLabelText('Work Summary').getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('renders the Operator Activity button and activates the activity view', () => {
-    renderActivityBar();
-    fireEvent.click(screen.getByLabelText('Operator Activity'));
-
-    expect(screen.getByLabelText('Operator Activity').className).toContain('bg-accent');
-  });
-
   it('renders an Extensions button in the footer', () => {
     renderActivityBar();
     const extensionsButton = screen.getByLabelText('Extensions');
