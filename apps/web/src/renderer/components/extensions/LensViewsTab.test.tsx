@@ -84,4 +84,26 @@ describe('LensViewsTab', () => {
       expect(screen.getByText('Enabled')).toBeTruthy();
     });
   });
+
+  it('surfaces an inline error when toggling a view fails', async () => {
+    const api = mockElectronAPI();
+    api.lens.setViewEnabled = vi.fn().mockRejectedValue(new Error('disk full'));
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{
+        activeMindId: 'mind-a',
+        discoveredViews: [
+          makeLensViewManifest({ id: 'daily', name: 'Daily Briefing', view: 'briefing' }),
+        ],
+      }}>
+        <LensViewsTab />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Disable Daily Briefing' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to update view visibility. Please try again.')).toBeTruthy();
+    });
+  });
 });

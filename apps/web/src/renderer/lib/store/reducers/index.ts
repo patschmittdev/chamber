@@ -6,6 +6,7 @@ import { mindsHandlers } from './mindsReducer';
 import { lifecycleHandlers } from './lifecycleReducer';
 import { a2aHandlers } from './a2aReducer';
 import { chatroomHandlers } from './chatroomReducer';
+import { notificationsHandlers } from './notificationsReducer';
 
 type AnyHandler = (state: AppState, action: AppAction) => Partial<AppState> | AppState;
 
@@ -19,7 +20,8 @@ type HandlerKeys =
   | keyof typeof mindsHandlers
   | keyof typeof lifecycleHandlers
   | keyof typeof a2aHandlers
-  | keyof typeof chatroomHandlers;
+  | keyof typeof chatroomHandlers
+  | keyof typeof notificationsHandlers;
 type _Exhaustive = AppAction['type'] extends HandlerKeys ? true : 'MISSING_HANDLER_FOR_ACTION';
 const _exhaustivenessCheck: _Exhaustive = true;
 void _exhaustivenessCheck;
@@ -37,6 +39,7 @@ const HANDLERS: Record<AppAction['type'], AnyHandler> = {
   ...(lifecycleHandlers as unknown as Record<string, AnyHandler>),
   ...(a2aHandlers as unknown as Record<string, AnyHandler>),
   ...(chatroomHandlers as unknown as Record<string, AnyHandler>),
+  ...(notificationsHandlers as unknown as Record<string, AnyHandler>),
 } as Record<AppAction['type'], AnyHandler>;
 
 export function appReducer(state: AppState, action: AppAction): AppState {

@@ -1,10 +1,49 @@
 import { modelSelectionEqualsModel, modelSelectionKey, modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
 import type { ChatEvent, ChatMessage, ContentBlock, ConversationEventRef, ConversationSummary } from '@chamber/shared/types';
 import { applyChatEventToMessage } from '@chamber/shared';
-import type { AppState, ConversationViewState } from '../state';
+import type { AppState, ChatError, ConversationViewState } from '../state';
 
 export function nonEmptyString(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+/**
+ * An assistant turn counts as empty when it carries no non-whitespace text and
+ * no non-text block (tool call, image, etc.). A completed turn that is empty is
+ * a dead-end for the user, so we surface it as an error rather than a silent
+ * blank bubble.
+ */
+export function isAssistantMessageEmpty(message: ChatMessage | undefined): boolean {
+  if (!message) return true;
+  return !message.blocks.some((block) =>
+    block.type === 'text' ? block.content.trim().length > 0 : true,
+  );
+}
+
+/**
+ * Single source of truth for turning a terminal chat event into a user-facing
+ * error (or `null` when the turn is healthy). `error`/`timeout` always fail;
+ * a non-cancelled `done` fails only when its assistant message is empty. Keeping
+ * this in the reducer layer stops error copy from scattering across components.
+ */
+export function deriveChatError(
+  messageId: string,
+  event: ChatEvent,
+  messages: ChatMessage[],
+): ChatError | null {
+  if (event.type === 'error') {
+    return { message: nonEmptyString(event.message, 'The agent ran into an error.'), failedMessageId: messageId };
+  }
+  if (event.type === 'timeout') {
+    return { message: `The agent timed out after ${Math.round(event.timeoutMs / 1000)}s.`, failedMessageId: messageId };
+  }
+  if (event.type === 'done' && !event.cancelled) {
+    const message = messages.find((candidate) => candidate.id === messageId);
+    if (message?.role === 'assistant' && isAssistantMessageEmpty(message)) {
+      return { message: 'The agent finished without a response.', failedMessageId: messageId };
+    }
+  }
+  return null;
 }
 
 /** Returns a shallow copy of `record` without `key`, or the same reference when the key is absent. */

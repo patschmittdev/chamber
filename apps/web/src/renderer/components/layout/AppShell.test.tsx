@@ -68,6 +68,11 @@ describe('AppShell layout', () => {
     expect(screen.getByTestId('view-router')).toBeTruthy();
   });
 
+  it('mounts exactly one app-wide notification host', () => {
+    renderShell();
+    expect(screen.getAllByTestId('toaster')).toHaveLength(1);
+  });
+
   it('keeps both side rails expanded at desktop width', () => {
     setViewportWidth(1440);
     renderShell();

@@ -425,6 +425,82 @@ describe('appReducer', () => {
     expect(state.isStreaming).toBe(false);
   });
 
+  describe('chat error surface (chat-F1)', () => {
+    const streamingAssistant = (id = 'a1'): AppState => ({
+      ...withActiveMind,
+      messagesByMind: { [mindId]: [makeMessage([], { id, isStreaming: true })] },
+    });
+
+    it('CHAT_EVENT error records the failure for that mind', () => {
+      const state = appReducer(streamingAssistant(), { type: 'CHAT_EVENT', payload: { mindId, messageId: 'a1', event: makeChatEvent('error', { message: 'boom' }) } });
+      expect(state.errorByMind[mindId]).toEqual({ message: 'boom', failedMessageId: 'a1' });
+    });
+
+    it('CHAT_EVENT timeout records a timeout failure', () => {
+      const state = appReducer(streamingAssistant(), { type: 'CHAT_EVENT', payload: { mindId, messageId: 'a1', event: makeChatEvent('timeout', { timeoutMs: 30_000 }) } });
+      expect(state.errorByMind[mindId]).toEqual({ message: 'The agent timed out after 30s.', failedMessageId: 'a1' });
+    });
+
+    it('CHAT_EVENT done on an empty assistant message records an empty-response error', () => {
+      const state = appReducer(streamingAssistant(), { type: 'CHAT_EVENT', payload: { mindId, messageId: 'a1', event: makeChatEvent('done') } });
+      expect(state.errorByMind[mindId]).toEqual({ message: 'The agent finished without a response.', failedMessageId: 'a1' });
+    });
+
+    it('CHAT_EVENT cancelled done does not record an empty-response error', () => {
+      const state = appReducer(streamingAssistant(), { type: 'CHAT_EVENT', payload: { mindId, messageId: 'a1', event: makeChatEvent('done', { cancelled: true }) } });
+      expect(state.errorByMind[mindId]).toBeUndefined();
+    });
+
+    it('CHAT_EVENT done with assistant content clears a prior error for that mind', () => {
+      const seeded: AppState = {
+        ...withActiveMind,
+        errorByMind: { [mindId]: { message: 'old', failedMessageId: 'a1' } },
+        messagesByMind: { [mindId]: [makeMessage([makeTextBlock('Answer')], { id: 'a1', isStreaming: true })] },
+      };
+      const state = appReducer(seeded, { type: 'CHAT_EVENT', payload: { mindId, messageId: 'a1', event: makeChatEvent('done') } });
+      expect(state.errorByMind[mindId]).toBeUndefined();
+    });
+
+    it('ADD_ASSISTANT_MESSAGE clears a prior error for the active mind', () => {
+      const seeded: AppState = { ...withActiveMind, errorByMind: { [mindId]: { message: 'old', failedMessageId: 'a0' } } };
+      const state = appReducer(seeded, { type: 'ADD_ASSISTANT_MESSAGE', payload: { id: 'a1', timestamp: 1000 } });
+      expect(state.errorByMind[mindId]).toBeUndefined();
+    });
+
+    it('NEW_CONVERSATION clears the mind error', () => {
+      const seeded: AppState = { ...withActiveMind, errorByMind: { [mindId]: { message: 'old', failedMessageId: 'a0' } } };
+      const state = appReducer(seeded, { type: 'NEW_CONVERSATION' });
+      expect(state.errorByMind[mindId]).toBeUndefined();
+    });
+  });
+
+  describe('notification queue (shell-F2)', () => {
+    it('ENQUEUE_NOTIFICATION appends to the queue', () => {
+      const state = appReducer(initialState, { type: 'ENQUEUE_NOTIFICATION', payload: { id: 'n1', message: 'Saved', variant: 'default' } });
+      expect(state.notifications).toEqual([{ id: 'n1', message: 'Saved', variant: 'default' }]);
+    });
+
+    it('DISMISS_NOTIFICATION removes the matching toast', () => {
+      const seeded: AppState = {
+        ...initialState,
+        notifications: [
+          { id: 'n1', message: 'a', variant: 'default' },
+          { id: 'n2', message: 'b', variant: 'destructive' },
+        ],
+      };
+      const state = appReducer(seeded, { type: 'DISMISS_NOTIFICATION', payload: { id: 'n1' } });
+      expect(state.notifications).toEqual([{ id: 'n2', message: 'b', variant: 'destructive' }]);
+    });
+
+    it('caps the queue at four toasts, dropping the oldest', () => {
+      let state = initialState;
+      for (const id of ['n1', 'n2', 'n3', 'n4', 'n5']) {
+        state = appReducer(state, { type: 'ENQUEUE_NOTIFICATION', payload: { id, message: id, variant: 'default' } });
+      }
+      expect(state.notifications.map((notification) => notification.id)).toEqual(['n2', 'n3', 'n4', 'n5']);
+    });
+  });
+
   describe('TRUNCATE_AFTER', () => {
     const seeded: AppState = {
       ...withActiveMind,

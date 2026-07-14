@@ -7,7 +7,7 @@ import { isLensViewEnabled } from '../../lib/lensVisibility';
 import { cn } from '../../lib/utils';
 import { Logger } from '../../lib/logger';
 import { Badge } from '../ui/badge';
-import { TabEmptyState } from './extensionsShared';
+import { TabEmptyState, TabError } from './extensionsShared';
 
 const log = Logger.create('LensViewsTab');
 
@@ -15,12 +15,14 @@ export function LensViewsTab() {
   const { activeMindId, activeView, discoveredViews, disabledLensViewKeys } = useAppState();
   const dispatch = useAppDispatch();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   const toggleView = async (view: LensViewManifest) => {
     if (!activeMindId) return;
     const enabled = !isLensViewEnabled(disabledLensViewKeys, activeMindId, view.id);
     const key = lensViewVisibilityKey(activeMindId, view.id);
     setPendingKey(key);
+    setToggleError(null);
     try {
       const visibility = await window.electronAPI.lens.setViewEnabled(view.id, enabled, activeMindId);
       dispatch({ type: 'SET_LENS_VIEW_ENABLED', payload: visibility });
@@ -29,6 +31,7 @@ export function LensViewsTab() {
       }
     } catch (err) {
       log.error('Failed to update Lens view visibility:', err);
+      setToggleError('Failed to update view visibility. Please try again.');
     } finally {
       setPendingKey(null);
     }
@@ -43,6 +46,8 @@ export function LensViewsTab() {
           directories. Disable a view to hide it from navigation without deleting its files.
         </p>
       </div>
+
+      {toggleError ? <TabError message={toggleError} /> : null}
 
       {discoveredViews.length === 0 ? (
         <TabEmptyState

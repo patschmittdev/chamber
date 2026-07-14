@@ -9,6 +9,7 @@ import { ConversationHistoryPanel } from '../history/ConversationHistoryPanel';
 import { MacTitlebarDrag } from './MacTitlebarDrag';
 import { MindSidebar } from './MindSidebar';
 import { ViewRouter } from './ViewRouter';
+import { Toaster } from '../ui/toaster';
 
 function usePopoutParams() {
   const params = new URLSearchParams(window.location.search);
@@ -44,6 +45,7 @@ export function AppShell() {
             </main>
           </div>
         </div>
+        <Toaster />
       </TooltipProvider>
     );
   }
@@ -63,6 +65,7 @@ export function AppShell() {
           <ConversationHistoryPanel autoCollapsed={shouldAutoCollapseHistory} />
         </div>
       </div>
+      <Toaster />
     </TooltipProvider>
   );
 }
