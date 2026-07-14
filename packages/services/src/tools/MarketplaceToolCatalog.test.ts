@@ -13,15 +13,22 @@ class FakeRegistryClient {
   }
 }
 
+const FULL_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
 const SOURCE: ToolMarketplaceSource = {
   id: 'github:ianphil/genesis-minds',
   label: 'Public Genesis Minds',
   url: 'https://github.com/ianphil/genesis-minds',
   owner: 'ianphil',
   repo: 'genesis-minds',
-  ref: 'master',
+  ref: FULL_SHA,
   plugin: 'genesis-minds',
   enabled: true,
+};
+
+const MUTABLE_SOURCE: ToolMarketplaceSource = {
+  ...SOURCE,
+  ref: 'master',
 };
 
 describe('MarketplaceToolCatalog', () => {
@@ -191,5 +198,36 @@ describe('MarketplaceToolCatalog', () => {
     const catalog = new MarketplaceToolCatalog(client, () => [SOURCE]);
     const result = await catalog.listTools();
     expect(result.tools).toEqual([]);
+  });
+
+  it('rejects a source whose ref is a branch name', async () => {
+    client.manifests.set('plugins/genesis-minds/plugin.json', { tools: [] });
+    const catalog = new MarketplaceToolCatalog(client, [MUTABLE_SOURCE]);
+    const result = await catalog.listTools();
+    expect(result.tools).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toMatch(/mutable/i);
+  });
+
+  it('rejects a source whose ref is a version tag', async () => {
+    const catalog = new MarketplaceToolCatalog(client, [{ ...SOURCE, ref: 'v1.0.0' }]);
+    const result = await catalog.listTools();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toMatch(/mutable/i);
+  });
+
+  it('rejects a source whose ref is an abbreviated SHA', async () => {
+    const catalog = new MarketplaceToolCatalog(client, [{ ...SOURCE, ref: 'abc1234' }]);
+    const result = await catalog.listTools();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toMatch(/mutable/i);
+  });
+
+  it('accepts a source with a full 40-character hex commit SHA', async () => {
+    client.manifests.set('plugins/genesis-minds/plugin.json', { tools: [] });
+    const catalog = new MarketplaceToolCatalog(client, [SOURCE]);
+    const result = await catalog.listTools();
+    expect(result.errors).toEqual([]);
+    expect(result.sources[0].status).toBe('healthy');
   });
 });

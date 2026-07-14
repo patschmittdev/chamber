@@ -50,7 +50,7 @@ const SOURCE: ToolMarketplaceSource = {
   url: 'https://github.com/ianphil/genesis-minds',
   owner: 'ianphil',
   repo: 'genesis-minds',
-  ref: 'master',
+  ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   plugin: 'genesis-minds',
   enabled: true,
 };
@@ -146,7 +146,7 @@ describe('ToolsService', () => {
 
   it('install surfaces npm errors without persisting', async () => {
     setupTools(client);
-    runner.responses.set('npm install -g @microsoft/workiq@latest', { exitCode: 1, stdout: '', stderr: 'EACCES' });
+    runner.responses.set('npm install -g --ignore-scripts @microsoft/workiq@latest', { exitCode: 1, stdout: '', stderr: 'EACCES' });
     const result = await svc.install('workiq');
     expect(result.success).toBe(false);
     expect(store.config.installedTools ?? []).toHaveLength(0);
@@ -154,7 +154,7 @@ describe('ToolsService', () => {
 
   it('returns display-safe operator outcomes and never returns installer output', async () => {
     setupTools(client);
-    runner.responses.set('npm install -g @microsoft/workiq@latest', {
+    runner.responses.set('npm install -g --ignore-scripts @microsoft/workiq@latest', {
       exitCode: 1,
       stdout: 'C:\\private\\installer',
       stderr: 'token=super-secret',
@@ -195,24 +195,56 @@ describe('ToolsService', () => {
     expect(missing.success).toBe(false);
   });
 
-  it('reconcile installs only new tools and continues past per-tool errors', async () => {
+  it('reconcile is discovery-only: returns pending tools without installing them', async () => {
     setupTools(client, [
       TOOL_ENTRY,
       { ...TOOL_ENTRY, id: 'broken', bin: 'broken', install: { type: 'npm-global', package: 'broken-pkg', version: '1.0.0' } },
     ]);
-    runner.responses.set('npm install -g broken-pkg@1.0.0', { exitCode: 1, stdout: '', stderr: 'boom' });
 
     const outcome = await svc.reconcile();
-    expect(outcome.installed.map((t) => t.id)).toEqual(['workiq']);
-    expect(outcome.errors.map((e) => e.toolId)).toEqual(['broken']);
-    expect(store.config.installedTools).toHaveLength(1);
+    expect(outcome.pending.map((t) => t.id)).toEqual(['workiq', 'broken']);
+    expect(outcome.errors).toEqual([]);
+    expect(store.config.installedTools ?? []).toHaveLength(0);
 
-    const second = await svc.reconcile();
-    expect(second.installed).toHaveLength(0);
-    expect(second.errors.map((e) => e.toolId)).toEqual(['broken']);
+    // Reconcile never calls the runner.
+    const runnerCalls = Array.from(runner.responses.keys());
+    expect(runnerCalls).toHaveLength(0);
   });
 
-  it('reconcile persists GitHub release asset tools so IdentityLoader can advertise them offline', async () => {
+  it('reconcile reports pending for tools not yet installed', async () => {
+    setupTools(client, [TOOL_ENTRY]);
+    const outcome = await svc.reconcile();
+    expect(outcome.pending.map((t) => t.id)).toEqual(['workiq']);
+    expect(outcome.legacyUnverified).toEqual([]);
+    expect(outcome.errors).toEqual([]);
+  });
+
+  it('reconcile reports no pending when installed version matches catalog', async () => {
+    setupTools(client, [TOOL_ENTRY]);
+    store.config.installedTools = [installedRecord()];
+    const outcome = await svc.reconcile();
+    expect(outcome.pending).toHaveLength(0);
+    expect(outcome.errors).toEqual([]);
+  });
+
+  it('reconcile reports legacy-unverified for installed tools from mutable-ref sources', async () => {
+    const mutableSource = { ...SOURCE, ref: 'master' };
+    store.config.installedTools = [installedRecord()];
+    svc = new ToolsService(
+      new MarketplaceToolCatalog(client, [mutableSource]),
+      new ToolInstaller(runner),
+      store,
+    );
+
+    const outcome = await svc.reconcile();
+    expect(outcome.legacyUnverified).toContain('workiq');
+    expect(outcome.errors).toHaveLength(1);
+    expect(outcome.errors[0].message).toMatch(/mutable/i);
+    // The installed tool record is NOT removed.
+    expect(store.config.installedTools).toHaveLength(1);
+  });
+
+  it('reconcile reports GitHub release asset tools as pending when not installed', async () => {
     const downloader = new FakeReleaseAssetDownloader();
     const toolsBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-tools-service-'));
     tempDirs.push(toolsBinDir);
@@ -241,25 +273,11 @@ describe('ToolsService', () => {
     const outcome = await svc.reconcile();
 
     expect(outcome.errors).toEqual([]);
-    expect(outcome.installed).toHaveLength(1);
-    expect(store.config.installedTools?.[0]).toMatchObject({
-      id: 'a365-teams',
-      version: 'v0.5.0',
-      bin: 'teams',
-      help: 'teams --help',
-      agentInstructions: 'Use teams read.',
-      install: {
-        type: 'github-release-asset',
-        owner: 'agency-microsoft',
-        repo: 'a365-cli',
-        tag: 'v0.5.0',
-        assetName: 'teams.exe',
-        sha256,
-      },
-    });
+    expect(outcome.pending.map((t) => t.id)).toEqual(['a365-teams']);
+    expect(store.config.installedTools ?? []).toHaveLength(0);
   });
 
-  it('reconcile updates an installed release asset tool when the marketplace tag changes', async () => {
+  it('reconcile reports a newer catalog version as pending for an already-installed release asset tool', async () => {
     const downloader = new FakeReleaseAssetDownloader();
     const toolsBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-tools-service-'));
     tempDirs.push(toolsBinDir);
@@ -305,8 +323,9 @@ describe('ToolsService', () => {
 
     const outcome = await svc.reconcile();
 
-    expect(outcome.installed.map((tool) => tool.id)).toEqual(['a365-teams']);
-    expect(store.config.installedTools?.[0].version).toBe('v0.5.0');
+    expect(outcome.pending.map((tool) => tool.id)).toEqual(['a365-teams']);
+    // Discovery-only: installer is NOT invoked.
+    expect(store.config.installedTools?.[0].version).toBe('v0.4.0');
   });
 });
 

@@ -634,7 +634,7 @@ export interface ToolOperationEntry {
   readonly description: string;
   readonly marketplaceId: string;
   readonly marketplaceLabel: string;
-  readonly installation: 'installed' | 'available';
+  readonly installation: 'installed' | 'available' | 'legacy-unverified';
   readonly updateAvailable: boolean;
 }
 

@@ -61,14 +61,14 @@ describe('ToolInstaller', () => {
     return dir;
   }
 
-  it('runs npm install -g, the verify command, and any preflight commands', async () => {
+  it('runs npm install -g, verifies the binary, and does not run preflight commands', async () => {
     const runner = new FakeRunner();
     const installer = new ToolInstaller(runner);
     const result = await installer.install(TOOL);
 
-    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['install', '-g', '@microsoft/workiq@latest'] });
+    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['install', '-g', '--ignore-scripts', '@microsoft/workiq@latest'] });
     expect(runner.calls[1]).toEqual({ command: 'workiq', args: ['--version'] });
-    expect(runner.calls[2]).toEqual({ command: 'workiq', args: ['accept-eula'] });
+    expect(runner.calls).toHaveLength(2);
     expect(result.id).toBe('workiq');
     expect(result.install).toEqual({ type: 'npm-global', package: '@microsoft/workiq', version: 'latest' });
     expect(result.bin).toBe('workiq');
@@ -90,7 +90,6 @@ describe('ToolInstaller', () => {
     runner.responses = [
       { exitCode: 0, stdout: '', stderr: '' },
       { exitCode: 127, stdout: '', stderr: 'workiq: not found' },
-      { exitCode: 0, stdout: '', stderr: '' },
     ];
     const installer = new ToolInstaller(runner);
     const result = await installer.install(TOOL);
@@ -252,5 +251,20 @@ describe('ToolInstaller', () => {
 
     expect(fs.existsSync(installedPath)).toBe(false);
     expect(runner.calls).toEqual([]);
+  });
+
+  it('runs npm install with --ignore-scripts to prevent lifecycle script execution', async () => {
+    const runner = new FakeRunner();
+    const installer = new ToolInstaller(runner);
+    await installer.install(TOOL);
+    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['install', '-g', '--ignore-scripts', '@microsoft/workiq@latest'] });
+  });
+
+  it('does not execute manifest-controlled preflight commands', async () => {
+    const runner = new FakeRunner();
+    const installer = new ToolInstaller(runner);
+    await installer.install(TOOL);
+    const preflightCall = runner.calls.find((call) => call.command === 'workiq' && call.args.includes('accept-eula'));
+    expect(preflightCall).toBeUndefined();
   });
 });

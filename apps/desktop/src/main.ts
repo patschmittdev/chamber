@@ -852,8 +852,11 @@ const showMarketplaceProtocolMessage = (type: 'info' | 'error', message: string,
 const reconcileMarketplaceTools = (): void => {
   toolsService.reconcile()
     .then((outcome) => {
-      if (outcome.installed.length > 0) {
-        log.info(`Installed ${outcome.installed.length} new marketplace tool(s):`, outcome.installed.map((tool) => tool.id));
+      if (outcome.pending.length > 0) {
+        log.info(`Marketplace reconcile: ${outcome.pending.length} tool(s) pending operator approval:`, outcome.pending.map((tool) => tool.id));
+      }
+      if (outcome.legacyUnverified.length > 0) {
+        log.warn(`Marketplace reconcile: ${outcome.legacyUnverified.length} installed tool(s) from mutable-ref sources are now legacy-unverified:`, outcome.legacyUnverified);
       }
       if (outcome.errors.length > 0) {
         log.warn(`Tool reconcile encountered ${outcome.errors.length} error(s):`, outcome.errors);

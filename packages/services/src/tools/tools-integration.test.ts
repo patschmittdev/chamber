@@ -34,7 +34,7 @@ const SOURCE = {
   url: 'https://github.com/ianphil/genesis-minds',
   owner: 'ianphil',
   repo: 'genesis-minds',
-  ref: 'master',
+  ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   plugin: 'genesis-minds',
   enabled: true,
 };
@@ -154,10 +154,19 @@ describe('Marketplace tools end-to-end integration', () => {
     fs.rmSync(rootDir, { recursive: true, force: true });
   });
 
-  it('reconcile installs workiq, persists it, and IdentityLoader appends it to the system message', async () => {
+  it('reconcile reports pending tools without installing them', async () => {
     const outcome = await toolsService.reconcile();
-    expect(outcome.installed.map((t) => t.id)).toEqual(['workiq']);
-    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['install', '-g', '@microsoft/workiq@latest'] });
+    expect(outcome.pending.map((t) => t.id)).toEqual(['workiq']);
+    expect(outcome.errors).toEqual([]);
+    // Discovery-only: runner should not be called.
+    expect(runner.calls).toHaveLength(0);
+    expect(configService.load().installedTools ?? []).toHaveLength(0);
+  });
+
+  it('explicit install persists the tool and IdentityLoader appends it to the system message', async () => {
+    const result = await toolsService.install('workiq');
+    expect(result.success).toBe(true);
+    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['install', '-g', '--ignore-scripts', '@microsoft/workiq@latest'] });
 
     const persistedConfig = configService.load();
     expect(persistedConfig.installedTools).toHaveLength(1);
@@ -170,7 +179,7 @@ describe('Marketplace tools end-to-end integration', () => {
   });
 
   it('persistConfig from MindManager preserves installedTools across mind operations', async () => {
-    await toolsService.reconcile();
+    await toolsService.install('workiq');
     expect(configService.load().installedTools).toHaveLength(1);
 
     const mindManager = new MindManager(clientFactory, identityLoader, configService, fakeViewDiscovery);
@@ -181,17 +190,17 @@ describe('Marketplace tools end-to-end integration', () => {
     expect(configService.load().installedTools?.[0].id).toBe('workiq');
   });
 
-  it('startNewConversation refreshes identity so a new session sees newly-installed tools after reconcile', async () => {
-    // App started before reconcile finished — no tools at mind-load time
+  it('startNewConversation refreshes identity so a new session sees newly-installed tools after install', async () => {
+    // App started before install — no tools at mind-load time
     const mindManager = new MindManager(clientFactory, identityLoader, configService, fakeViewDiscovery);
     const mind = await mindManager.loadMind(mindPath);
     expect(mind.identity.systemMessage).not.toContain('## Tools');
 
-    // Reconcile finishes after the mind is already loaded
-    await toolsService.reconcile();
+    // Operator installs the tool after the mind is already loaded
+    await toolsService.install('workiq');
     expect(configService.load().installedTools).toHaveLength(1);
 
-    // Cached identity is still stale right after reconcile
+    // Cached identity is still stale right after install
     expect(mindManager.getMind(mind.mindId)?.identity.systemMessage).not.toContain('## Tools');
 
     // Mark the active conversation as having messages so startNewConversation actually creates a fresh session
@@ -214,8 +223,8 @@ describe('Marketplace tools end-to-end integration', () => {
     const initialSession = mindManager.getMind(mind.mindId)?.session;
     expect(initialSession).toBeDefined();
 
-    // Reconcile happens after mind load; the active conversation is still an empty draft (no messages)
-    await toolsService.reconcile();
+    // Install happens after mind load; the active conversation is still an empty draft (no messages)
+    await toolsService.install('workiq');
 
     await mindManager.startNewConversation(mind.mindId);
     const next = mindManager.getMind(mind.mindId);
