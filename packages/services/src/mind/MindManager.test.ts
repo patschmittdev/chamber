@@ -12,6 +12,7 @@ import { MindScaffold } from '../genesis/MindScaffold';
 import type { ManagedSkillSyncResult } from '../skills';
 import type { ConversationForkSeed } from '../chat/conversationForkContext';
 import { appendAttachmentManifestContext } from '../chat/attachmentContext';
+import type { IMindTrustService } from '../mindTrust/types';
 
 // --- Mocks ---
 
@@ -2714,6 +2715,122 @@ describe('MindManager', () => {
 
       const resumeConfig = mockResumeSession.mock.calls[0][1] as Record<string, unknown>;
       expect(resumeConfig.excludedTools).toEqual(['shell']);
+    });
+  });
+
+  describe('MindManager — MCP trust gate', () => {
+    const MCP_PATH = '/tmp/agents/mcp-mind';
+
+    function makeTrustService(opts: {
+      trusted: boolean;
+      approvedServers?: Record<string, unknown>;
+    }) {
+      return {
+        registerMindLoad: vi.fn(),
+        isMindTrustedForExecution: vi.fn(() => opts.trusted),
+        getApprovedMcpServers: vi.fn(
+          (_mindId: string, _mindPath: string, servers: Record<string, unknown>) =>
+            opts.approvedServers ?? (opts.trusted ? servers : {}),
+        ),
+        grantTrust: vi.fn(),
+        revokeTrust: vi.fn(),
+        getTrustStatus: vi.fn(),
+        runMigration: vi.fn(),
+      };
+    }
+
+    function makeMindManagerWithTrust(trust: ReturnType<typeof makeTrustService>) {
+      const m = new MindManager(
+        mockClientFactory as unknown as CopilotClientFactory,
+        mockIdentityLoader as unknown as IdentityLoader,
+        mockConfigService as unknown as ConfigService,
+        mockViewDiscovery as unknown as ViewDiscovery,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        trust as unknown as IMindTrustService,
+      );
+      m.setProviders([mockProvider as unknown as ChamberToolProvider]);
+      return m;
+    }
+
+    it('pending mind receives no MCP servers in SDK session config', async () => {
+      const mcpJson = JSON.stringify({
+        mcpServers: {
+          'test-server': { command: 'npx', args: ['-y', 'some-mcp'] },
+        },
+      });
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('.mcp.json') || (!String(p).endsWith('.chamber.json')));
+      vi.mocked(fs.readFileSync).mockImplementation((p) => {
+        if (String(p).endsWith('.mcp.json')) return mcpJson;
+        return '# TestAgent\nSome content';
+      });
+
+      const trust = makeTrustService({ trusted: false, approvedServers: {} });
+      const m = makeMindManagerWithTrust(trust);
+
+      await m.loadMind(MCP_PATH);
+
+      const createConfig = mockCreateSession.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+      expect(createConfig?.mcpServers).toBeUndefined();
+    });
+
+    it('trusted mind with approved server passes server into SDK session config', async () => {
+      const serverConfig = { command: 'npx', args: ['-y', 'some-mcp'] };
+      const mcpJson = JSON.stringify({ mcpServers: { 'test-server': serverConfig } });
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('.mcp.json') || (!String(p).endsWith('.chamber.json')));
+      vi.mocked(fs.readFileSync).mockImplementation((p) => {
+        if (String(p).endsWith('.mcp.json')) return mcpJson;
+        return '# TestAgent\nSome content';
+      });
+
+      const approvedServers = { 'test-server': serverConfig };
+      const trust = makeTrustService({ trusted: true, approvedServers });
+      const m = makeMindManagerWithTrust(trust);
+
+      await m.loadMind(MCP_PATH);
+
+      const createConfig = mockCreateSession.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+      expect(createConfig?.mcpServers).toEqual(approvedServers);
+    });
+
+    it('registers mind load with trust service on loadMind', async () => {
+      const trust = makeTrustService({ trusted: true });
+      const m = makeMindManagerWithTrust(trust);
+
+      const mind = await m.loadMind(MCP_PATH);
+
+      expect(trust.registerMindLoad).toHaveBeenCalledWith(
+        mind.mindId,
+        MCP_PATH,
+        expect.any(String),
+      );
+    });
+
+    it('server excluded when trust service filters it out', async () => {
+      const mcpJson = JSON.stringify({
+        mcpServers: {
+          'server-a': { command: 'node', args: ['a.js'] },
+          'server-b': { command: 'node', args: ['b.js'] },
+        },
+      });
+      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('.mcp.json') || (!String(p).endsWith('.chamber.json')));
+      vi.mocked(fs.readFileSync).mockImplementation((p) => {
+        if (String(p).endsWith('.mcp.json')) return mcpJson;
+        return '# TestAgent\nSome content';
+      });
+
+      // Only server-a is approved (server-b was changed)
+      const approvedServers = { 'server-a': { command: 'node', args: ['a.js'] } };
+      const trust = makeTrustService({ trusted: true, approvedServers });
+      const m = makeMindManagerWithTrust(trust);
+
+      await m.loadMind(MCP_PATH);
+
+      const createConfig = mockCreateSession.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+      expect(createConfig?.mcpServers).toEqual(approvedServers);
     });
   });
 

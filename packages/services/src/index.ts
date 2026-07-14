@@ -17,6 +17,7 @@ export * from './ledger';
 export * from './mind';
 export * from './mindMemory';
 export * from './mindProfile';
+export * from './mindTrust';
 export * from './operatorActivity';
 export * from './ports';
 export * from './promptLibrary';

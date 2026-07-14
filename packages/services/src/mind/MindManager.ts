@@ -30,6 +30,7 @@ import { bootstrapMindCapabilities } from '../lens/MindBootstrap';
 import type { SdkProviderConfig } from '../byo-llm/buildProviderConfig';
 import { MindScaffold } from '../genesis/MindScaffold';
 import type { ManagedSkillService } from '../skills/ManagedSkillService';
+import type { IMindTrustService, MindSourceCategory } from '../mindTrust/types';
 
 const log = Logger.create('MindManager');
 const COPILOT_RUNTIME_CONFIG_DIR = 'copilot-runtime';
@@ -46,6 +47,7 @@ interface MindSessionPolicy {
 
 interface CreateMindSessionRequest {
   kind: MindSessionKind;
+  mindId: string;
   client: CopilotClient;
   mindPath: string;
   systemMessage: string;
@@ -192,6 +194,7 @@ export class MindManager extends EventEmitter {
     private readonly managedSkillService?: Pick<ManagedSkillService, 'installIntoMind'>,
     forkSeedStore?: ConversationForkSeedStorePort,
     variantStore?: MessageVariantStorePort,
+    private readonly trustService?: IMindTrustService,
   ) {
     super();
     this.forkSeedStore = forkSeedStore ?? new ConversationForkSeedStore({
@@ -316,6 +319,13 @@ export class MindManager extends EventEmitter {
       }
     }
 
+    // Register the mind with the trust service. Creates a pending record if
+    // this is the first time the mind has been seen. Must run before any
+    // SDK session creation so the trust check in createSessionForMind is
+    // based on the registered state, not an absent record.
+    const trustSource: MindSourceCategory = this.knownMindRecords.has(id) ? 'local' : 'imported';
+    this.trustService?.registerMindLoad(id, resolvedMindPath, trustSource);
+
     // Create client (no env-var BYOK plumbing — provider is passed via SessionConfig.provider on createSession)
     const client = await this.clientFactory.createClient(resolvedMindPath);
 
@@ -343,9 +353,11 @@ export class MindManager extends EventEmitter {
         selectedModel,
         selectedModelProvider,
         conversationSystemMessage,
+        id,
       )
       : await this.createSessionForMind({
         kind: 'conversation',
+        mindId: id,
         client,
         mindPath: resolvedMindPath,
         systemMessage: identity.systemMessage,
@@ -544,6 +556,7 @@ export class MindManager extends EventEmitter {
     if (!context) throw new Error(`Mind ${mindId} not found`);
     const session = await this.createSessionForMind({
       kind: 'task',
+      mindId,
       client: context.client,
       mindPath: context.mindPath,
       systemMessage: context.identity.systemMessage,
@@ -584,6 +597,7 @@ export class MindManager extends EventEmitter {
       context.selectedModel,
       context.selectedModelProvider,
       activeSystemMessage,
+      mindId,
     );
     context.session = recoveredSession;
     context.activeSessionSystemMessage = activeSystemMessage;
@@ -660,6 +674,7 @@ export class MindManager extends EventEmitter {
     const sessionTools = this.getSessionTools(mindId, context.mindPath);
     const nextSession = await this.createSessionForMind({
       kind: 'conversation',
+      mindId,
       client: context.client,
       mindPath: context.mindPath,
       systemMessage: context.identity.systemMessage,
@@ -887,6 +902,7 @@ export class MindManager extends EventEmitter {
       context.selectedModel,
       context.selectedModelProvider,
       conversationSystemMessage,
+      mindId,
     );
     context.session = nextSession;
     context.activeSessionId = sessionId;
@@ -1009,6 +1025,7 @@ export class MindManager extends EventEmitter {
       context.selectedModel,
       context.selectedModelProvider,
       conversationSystemMessage,
+      mindId,
     );
     try {
       return await this.getMessagesForConversation(mindId, sessionId, readOnlySession);
@@ -1107,6 +1124,7 @@ export class MindManager extends EventEmitter {
       context.selectedModel,
       context.selectedModelProvider,
       effective,
+      mindId,
     );
     context.session = reboundSession;
     context.activeSessionSystemMessage = effective;
@@ -1206,6 +1224,7 @@ export class MindManager extends EventEmitter {
       context.selectedModel,
       context.selectedModelProvider,
       nextSystemMessage,
+      mindId,
     );
     context.session = nextSession;
     context.activeSessionId = nextConversation.sessionId;
@@ -1706,6 +1725,7 @@ export class MindManager extends EventEmitter {
 
     return this.createSessionForMind({
       kind: 'task',
+      mindId,
       client: context.client,
       mindPath: context.mindPath,
       systemMessage: context.identity.systemMessage,
@@ -1724,6 +1744,7 @@ export class MindManager extends EventEmitter {
 
     return this.createSessionForMind({
       kind: 'chatroom',
+      mindId,
       client: context.client,
       mindPath: context.mindPath,
       systemMessage: context.identity.systemMessage,
@@ -1745,6 +1766,7 @@ export class MindManager extends EventEmitter {
 
     const session = await this.createSessionForMind({
       kind: 'isolated-prompt',
+      mindId,
       client: context.client,
       mindPath: context.mindPath,
       systemMessage: context.identity.systemMessage,
@@ -1841,6 +1863,7 @@ export class MindManager extends EventEmitter {
   private async createSessionForMind(req: CreateMindSessionRequest): Promise<CopilotSession> {
     const {
       kind,
+      mindId,
       client,
       mindPath,
       systemMessage,
@@ -1853,7 +1876,10 @@ export class MindManager extends EventEmitter {
       sessionId,
     } = req;
     this.assertCreateSessionPolicy(kind, sessionId);
-    const mcpServers = loadMcpServersFromMindPath(mindPath);
+    const rawMcpServers = loadMcpServersFromMindPath(mindPath);
+    const mcpServers = this.trustService
+      ? this.trustService.getApprovedMcpServers(mindId, mindPath, rawMcpServers)
+      : rawMcpServers;
     const skillDirectories = this.getMindSkillDirectories(mindPath);
     const chamberMindConfig = loadChamberMindConfig(mindPath);
     const provider = this.resolveProviderForSelection(modelProvider);
@@ -1913,9 +1939,13 @@ export class MindManager extends EventEmitter {
     model?: string,
     modelProvider?: ModelProvider,
     configDir: string | null = this.getCopilotRuntimeConfigDir(),
+    mindId?: string,
   ): Promise<CopilotSession> {
     this.assertResumeSessionPolicy(kind);
-    const mcpServers = loadMcpServersFromMindPath(mindPath);
+    const rawMcpServers = loadMcpServersFromMindPath(mindPath);
+    const mcpServers = (this.trustService && mindId)
+      ? this.trustService.getApprovedMcpServers(mindId, mindPath, rawMcpServers)
+      : rawMcpServers;
     const skillDirectories = this.getMindSkillDirectories(mindPath);
     const chamberMindConfig = loadChamberMindConfig(mindPath);
     const provider = this.resolveProviderForSelection(modelProvider);
@@ -1979,6 +2009,7 @@ export class MindManager extends EventEmitter {
     model?: string,
     modelProvider?: ModelProvider,
     reattachSystemMessage = systemMessage,
+    mindId?: string,
   ): Promise<CopilotSession> {
     try {
       return await this.resumeSessionForMind(
@@ -1993,6 +2024,8 @@ export class MindManager extends EventEmitter {
         false,
         model,
         modelProvider,
+        undefined,
+        mindId,
       );
     } catch (error) {
       if (!isStaleSessionError(error)) throw error;
@@ -2011,6 +2044,7 @@ export class MindManager extends EventEmitter {
           model,
           modelProvider,
           null,
+          mindId,
         );
       } catch (legacyError) {
         if (!isStaleSessionError(legacyError)) throw legacyError;
@@ -2021,6 +2055,7 @@ export class MindManager extends EventEmitter {
       log.warn(`SDK session ${conversationSessionId} was not found in either session-state root; reattaching by recreating the session under the same id.`);
       return this.createSessionForMind({
         kind,
+        mindId: mindId ?? '',
         client,
         mindPath,
         systemMessage: reattachSystemMessage,

@@ -265,6 +265,11 @@ export const BROWSER_CAPABILITY_MANIFEST = {
   capabilities: {
     list: { status: 'desktop-only', rejects: true },
   },
+  mindTrust: {
+    status: { status: 'desktop-only', rejects: true },
+    grant: { status: 'desktop-only', rejects: true },
+    revoke: { status: 'desktop-only', rejects: true },
+  },
 } satisfies BrowserCapabilityManifest;
 
 type ManifestRecord = Record<string, Record<string, BrowserCapability>>;

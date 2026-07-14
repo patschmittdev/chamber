@@ -20,12 +20,14 @@ import type {
   CronRunDetail,
   RunSource,
 } from './types';
+import type { IMindTrustService } from '../mindTrust/types';
 
 const log = Logger.create('cron');
 
 export interface CronServiceOptions {
   scriptRunner: ScriptRunner;
   createCronRunStore?: (mindPath: string) => CronRunStore;
+  trustService?: IMindTrustService;
 }
 
 /**
@@ -48,11 +50,22 @@ export class CronService implements ChamberToolProvider {
   }
 
   async activateMind(mindId: string, mindPath: string): Promise<void> {
+    if (!this.isTrusted(mindId, mindPath)) return;
     const store = this.ensureStore(mindId, mindPath);
     const scheduler = this.ensureScheduler(mindId);
     for (const job of store.listJobs()) {
       this.scheduleJob(mindId, job, scheduler);
     }
+  }
+
+  /**
+   * Cancel all scheduled jobs for a mind without releasing its store or path.
+   * Used by the trust revocation path so that already-scheduled timers stop
+   * firing immediately when trust is revoked.
+   */
+  cancelJobsForMind(mindId: string): void {
+    this.schedulers.get(mindId)?.stopAll();
+    this.schedulers.delete(mindId);
   }
 
   async releaseMind(mindId: string): Promise<void> {
@@ -315,5 +328,10 @@ export class CronService implements ChamberToolProvider {
     } catch {
       return null;
     }
+  }
+
+  private isTrusted(mindId: string, mindPath: string): boolean {
+    if (!this.options.trustService) return true;
+    return this.options.trustService.isMindTrustedForExecution(mindId, mindPath);
   }
 }

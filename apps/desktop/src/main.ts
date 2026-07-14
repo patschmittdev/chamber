@@ -72,6 +72,7 @@ import {
   listMcpConnectorStatuses,
   readMcpServers,
   writeMcpServers,
+  loadMcpServersFromMindPath,
   TaskManager,
   TaskLedger,
   ChildProcessRunner,
@@ -101,6 +102,7 @@ import {
   createByoLlmModelsProvider,
   FakeTranscriptionProvider,
   FoundryTranscriptionProvider,
+  MindTrustService,
   type PermissionInspector,
   probeEndpoint,
   redactUrlCredentials,
@@ -151,6 +153,7 @@ import { setupPromptsIPC } from './main/ipc/prompts';
 import { setupCapabilitiesIPC } from './main/ipc/capabilities';
 import { setupVoiceIPC } from './main/ipc/voice';
 import { setupAppearanceIPC } from './main/ipc/appearance';
+import { setupTrustIPC } from './main/ipc/trust';
 
 import { EventEmitter } from 'events';
 import { wireLifecycleEvents } from './main/wireLifecycleEvents';
@@ -291,6 +294,7 @@ let chatroomService: ChatroomService;
 let operatorActivityService: OperatorActivityService;
 let canvasService: CanvasService;
 let cronService: CronService;
+let mindTrustService: MindTrustService;
 let wtdAdvisorService: WtdAdvisorService | null = null;
 let automationBridgeStop: (() => Promise<void>) | null = null;
 let authService: AuthService;
@@ -454,6 +458,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   const activeA2AResolver = new ActiveA2AResolver(agentCardRegistry);
   const turnQueue = new TurnQueue();
   byoLlmStore = new ByoLlmStore({ storeDir: process.env.CHAMBER_E2E_USER_DATA, credentials: credentialStore });
+  mindTrustService = new MindTrustService(app.getPath('userData'), loadMcpServersFromMindPath);
   mindManager = new MindManager(
     clientFactory,
     identityLoader,
@@ -462,6 +467,9 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     () => buildProviderConfig(cachedByoLlmConfig),
     () => cachedByoLlmConfig?.model,
     managedSkillService,
+    undefined,
+    undefined,
+    mindTrustService,
   );
   mindProfileService = new MindProfileService({
     getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath ?? null,
@@ -609,6 +617,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   cronService = new CronService({
     scriptRunner,
     createCronRunStore: undefined,
+    trustService: mindTrustService,
   });
   const a2aToolProvider = new A2aToolProvider(messageRouter, activeA2AResolver, taskManager);
   const attachmentToolProvider = new AttachmentToolProvider(attachmentStore);
@@ -1077,6 +1086,7 @@ app.on('ready', async () => {
     { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
     capabilityInventoryService,
   );
+  setupTrustIPC(mindTrustService, cronService);
   setupAuthIPC(authService, mindManager, async () => {
     await chamberCopilotService?.resetAuthState();
   });
@@ -1188,7 +1198,10 @@ app.on('ready', async () => {
   mindManager.on('mind:loaded', onMindLoadedForBoot);
   broadcastStartupProgress({ kind: 'restore-start', detail: 'restoring minds from config' });
   void refreshCachedByoLlmConfig()
-    .then(() => mindManager.restoreFromConfig())
+    .then(() => {
+      mindTrustService.runMigration(configService.load().minds, loadMcpServersFromMindPath);
+      return mindManager.restoreFromConfig();
+    })
     .catch((err: unknown) => {
       log.error('Failed to restore minds:', err);
     })
