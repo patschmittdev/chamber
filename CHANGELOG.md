@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add installed Extensions workspace** — Organize renderer-safe capability inventory by skills, connectors, tools, prompts, and Lens views with source-specific management actions.
 - **Add curated extension discovery** — Adds a safe, searchable directory with bounded details and an inline install preflight that routes tool changes to the existing source-specific management flow.
 - **Safe connector and tool operations** — Adds redacted MCP configuration checks and serialized global CLI install, update, and removal feedback.
+- **Add focused Skills and Prompts authoring workspaces** — Replaces modal-driven editing with safe inline detail editors, validation, explicit scope and provenance, unsaved-change protection, and active-mind drafting handoffs.
 
 ### Refactor
 

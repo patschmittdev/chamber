@@ -11,21 +11,13 @@ import type {
   SkillMarketplaceBrowseResult,
   SkillValidationError,
 } from '@chamber/shared/skill-types';
-import { buildSkillMarkdown, validateSkillId } from '@chamber/shared/skill-authoring';
+import { buildSkillMarkdown, validateSkillFrontmatter, validateSkillId } from '@chamber/shared/skill-authoring';
 import { AlertTriangle, PackageSearch, Pencil, Plus, Sparkles, Store } from 'lucide-react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
 import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 
 const fieldInputClass =
@@ -37,7 +29,13 @@ type DetailSelection =
   | { type: 'marketplace-template'; item: MarketplaceTemplateEntry }
   | { type: 'malformed-skill'; item: MarketplaceSkillMalformedEntry };
 
-export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
+export function SkillsTab({
+  onInventoryChanged,
+  onEditorDirtyChange,
+}: {
+  readonly onInventoryChanged?: () => void;
+  readonly onEditorDirtyChange?: (dirty: boolean) => void;
+}) {
   const { activeMindId, minds, pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
   const activeMind = minds.find((mind) => mind.mindId === activeMindId) ?? null;
@@ -52,7 +50,14 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
   const [localReloadNonce, setLocalReloadNonce] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SkillDetail | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [pendingDraftHandoff, setPendingDraftHandoff] = useState(false);
   const reloadLocalSkills = useCallback(() => setLocalReloadNonce((nonce) => nonce + 1), []);
+
+  useEffect(() => {
+    onEditorDirtyChange?.(editorDirty);
+    return () => onEditorDirtyChange?.(false);
+  }, [editorDirty, onEditorDirtyChange]);
 
   useEffect(() => {
     setCreateOpen(false);
@@ -64,6 +69,23 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
     setCreateOpen(true);
     dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
   }, [pendingExtensionsIntent, dispatch]);
+
+  const runDraftHandoff = () => {
+    if (!activeMindId) return;
+    dispatch({
+      type: 'SET_COMPOSE_DRAFT',
+      payload: { mindId: activeMindId, draft: 'Create a new skill for this mind. Propose an id, name, and description first.' },
+    });
+    dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+  };
+
+  const requestDraftHandoff = () => {
+    if (editorDirty) {
+      setPendingDraftHandoff(true);
+      return;
+    }
+    runDraftHandoff();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +105,7 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
         if (!cancelled) setSkills(items);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setLocalError(getErrorMessage(err));
+        if (!cancelled) setLocalError(safeAuthoringError(err, 'Could not load skills.'));
       })
       .finally(() => {
         if (!cancelled) setLocalLoading(false);
@@ -102,8 +124,8 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
       .then((result) => {
         if (!cancelled) setMarketplace(result);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setMarketplaceError(getErrorMessage(err));
+      .catch(() => {
+        if (!cancelled) setMarketplaceError('Marketplace entries could not be loaded. Try again.');
       })
       .finally(() => {
         if (!cancelled) setMarketplaceLoading(false);
@@ -128,23 +150,17 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
       <section className="flex flex-col gap-3">
         <SectionHeading
           title="Installed skills"
-          detail="Local and Chamber-managed skills are read from bounded metadata under .github/skills."
+          detail="Local and Chamber-managed skills available to the active mind."
           action={
             activeMindId ? (
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    dispatch({
-                      type: 'SET_COMPOSE_DRAFT',
-                      payload: { mindId: activeMindId, draft: 'Create a new skill for this mind. Propose an id, name, and description first.' },
-                    });
-                    dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
-                  }}
+                  onClick={requestDraftHandoff}
                 >
                   Draft with active mind
                 </Button>
-                <Button onClick={() => setCreateOpen(true)}>
+                <Button disabled={editTarget !== null} onClick={() => setCreateOpen(true)}>
                   <Plus size={16} />
                   New skill
                 </Button>
@@ -159,12 +175,15 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
             detail="Select a mind from the sidebar to see the skills it discovers on disk."
           />
         ) : (
-          <LocalSkillsSection
+          <LocalSkillsWorkspace
             skills={skills}
             loading={localLoading}
             error={localError}
             onDetails={(item) => setDetailSelection({ type: 'local', item })}
-            onEdit={(item) => setEditTarget(item)}
+            onEdit={(item) => {
+              if (!createOpen) setEditTarget(item);
+            }}
+            editingDisabled={createOpen}
           />
         )}
       </section>
@@ -184,18 +203,25 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
         />
       </section>
 
-      <SkillDetailDialog
-        selection={detailSelection}
-        onOpenChange={(open) => {
-          if (!open) setDetailSelection(null);
-        }}
-      />
+      {detailSelection ? (
+        <section className="rounded-xl border border-border bg-card p-4">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-semibold">{detailTitle(detailSelection)}</h3>
+              <p className="text-sm text-muted-foreground">{detailDescription(detailSelection)}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setDetailSelection(null)}>Close details</Button>
+          </div>
+          <div className="flex flex-col gap-4 text-sm">{renderDetailBody(detailSelection)}</div>
+        </section>
+      ) : null}
 
       {activeMindId ? (
         <SkillCreateDialog
           open={createOpen}
           mindId={activeMindId}
           onClose={() => setCreateOpen(false)}
+          onDirtyChange={setEditorDirty}
           onCreated={() => {
             setCreateOpen(false);
             reloadLocalSkills();
@@ -209,89 +235,141 @@ export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?
           mindId={activeMindId}
           skill={editTarget}
           onClose={() => setEditTarget(null)}
+          onDirtyChange={setEditorDirty}
           onSaved={() => {
             setEditTarget(null);
+            setEditorDirty(false);
             reloadLocalSkills();
             onInventoryChanged?.();
           }}
         />
       ) : null}
+      {pendingDraftHandoff ? (
+        <Alert variant="destructive">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>You have unsaved edits. Discard them and draft with the active mind?</span>
+            <span className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPendingDraftHandoff(false)}>Keep editing</Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  setEditTarget(null);
+                  setEditorDirty(false);
+                  setPendingDraftHandoff(false);
+                  runDraftHandoff();
+                }}
+              >
+                Discard edits
+              </Button>
+            </span>
+          </div>
+        </Alert>
+      ) : null}
     </div>
   );
 }
 
-function LocalSkillsSection({
+function LocalSkillsWorkspace({
   skills,
   loading,
   error,
   onDetails,
   onEdit,
+  editingDisabled,
 }: {
   skills: SkillDetail[];
   loading: boolean;
   error: string | null;
   onDetails: (skill: SkillDetail) => void;
   onEdit: (skill: SkillDetail) => void;
+  editingDisabled: boolean;
 }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   if (loading) return <TabLoading label="Loading skills" />;
   if (error) return <TabError message={error} />;
-  const customSkills = skills.filter((skill) => isEditableSkill(skill));
-  const seededSkills = skills.filter((skill) => !isEditableSkill(skill));
   if (skills.length === 0) {
     return (
       <TabEmptyState
         icon={<Sparkles size={22} />}
         title="No skills found"
-        detail="Add SKILL.md directories under this mind's .github/skills to extend it."
+        detail="Create a skill to extend the active mind with focused guidance."
       />
     );
   }
 
+  const selectedSkill = skills.find((skill) => skill.id === selectedId) ?? skills[0];
   return (
-    <div className="grid gap-3">
-      {customSkills.length === 0 && seededSkills.length > 0 ? (
-        <TabEmptyState
-          icon={<Sparkles size={22} />}
-          title="No custom skills yet"
-          detail="This mind already has seeded managed skills. Add a custom skill to extend it further."
+    <div className="grid min-h-[22rem] gap-4 lg:grid-cols-[minmax(14rem,0.38fr)_minmax(0,1fr)]">
+      <aside className="rounded-xl border border-border bg-card p-2" aria-label="Installed skills">
+        <div className="mb-2 flex items-center justify-between px-2 pt-1">
+          <h4 className="text-sm font-semibold">Installed skills</h4>
+          <span className="text-xs text-muted-foreground">{skills.length}</span>
+        </div>
+        <div role="listbox" aria-label="Installed skills" className="grid gap-1">
+          {skills.map((skill) => {
+            const selected = skill.id === selectedSkill.id;
+            return (
+              <button
+                key={skill.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => setSelectedId(skill.id)}
+                className={cn(
+                  'rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  selected ? 'bg-selected text-selected-foreground' : 'hover:bg-hover',
+                )}
+              >
+                <span className="block truncate text-sm font-medium">{skill.name}</span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">{skill.id}</span>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+      <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold">{selectedSkill.name}</h4>
+            {selectedSkill.description ? <p className="mt-1 text-sm text-muted-foreground">{selectedSkill.description}</p> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">Mind scope</Badge>
+            {selectedSkill.version ? <Badge variant="outline">v{selectedSkill.version}</Badge> : null}
+            {selectedSkill.isCore ? <Badge variant="secondary">Core</Badge> : null}
+            {selectedSkill.isManaged ? <Badge variant="default">Managed</Badge> : <Badge variant="secondary">User authored</Badge>}
+          </div>
+        </div>
+        <MetadataList
+          items={[
+            ['Source', selectedSkill.isManaged ? 'Chamber managed local skill' : 'Local user skill'],
+            ['Status', selectedSkill.validationErrors.length > 0 ? 'Needs review' : 'Ready'],
+            ['Capabilities', summarizeList(selectedSkill.capabilities)],
+            ['Required files', summarizeFiles(selectedSkill.requiredFiles)],
+          ]}
         />
-      ) : null}
-      <ul className="grid gap-3">
-        {[...customSkills, ...seededSkills].map((skill) => (
-        <li key={skill.id} className="rounded-xl border border-border bg-card p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{skill.name}</span>
-            {skill.version && <Badge variant="outline">v{skill.version}</Badge>}
-            {skill.isCore && <Badge variant="secondary">Core</Badge>}
-            {skill.isManaged && <Badge variant="default">Managed</Badge>}
-            {skill.validationErrors.length > 0 && <Badge variant="destructive">Needs review</Badge>}
-            <span className="text-xs text-muted-foreground">{skill.id}</span>
+        {selectedSkill.validationErrors.length > 0 ? <ValidationErrors errors={selectedSkill.validationErrors} /> : null}
+        {isEditableSkill(selectedSkill) ? (
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="mb-3 text-sm text-muted-foreground">Edit this skill's authorized source content.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => onDetails(selectedSkill)}>
+                View details
+              </Button>
+              <Button aria-label={`Edit ${selectedSkill.name}`} disabled={editingDisabled} onClick={() => onEdit(selectedSkill)}>
+              <Pencil size={16} />
+              Edit skill
+              </Button>
+            </div>
           </div>
-          {skill.description && <p className="mt-1 text-sm text-muted-foreground">{skill.description}</p>}
-          <MetadataList
-            items={[
-              ['Source', skill.isManaged ? 'Chamber managed local skill' : 'Local skill'],
-              ['Path', skill.source.directory],
-              ['Required files', summarizeFiles(skill.requiredFiles)],
-              ['Capabilities', summarizeList(skill.capabilities)],
-            ]}
-          />
-          {skill.validationErrors.length > 0 && (
-            <ValidationErrors errors={skill.validationErrors} />
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <CardActionButton label={`View details for ${skill.name}`} onClick={() => onDetails(skill)} />
-            {isEditableSkill(skill) ? (
-              <CardActionButton
-                label={`Edit ${skill.name}`}
-                icon={<Pencil size={14} />}
-                onClick={() => onEdit(skill)}
-              />
-            ) : null}
+        ) : (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
+            <p className="text-sm text-muted-foreground">This skill is managed by Chamber and is read-only here.</p>
+            <Button variant="outline" size="sm" onClick={() => onDetails(selectedSkill)}>View details</Button>
           </div>
-        </li>
-        ))}
-      </ul>
+        )}
+      </section>
     </div>
   );
 }
@@ -321,15 +399,15 @@ function MarketplaceSection({
 
   const hasEntries = result.skills.length > 0 || result.templates.length > 0 || result.malformedSkills.length > 0;
   const sourceErrors = [
-    ...result.skillSources.filter((source) => source.status === 'error').map((source) => source.message ?? `${source.label} could not be read.`),
-    ...result.templateSources.filter((source) => source.status === 'error').map((source) => source.message ?? `${source.label} could not be read.`),
+    ...result.skillSources.filter((source) => source.status === 'error').map((source) => `skills:${source.id}`),
+    ...result.templateSources.filter((source) => source.status === 'error').map((source) => `templates:${source.id}`),
   ];
 
   return (
     <div className="flex flex-col gap-4">
       <SourceStatusList skillSources={result.skillSources} templateSources={result.templateSources} />
-      {sourceErrors.map((message) => (
-        <TabError key={message} message={message} />
+      {sourceErrors.map((sourceId) => (
+        <TabError key={sourceId} message="A marketplace source could not be loaded. Try again." />
       ))}
       {!hasEntries ? (
         <TabEmptyState
@@ -393,7 +471,6 @@ function MarketplaceSkillCard({
       <MetadataList
         items={[
           ['Registry', skill.source.marketplaceLabel],
-          ['Root', skill.root],
           ['Required files', summarizeList(skill.requiredFiles)],
           ['Capabilities', summarizeList(skill.capabilities)],
         ]}
@@ -423,7 +500,6 @@ function MarketplaceTemplateCard({
         items={[
           ['Registry', template.source.marketplaceLabel],
           ['Role', template.role],
-          ['Agent', template.agent],
           ['Required files', summarizeList(template.requiredFiles)],
         ]}
       />
@@ -454,32 +530,6 @@ function MalformedSkillCard({
   );
 }
 
-function SkillDetailDialog({
-  selection,
-  onOpenChange,
-}: {
-  selection: DetailSelection | null;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Dialog open={selection !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-auto">
-        {selection && (
-          <>
-            <DialogHeader>
-              <DialogTitle>{detailTitle(selection)}</DialogTitle>
-              <DialogDescription>{detailDescription(selection)}</DialogDescription>
-            </DialogHeader>
-            <div className="flex flex-col gap-4 text-sm">
-              {renderDetailBody(selection)}
-            </div>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function renderDetailBody(selection: DetailSelection) {
   if (selection.type === 'local') {
     const { item } = selection;
@@ -491,9 +541,6 @@ function renderDetailBody(selection: DetailSelection) {
             ['Source', item.isManaged ? 'Chamber managed local skill' : 'Local skill'],
             ['Core status', item.isCore ? 'Core skill' : 'Non-core skill'],
             ['Managed status', item.isManaged ? 'Managed by Chamber' : 'User managed'],
-            ['Directory', item.source.directory],
-            ['Manifest', item.source.manifestPath],
-            ['Managed metadata', item.managed?.metadataPath ?? 'N/A'],
             ['Version', item.version ?? item.managed?.version ?? 'N/A'],
             ['Capabilities', summarizeList(item.capabilities)],
             ['Required files', summarizeFiles(item.requiredFiles)],
@@ -515,7 +562,6 @@ function renderDetailBody(selection: DetailSelection) {
             ['Registry', item.source.marketplaceLabel],
             ['Repository', `${item.source.owner}/${item.source.repo}`],
             ['Ref', item.source.ref],
-            ['Root', item.root],
             ['Core status', item.reserved ? 'Core managed skill' : 'Non-core read-only skill'],
             ['Version', item.version ?? 'N/A'],
             ['Capabilities', summarizeList(item.capabilities)],
@@ -536,12 +582,9 @@ function renderDetailBody(selection: DetailSelection) {
             ['Registry', item.source.marketplaceLabel],
             ['Repository', `${item.source.owner}/${item.source.repo}`],
             ['Ref', item.source.ref],
-            ['Manifest', item.source.manifestPath],
-            ['Root', item.source.rootPath],
             ['Version', item.templateVersion],
             ['Role', item.role],
             ['Voice', item.voice],
-            ['Agent', item.agent],
             ['Required files', summarizeList(item.requiredFiles)],
           ]}
         />
@@ -677,15 +720,6 @@ function DetailsButton({ label, onClick }: { label: string; onClick: () => void 
   );
 }
 
-function CardActionButton({ label, onClick, icon }: { label: string; onClick: () => void; icon?: ReactNode }) {
-  return (
-    <Button variant="outline" size="sm" onClick={onClick}>
-      {icon}
-      {label}
-    </Button>
-  );
-}
-
 function Field({
   label,
   htmlFor,
@@ -712,11 +746,13 @@ function SkillCreateDialog({
   open,
   mindId,
   onClose,
+  onDirtyChange,
   onCreated,
 }: {
   open: boolean;
   mindId: string;
   onClose: () => void;
+  onDirtyChange: (dirty: boolean) => void;
   onCreated: () => void;
 }) {
   const [id, setId] = useState('');
@@ -724,6 +760,7 @@ function SkillCreateDialog({
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dirty = id.length > 0 || name.length > 0 || description.length > 0;
 
   useEffect(() => {
     if (open) {
@@ -734,6 +771,10 @@ function SkillCreateDialog({
       setSaving(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    onDirtyChange(open && dirty);
+  }, [dirty, onDirtyChange, open]);
 
   const canSubmit = id.trim().length > 0 && name.trim().length > 0 && description.trim().length > 0 && !saving;
   const validateDraft = () => {
@@ -765,23 +806,30 @@ function SkillCreateDialog({
       if (result.success) {
         onCreated();
       } else {
-        setError(result.error ?? 'Could not create the skill.');
+        setError(safeAuthoringMessage(result.error, 'Could not create the skill.'));
       }
     } catch (err) {
       setSaving(false);
-      setError(getErrorMessage(err));
+      setError(safeAuthoringError(err, 'Could not create the skill.'));
     }
   };
 
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="flex max-h-[88vh] max-w-lg flex-col">
-        <DialogHeader>
-          <DialogTitle>New skill</DialogTitle>
-          <DialogDescription>Create a SKILL.md under this mind&apos;s .github/skills directory.</DialogDescription>
-        </DialogHeader>
-        {error ? <Alert variant="destructive">{error}</Alert> : null}
-        <div className="flex flex-col gap-3">
+    <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">New skill</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Create a user-authored skill for the active mind.</p>
+        </div>
+        <div className="flex gap-2">
+          <Badge variant="outline">Mind scope</Badge>
+          <Badge variant="secondary">User authored</Badge>
+        </div>
+      </div>
+      {error ? <Alert variant="destructive">{error}</Alert> : null}
+      <div className="mt-4 flex flex-col gap-3">
           <Field label="Skill id" htmlFor="skill-create-id" hint="Lowercase letters, numbers, and single hyphens, for example note-taker.">
             <input
               id="skill-create-id"
@@ -811,17 +859,13 @@ function SkillCreateDialog({
               className={cn(fieldInputClass, 'min-h-[80px] resize-none')}
             />
           </Field>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={!canSubmit}>
-            {saving ? 'Creating...' : 'Create skill'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+        <span className="mr-auto text-xs text-muted-foreground">The skill source is created only after validation succeeds.</span>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={handleCreate} disabled={!canSubmit}>{saving ? 'Creating...' : 'Create skill'}</Button>
+      </div>
+    </section>
   );
 }
 
@@ -829,11 +873,13 @@ function SkillSourceEditor({
   mindId,
   skill,
   onClose,
+  onDirtyChange,
   onSaved,
 }: {
   mindId: string;
   skill: SkillDetail | null;
   onClose: () => void;
+  onDirtyChange: (dirty: boolean) => void;
   onSaved: () => void;
 }) {
   const [content, setContent] = useState('');
@@ -843,6 +889,7 @@ function SkillSourceEditor({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discardRequested, setDiscardRequested] = useState(false);
 
   useEffect(() => {
     if (!skill) return;
@@ -850,6 +897,7 @@ function SkillSourceEditor({
     setLoading(true);
     setLoadError(null);
     setError(null);
+    setDiscardRequested(false);
     void window.electronAPI.skills.getSource(mindId, skill.id)
       .then((source) => {
         if (cancelled) return;
@@ -858,7 +906,7 @@ function SkillSourceEditor({
         setBaselineMtimeMs(source.mtimeMs);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setLoadError(getErrorMessage(err));
+        if (!cancelled) setLoadError(safeAuthoringError(err, 'Could not load the skill editor.'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -870,8 +918,17 @@ function SkillSourceEditor({
 
   const dirty = content !== initialContent;
 
+  useEffect(() => {
+    onDirtyChange(skill ? dirty : false);
+  }, [dirty, onDirtyChange, skill]);
+
   const handleSave = async () => {
     if (!skill) return;
+    const validationError = validateSkillFrontmatter(content);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -885,12 +942,20 @@ function SkillSourceEditor({
       if (result.success) {
         onSaved();
       } else {
-        setError(result.error ?? 'Could not save the skill.');
+        setError(safeAuthoringMessage(result.error, 'Could not save the skill.'));
       }
     } catch (err) {
       setSaving(false);
-      setError(getErrorMessage(err));
+      setError(safeAuthoringError(err, 'Could not save the skill.'));
     }
+  };
+
+  const requestClose = () => {
+    if (dirty) {
+      setDiscardRequested(true);
+      return;
+    }
+    onClose();
   };
 
   if (!skill) return null;
@@ -900,14 +965,25 @@ function SkillSourceEditor({
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-base font-semibold">Editing {skill.name}</h3>
-          <p className="text-xs text-muted-foreground">{skill.source.manifestPath}</p>
+        <p className="text-xs text-muted-foreground">Authorized SKILL.md source editor</p>
         </div>
-        <Button variant="outline" size="sm" onClick={onClose}>
+      <Button variant="outline" size="sm" onClick={requestClose}>
           Close editor
         </Button>
       </div>
       {loadError ? <Alert variant="destructive">{loadError}</Alert> : null}
       {error ? <Alert variant="destructive">{error}</Alert> : null}
+      {discardRequested ? (
+      <Alert variant="destructive">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>You have unsaved edits. Discard them and close the editor?</span>
+          <span className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setDiscardRequested(false)}>Keep editing</Button>
+            <Button variant="destructive" size="sm" onClick={onClose}>Discard edits</Button>
+          </span>
+        </div>
+      </Alert>
+      ) : null}
       <textarea
         aria-label="SKILL.md content"
         value={content}
@@ -918,7 +994,7 @@ function SkillSourceEditor({
       />
       <div className="mt-3 flex items-center justify-end gap-2">
         {dirty ? <span className="mr-auto text-xs text-amber-600 dark:text-amber-300">Unsaved edits</span> : null}
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" onClick={requestClose}>
           Cancel
         </Button>
         <Button onClick={handleSave} disabled={!dirty || saving || loading}>
@@ -950,4 +1026,13 @@ function summarizeFiles(files: SkillFileReference[]): string {
 
 function summarizeList(items: string[]): string {
   return items.length > 0 ? items.join(', ') : 'None';
+}
+
+function safeAuthoringError(error: unknown, fallback: string): string {
+  return safeAuthoringMessage(getErrorMessage(error), fallback);
+}
+
+function safeAuthoringMessage(message: string | undefined, fallback: string): string {
+  if (!message || /(?:[A-Za-z]:[\\/]|\\\\|(?:^|\s)\/\S+|\b[a-z][a-z0-9+.-]*:)/i.test(message)) return fallback;
+  return message;
 }

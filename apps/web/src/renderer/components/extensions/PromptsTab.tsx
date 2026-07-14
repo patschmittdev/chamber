@@ -1,35 +1,42 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { Prompt } from '@chamber/shared/types';
 import { validatePromptInput } from '@chamber/shared/prompt-authoring';
-import { FileText, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useAppState, useAppDispatch } from '../../lib/store';
+import type { Prompt } from '@chamber/shared/types';
+import { FileText, Plus, Trash2 } from 'lucide-react';
+import { useAppDispatch, useAppState } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Alert } from '../ui/alert';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
 import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 
 const fieldInputClass =
-  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary';
+  'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-export function PromptsTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
+type PromptSelection = string | 'new' | null;
+
+export function PromptsTab({
+  onInventoryChanged,
+  onEditorDirtyChange,
+}: {
+  readonly onInventoryChanged?: () => void;
+  readonly onEditorDirtyChange?: (dirty: boolean) => void;
+}) {
   const { activeMindId, pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
-
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<Prompt | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Prompt | null>(null);
+  const [selection, setSelection] = useState<PromptSelection>(null);
+  const [pendingSelection, setPendingSelection] = useState<PromptSelection>(null);
+  const [pendingDraftHandoff, setPendingDraftHandoff] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    onEditorDirtyChange?.(editorDirty);
+    return () => onEditorDirtyChange?.(false);
+  }, [editorDirty, onEditorDirtyChange]);
 
   const loadPrompts = useCallback(() => {
     let cancelled = false;
@@ -40,8 +47,8 @@ export function PromptsTab({ onInventoryChanged }: { readonly onInventoryChanged
       .then((items) => {
         if (!cancelled) setPrompts(items);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(getErrorMessage(err));
+      .catch((loadError: unknown) => {
+        if (!cancelled) setError(safeAuthoringError(loadError, 'Could not load prompts.'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -55,159 +62,306 @@ export function PromptsTab({ onInventoryChanged }: { readonly onInventoryChanged
 
   useEffect(() => {
     if (pendingExtensionsIntent?.action !== 'create-prompt') return;
-    setCreateOpen(true);
+    setSelection('new');
+    setNotice(null);
     dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
   }, [pendingExtensionsIntent, dispatch]);
 
-  const closeDialog = () => {
-    setCreateOpen(false);
-    setEditTarget(null);
+  const select = (next: PromptSelection) => {
+    if (editorDirty) {
+      setPendingSelection(next);
+      return;
+    }
+    setSelection(next);
+    setNotice(null);
   };
 
-  const applyRefreshedPrompts = (next: Prompt[]) => {
-    setPrompts(next);
-    closeDialog();
-    setDeleteTarget(null);
-    onInventoryChanged?.();
+  const runDraftHandoff = () => {
+    if (!activeMindId) return;
+    dispatch({
+      type: 'SET_COMPOSE_DRAFT',
+      payload: { mindId: activeMindId, draft: 'Create a reusable prompt for my prompt library. Include title, description, and body.' },
+    });
+    dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
   };
+
+  const requestDraftHandoff = () => {
+    if (editorDirty) {
+      setPendingDraftHandoff(true);
+      return;
+    }
+    runDraftHandoff();
+  };
+
+  const selectedPrompt = typeof selection === 'string' ? prompts.find((prompt) => prompt.id === selection) ?? null : null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold">Prompts</h2>
-        <p className="text-sm text-muted-foreground">
-          Reusable prompt text you can insert into the composer with a slash command.
-        </p>
-      </div>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-medium">Saved prompts</h3>
-            <p className="text-xs text-muted-foreground">Stored on this device and available to every mind.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {activeMindId ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  dispatch({
-                    type: 'SET_COMPOSE_DRAFT',
-                    payload: { mindId: activeMindId, draft: 'Create a reusable prompt for my prompt library. Include title, description, and body.' },
-                  });
-                  dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
-                }}
-              >
-                Draft with active mind
-              </Button>
-            ) : null}
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus size={16} />
-              New prompt
-            </Button>
-          </div>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Prompts</h2>
+          <p className="text-sm text-muted-foreground">
+            Reusable, user-authored text available to every mind from the composer slash menu.
+          </p>
         </div>
-        <PromptsList
-          prompts={prompts}
-          loading={loading}
-          error={error}
-          onEdit={setEditTarget}
-          onDelete={setDeleteTarget}
-        />
-      </section>
+        <div className="flex flex-wrap gap-2">
+          {activeMindId ? (
+            <Button
+              variant="outline"
+              onClick={requestDraftHandoff}
+            >
+              Draft with active mind
+            </Button>
+          ) : null}
+          <Button onClick={() => select('new')}>
+            <Plus size={16} />
+            New prompt
+          </Button>
+        </div>
+      </header>
 
-      <PromptDialog
-        open={createOpen || editTarget !== null}
-        prompt={editTarget}
-        onClose={closeDialog}
-        onSaved={applyRefreshedPrompts}
-      />
+      <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        Draft with active mind starts a chat draft. It does not create or save a prompt.
+      </p>
 
-      <PromptDeleteDialog
-        prompt={deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onDeleted={applyRefreshedPrompts}
-      />
+      {notice ? <p role="status" className="text-sm text-genesis">{notice}</p> : null}
+
+      {loading ? <TabLoading label="Loading prompts" /> : null}
+      {error ? <TabError message={error} /> : null}
+      {!loading && !error ? (
+        <div className="grid min-h-[28rem] gap-4 lg:grid-cols-[minmax(14rem,0.38fr)_minmax(0,1fr)]">
+          <PromptList prompts={prompts} selection={selection} onSelect={select} />
+          <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+            {pendingSelection !== null || pendingDraftHandoff ? (
+              <DiscardChangesNotice
+                onKeepEditing={() => {
+                  setPendingSelection(null);
+                  setPendingDraftHandoff(false);
+                }}
+                onDiscard={() => {
+                  setEditorDirty(false);
+                  if (pendingSelection !== null) setSelection(pendingSelection);
+                  setPendingSelection(null);
+                  if (pendingDraftHandoff) runDraftHandoff();
+                  setPendingDraftHandoff(false);
+                }}
+              />
+            ) : selection === 'new' || selectedPrompt ? (
+              <PromptEditor
+                key={selectedPrompt?.id ?? 'new'}
+                prompt={selectedPrompt}
+                onDirtyChange={setEditorDirty}
+                onSaved={(next, savedId) => {
+                  setPrompts(next);
+                  setSelection(savedId ?? null);
+                  setEditorDirty(false);
+                  setNotice('Prompt saved.');
+                  onInventoryChanged?.();
+                }}
+                onDeleted={(next) => {
+                  setPrompts(next);
+                  setSelection(null);
+                  setEditorDirty(false);
+                  setNotice('Prompt deleted.');
+                  onInventoryChanged?.();
+                }}
+              />
+            ) : (
+              <TabEmptyState
+                icon={<FileText size={22} />}
+                title={prompts.length === 0 ? 'No saved prompts' : 'Select a prompt'}
+                detail={prompts.length === 0
+                  ? 'Create a prompt to reuse it from the composer with a slash command.'
+                  : 'Choose a prompt to view its scope and edit its authorized content.'}
+              />
+            )}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function PromptsList({
+function PromptList({
   prompts,
-  loading,
-  error,
-  onEdit,
-  onDelete,
+  selection,
+  onSelect,
 }: {
-  prompts: Prompt[];
-  loading: boolean;
-  error: string | null;
-  onEdit: (prompt: Prompt) => void;
-  onDelete: (prompt: Prompt) => void;
+  readonly prompts: Prompt[];
+  readonly selection: PromptSelection;
+  readonly onSelect: (selection: PromptSelection) => void;
 }) {
-  if (loading) return <TabLoading label="Loading prompts" />;
-  if (error) return <TabError message={error} />;
-  if (prompts.length === 0) {
-    return (
-      <TabEmptyState
-        icon={<FileText size={22} />}
-        title="No saved prompts"
-        detail="Create a prompt to reuse it from the composer with a slash command."
-      />
-    );
-  }
-
   return (
-    <ul className="grid gap-3">
-      {prompts.map((prompt) => (
-        <li key={prompt.id} className="rounded-xl border border-border bg-card p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="font-medium">{prompt.title}</div>
-              {prompt.description ? (
-                <p className="mt-1 text-sm text-muted-foreground">{prompt.description}</p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <CardActionButton
-                label={`Edit ${prompt.title}`}
-                text="Edit"
-                icon={<Pencil size={14} />}
-                onClick={() => onEdit(prompt)}
-              />
-              <CardActionButton
-                label={`Delete ${prompt.title}`}
-                text="Delete"
-                icon={<Trash2 size={14} />}
-                onClick={() => onDelete(prompt)}
-              />
-            </div>
-          </div>
-          <p className="mt-2 line-clamp-3 break-words whitespace-pre-wrap text-sm text-muted-foreground">
-            {prompt.body}
-          </p>
-        </li>
-      ))}
-    </ul>
+    <aside className="rounded-xl border border-border bg-card p-2" aria-label="Saved prompts">
+      <div className="mb-2 flex items-center justify-between px-2 pt-1">
+        <h3 className="text-sm font-semibold">Saved prompts</h3>
+        <span className="text-xs text-muted-foreground">{prompts.length}</span>
+      </div>
+      <div role="listbox" aria-label="Prompt library" className="grid gap-1">
+        {prompts.map((prompt) => (
+          <button
+            key={prompt.id}
+            type="button"
+            role="option"
+            aria-selected={selection === prompt.id}
+            onClick={() => onSelect(prompt.id)}
+            className={cn(
+              'rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              selection === prompt.id ? 'bg-selected text-selected-foreground' : 'hover:bg-hover',
+            )}
+          >
+            <span className="block truncate text-sm font-medium">{prompt.title}</span>
+            <span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">
+              {prompt.description || 'No description'}
+            </span>
+          </button>
+        ))}
+      </div>
+    </aside>
   );
 }
 
-function CardActionButton({
-  label,
-  text,
-  icon,
-  onClick,
+function PromptEditor({
+  prompt,
+  onDirtyChange,
+  onSaved,
+  onDeleted,
 }: {
-  label: string;
-  text: string;
-  icon: ReactNode;
-  onClick: () => void;
+  readonly prompt: Prompt | null;
+  readonly onDirtyChange: (dirty: boolean) => void;
+  readonly onSaved: (prompts: Prompt[], savedId: string | null) => void;
+  readonly onDeleted: (prompts: Prompt[]) => void;
 }) {
+  const [title, setTitle] = useState(prompt?.title ?? '');
+  const [description, setDescription] = useState(prompt?.description ?? '');
+  const [body, setBody] = useState(prompt?.body ?? '');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteRequested, setDeleteRequested] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const editing = prompt !== null;
+  const dirty = title !== (prompt?.title ?? '') || description !== (prompt?.description ?? '') || body !== (prompt?.body ?? '');
+  const validationError = validatePromptInput({ title, description, body });
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  const save = async () => {
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.prompts.save({
+        id: prompt?.id ?? null,
+        title: title.trim(),
+        body: body.trim(),
+        description: description.trim() || undefined,
+      });
+      if (result.success) {
+        const savedId = prompt?.id ?? null;
+        onSaved(result.prompts ?? [], savedId);
+      } else {
+        setError(safeAuthoringMessage(result.error, 'Could not save the prompt.'));
+      }
+    } catch (saveError) {
+      setError(safeAuthoringError(saveError, 'Could not save the prompt.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!prompt) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.prompts.delete(prompt.id);
+      if (result.success) {
+        onDeleted(result.prompts ?? []);
+      } else {
+        setError(safeAuthoringMessage(result.error, 'Could not delete the prompt.'));
+      }
+    } catch (deleteError) {
+      setError(safeAuthoringError(deleteError, 'Could not delete the prompt.'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <Button variant="outline" size="sm" aria-label={label} onClick={onClick}>
-      {icon}
-      {text}
-    </Button>
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">{editing ? 'Edit prompt' : 'New prompt'}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {editing ? 'Changes update this user-authored prompt.' : 'Create a reusable prompt for the global library.'}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Badge variant="outline">Global scope</Badge>
+          <Badge variant="secondary">User authored</Badge>
+        </div>
+      </div>
+      {error ? <Alert variant="destructive">{error}</Alert> : null}
+      {deleteRequested ? (
+        <Alert variant="destructive">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>Delete this prompt? This cannot be undone.</span>
+            <span className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDeleteRequested(false)}>Keep prompt</Button>
+              <Button variant="destructive" size="sm" disabled={deleting} onClick={() => void remove()}>
+                {deleting ? 'Deleting...' : 'Delete prompt'}
+              </Button>
+            </span>
+          </div>
+        </Alert>
+      ) : null}
+      <div className="grid gap-3">
+        <Field label="Title" htmlFor="prompt-title">
+          <input
+            id="prompt-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            onBlur={() => setError(validationError)}
+            className={fieldInputClass}
+          />
+        </Field>
+        <Field label="Description" htmlFor="prompt-description" hint="Optional short hint shown in the slash menu.">
+          <input
+            id="prompt-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            onBlur={() => setError(validationError)}
+            className={fieldInputClass}
+          />
+        </Field>
+        <Field label="Prompt body" htmlFor="prompt-body">
+          <textarea
+            id="prompt-body"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            onBlur={() => setError(validationError)}
+            className={cn(fieldInputClass, 'min-h-[220px] resize-y font-mono leading-6')}
+          />
+        </Field>
+      </div>
+      <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
+        {dirty ? <span className="mr-auto text-xs text-amber-600 dark:text-amber-300">Unsaved edits</span> : <span className="mr-auto text-xs text-muted-foreground">All changes saved</span>}
+        {editing ? (
+          <Button variant="outline" onClick={() => setDeleteRequested(true)}>
+            <Trash2 size={16} />
+            Delete
+          </Button>
+        ) : null}
+        <Button onClick={() => void save()} disabled={!dirty || saving || Boolean(validationError)}>
+          {saving ? 'Saving...' : 'Save prompt'}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -217,203 +371,45 @@ function Field({
   hint,
   children,
 }: {
-  label: string;
-  htmlFor: string;
-  hint?: string;
-  children: ReactNode;
+  readonly label: string;
+  readonly htmlFor: string;
+  readonly hint?: string;
+  readonly children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
-        {label}
-      </label>
+    <div className="grid gap-1">
+      <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">{label}</label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
 
-function PromptDialog({
-  open,
-  prompt,
-  onClose,
-  onSaved,
+function DiscardChangesNotice({
+  onKeepEditing,
+  onDiscard,
 }: {
-  open: boolean;
-  prompt: Prompt | null;
-  onClose: () => void;
-  onSaved: (prompts: Prompt[]) => void;
+  readonly onKeepEditing: () => void;
+  readonly onDiscard: () => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [body, setBody] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    setTitle(prompt?.title ?? '');
-    setDescription(prompt?.description ?? '');
-    setBody(prompt?.body ?? '');
-    setError(null);
-    setSaving(false);
-  }, [open, prompt]);
-
-  const editing = prompt !== null;
-  const canSubmit = title.trim().length > 0 && body.trim().length > 0 && !saving;
-  const validateDraft = () => validatePromptInput({ title, body, description });
-
-  const handleSave = async () => {
-    const validationError = validateDraft();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    const trimmedDescription = description.trim();
-    try {
-      const result = await window.electronAPI.prompts.save({
-        id: prompt?.id ?? null,
-        title: title.trim(),
-        body: body.trim(),
-        description: trimmedDescription.length > 0 ? trimmedDescription : undefined,
-      });
-      setSaving(false);
-      if (result.success) {
-        onSaved(result.prompts ?? []);
-      } else {
-        setError(result.error ?? 'Could not save the prompt.');
-      }
-    } catch (err) {
-      setSaving(false);
-      setError(getErrorMessage(err));
-    }
-  };
-
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent className="flex max-h-[88vh] max-w-lg flex-col">
-        <DialogHeader>
-          <DialogTitle>{editing ? 'Edit prompt' : 'New prompt'}</DialogTitle>
-          <DialogDescription>Saved prompts insert their body into the composer from the slash menu.</DialogDescription>
-        </DialogHeader>
-        {error ? (
-          <Alert variant="destructive">{error}</Alert>
-        ) : null}
-        <div className="flex flex-col gap-3">
-          <Field label="Title" htmlFor="prompt-title">
-            <input
-              id="prompt-title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              onBlur={() => setError(validateDraft())}
-              className={fieldInputClass}
-            />
-          </Field>
-          <Field label="Description" htmlFor="prompt-description" hint="Optional short hint shown in the slash menu.">
-            <input
-              id="prompt-description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              onBlur={() => setError(validateDraft())}
-              className={fieldInputClass}
-            />
-          </Field>
-          <Field label="Prompt body" htmlFor="prompt-body">
-            <textarea
-              id="prompt-body"
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              onBlur={() => setError(validateDraft())}
-              className={cn(fieldInputClass, 'min-h-[160px] resize-none font-mono leading-6')}
-            />
-          </Field>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!canSubmit}>
-            {saving ? 'Saving...' : 'Save prompt'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Alert variant="destructive">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span>You have unsaved edits. Discard them and continue?</span>
+        <span className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onKeepEditing}>Keep editing</Button>
+          <Button variant="destructive" size="sm" onClick={onDiscard}>Discard edits</Button>
+        </span>
+      </div>
+    </Alert>
   );
 }
 
-function PromptDeleteDialog({
-  prompt,
-  onClose,
-  onDeleted,
-}: {
-  prompt: Prompt | null;
-  onClose: () => void;
-  onDeleted: (prompts: Prompt[]) => void;
-}) {
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function safeAuthoringError(error: unknown, fallback: string): string {
+  return safeAuthoringMessage(getErrorMessage(error), fallback);
+}
 
-  useEffect(() => {
-    if (prompt) {
-      setDeleting(false);
-      setError(null);
-    }
-  }, [prompt]);
-
-  const handleDelete = async () => {
-    if (!prompt) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      const result = await window.electronAPI.prompts.delete(prompt.id);
-      setDeleting(false);
-      if (result.success) {
-        onDeleted(result.prompts ?? []);
-      } else {
-        setError(result.error ?? 'Could not delete the prompt.');
-      }
-    } catch (err) {
-      setDeleting(false);
-      setError(getErrorMessage(err));
-    }
-  };
-
-  return (
-    <Dialog
-      open={prompt !== null}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent className="flex max-w-md flex-col">
-        <DialogHeader>
-          <DialogTitle>Delete prompt</DialogTitle>
-          <DialogDescription>This removes the prompt from your library. This cannot be undone.</DialogDescription>
-        </DialogHeader>
-        {error ? (
-          <Alert variant="destructive">{error}</Alert>
-        ) : null}
-        {prompt ? (
-          <p className="text-sm text-muted-foreground">
-            Delete <span className="font-medium text-foreground">{prompt.title}</span>?
-          </p>
-        ) : null}
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Delete prompt'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+function safeAuthoringMessage(message: string | undefined, fallback: string): string {
+  if (!message || /(?:[A-Za-z]:[\\/]|\\\\|(?:^|\s)\/\S+|\b[a-z][a-z0-9+.-]*:)/i.test(message)) return fallback;
+  return message;
 }

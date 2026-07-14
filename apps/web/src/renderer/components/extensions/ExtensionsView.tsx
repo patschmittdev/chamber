@@ -3,6 +3,7 @@ import { Blocks, ChevronDown } from 'lucide-react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import type { ExtensionsTab } from '../../lib/store/state';
 import { Button } from '../ui/button';
+import { Alert } from '../ui/alert';
 import { Tabs, TabsContent } from '../ui/tabs';
 import {
   CapabilityCategoryNavigation,
@@ -18,12 +19,18 @@ import { SkillsTab } from './SkillsTab';
 import { PromptsTab } from './PromptsTab';
 import { LensViewsTab } from './LensViewsTab';
 
+type PendingManagementAction =
+  | { readonly type: 'hide' }
+  | { readonly type: 'select-category'; readonly tab: ExtensionsTab };
+
 export function ExtensionsView() {
   const { activeMindId, pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
   const inventory = useCapabilityInventory(activeMindId);
   const [activeTab, setActiveTab] = useState<ExtensionsTab>('skills');
   const [managementTab, setManagementTab] = useState<ExtensionsTab | null>(null);
+  const [managementDirty, setManagementDirty] = useState(false);
+  const [pendingManagementAction, setPendingManagementAction] = useState<PendingManagementAction | null>(null);
   const [intentElapsedSeconds, setIntentElapsedSeconds] = useState(0);
   const category = categoryForTab(activeTab);
 
@@ -53,11 +60,30 @@ export function ExtensionsView() {
   const managing = managementTab === activeTab;
 
   const selectCategory = (tab: ExtensionsTab) => {
+    if (managing && managementDirty) {
+      setPendingManagementAction({ type: 'select-category', tab });
+      return;
+    }
     setActiveTab(tab);
     setManagementTab(null);
     if (pendingExtensionsIntent) {
       dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
     }
+  };
+
+  const applyPendingManagementAction = () => {
+    if (!pendingManagementAction) return;
+    setManagementDirty(false);
+    if (pendingManagementAction.type === 'hide') {
+      setManagementTab(null);
+    } else {
+      setActiveTab(pendingManagementAction.tab);
+      setManagementTab(null);
+      if (pendingExtensionsIntent) {
+        dispatch({ type: 'SET_PENDING_EXTENSIONS_INTENT', payload: null });
+      }
+    }
+    setPendingManagementAction(null);
   };
 
   return (
@@ -124,7 +150,13 @@ export function ExtensionsView() {
                   size="sm"
                   aria-expanded={managing}
                   aria-controls={`extension-management-${activeTab}`}
-                  onClick={() => setManagementTab(managing ? null : activeTab)}
+                  onClick={() => {
+                    if (managing && managementDirty) {
+                      setPendingManagementAction({ type: 'hide' });
+                      return;
+                    }
+                    setManagementTab(managing ? null : activeTab);
+                  }}
                 >
                   {managing ? 'Hide management' : `Manage ${category.label.toLowerCase()}`}
                   <ChevronDown size={16} className={managing ? 'rotate-180 transition-transform' : 'transition-transform'} />
@@ -132,7 +164,22 @@ export function ExtensionsView() {
               </div>
               {managing ? (
                 <div id={`extension-management-${activeTab}`} className="border-t border-border p-4">
-                  <CategoryManagement tab={activeTab} onInventoryChanged={inventory.reload} />
+                  {pendingManagementAction ? (
+                    <Alert variant="destructive" className="mb-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span>You have unsaved edits. Discard them and continue?</span>
+                        <span className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setPendingManagementAction(null)}>Keep editing</Button>
+                          <Button variant="destructive" size="sm" onClick={applyPendingManagementAction}>Discard edits</Button>
+                        </span>
+                      </div>
+                    </Alert>
+                  ) : null}
+                  <CategoryManagement
+                    tab={activeTab}
+                    onInventoryChanged={inventory.reload}
+                    onEditorDirtyChange={setManagementDirty}
+                  />
                 </div>
               ) : null}
             </section>
@@ -143,16 +190,24 @@ export function ExtensionsView() {
   );
 }
 
-function CategoryManagement({ tab, onInventoryChanged }: { readonly tab: ExtensionsTab; readonly onInventoryChanged: () => void }) {
+function CategoryManagement({
+  tab,
+  onInventoryChanged,
+  onEditorDirtyChange,
+}: {
+  readonly tab: ExtensionsTab;
+  readonly onInventoryChanged: () => void;
+  readonly onEditorDirtyChange: (dirty: boolean) => void;
+}) {
   switch (tab) {
     case 'skills':
-      return <SkillsTab onInventoryChanged={onInventoryChanged} />;
+      return <SkillsTab onInventoryChanged={onInventoryChanged} onEditorDirtyChange={onEditorDirtyChange} />;
     case 'mcp':
       return <McpServersTab onInventoryChanged={onInventoryChanged} />;
     case 'tools':
       return <ToolsTab onInventoryChanged={onInventoryChanged} />;
     case 'prompts':
-      return <PromptsTab onInventoryChanged={onInventoryChanged} />;
+      return <PromptsTab onInventoryChanged={onInventoryChanged} onEditorDirtyChange={onEditorDirtyChange} />;
     case 'lens':
       return <LensViewsTab onInventoryChanged={onInventoryChanged} />;
   }

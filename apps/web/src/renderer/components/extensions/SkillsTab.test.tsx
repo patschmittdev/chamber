@@ -54,11 +54,11 @@ describe('SkillsTab', () => {
     ]);
     renderTab(api);
 
-    await waitFor(() => expect(screen.getByText('Lens')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Lens').length).toBeGreaterThan(0));
     expect(api.skills.listForMindDetails).toHaveBeenCalledWith('mind-1');
     expect(screen.getByText('v1.2.0')).toBeTruthy();
     expect(screen.getByText('Build views')).toBeTruthy();
-    expect(screen.getByText('.github/skills/lens')).toBeTruthy();
+    expect(screen.queryByText('.github/skills/lens')).toBeNull();
   });
 
   it('renders managed core skill metadata', async () => {
@@ -117,11 +117,12 @@ describe('SkillsTab', () => {
     await waitFor(() => expect(screen.getByText('No marketplace skills or templates')).toBeTruthy());
   });
 
-  it('renders marketplace source errors', async () => {
+  it('renders a safe marketplace source error without exposing the remote response', async () => {
     vi.mocked(api.skills.browseMarketplace).mockRejectedValue(new Error('Registry unavailable'));
     renderTab(api);
 
-    await waitFor(() => expect(screen.getByText('Registry unavailable')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Marketplace entries could not be loaded. Try again.')).toBeTruthy());
+    expect(screen.queryByText('Registry unavailable')).toBeNull();
   });
 
   it('renders marketplace skills, templates, malformed entries, and source health', async () => {
@@ -144,10 +145,10 @@ describe('SkillsTab', () => {
     ]);
     renderTab(api);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'View details for Lens' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'View details for Lens' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View details' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
 
-    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getAllByText(untrusted).length).toBeGreaterThan(0);
     expect(document.querySelector('script')).toBeNull();
   });
@@ -157,7 +158,7 @@ describe('SkillsTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'New skill' })).toBeTruthy());
   });
 
-  it('creates a skill through the new skill dialog and reloads the list', async () => {
+  it('creates a skill through the focused editor and reloads the list', async () => {
     vi.mocked(api.skills.listForMindDetails).mockResolvedValue([]);
     vi.mocked(api.skills.save).mockResolvedValue({ success: true });
     renderTab(api);
@@ -180,7 +181,7 @@ describe('SkillsTab', () => {
     await waitFor(() => expect(api.skills.listForMindDetails).toHaveBeenCalledTimes(2));
   });
 
-  it('opens the create dialog from a pending create-skill intent', async () => {
+  it('opens the focused editor from a pending create-skill intent', async () => {
     vi.mocked(api.skills.listForMindDetails).mockResolvedValue([]);
     renderTab(api, { pendingExtensionsIntent: { tab: 'skills', action: 'create-skill' } });
 
@@ -203,7 +204,7 @@ describe('SkillsTab', () => {
     expect(api.skills.save).not.toHaveBeenCalled();
   });
 
-  it('surfaces a create failure and keeps the dialog open', async () => {
+  it('surfaces a create failure and keeps the editor open', async () => {
     vi.mocked(api.skills.save).mockResolvedValue({ success: false, error: 'A skill with this id already exists.' });
     renderTab(api);
 
@@ -282,13 +283,34 @@ describe('SkillsTab', () => {
     expect(screen.getByLabelText('SKILL.md content')).toBeTruthy();
   });
 
+  it('requires an explicit discard before closing an edited skill source', async () => {
+    vi.mocked(api.skills.listForMindDetails).mockResolvedValue([localSkill({ id: 'writer', name: 'Writer' })]);
+    vi.mocked(api.skills.getSource).mockResolvedValue({
+      id: 'writer',
+      content: '---\nname: Writer\ndescription: Old.\n---\n',
+      mtimeMs: 42,
+    });
+    renderTab(api);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Writer' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Writer' }));
+    fireEvent.change(await screen.findByLabelText('SKILL.md content'), {
+      target: { value: '---\nname: Writer\ndescription: New.\n---\n' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Close editor' }));
+
+    expect(screen.getByText('You have unsaved edits. Discard them and close the editor?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+    expect(screen.queryByLabelText('SKILL.md content')).toBeNull();
+  });
+
   it('does not show an Edit action for managed or core skills', async () => {
     vi.mocked(api.skills.listForMindDetails).mockResolvedValue([
       localSkill({ id: 'lens', name: 'Lens', isCore: true }),
     ]);
     renderTab(api);
 
-    await waitFor(() => expect(screen.getByText('Lens')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Lens').length).toBeGreaterThan(0));
     expect(screen.queryByRole('button', { name: 'Edit Lens' })).toBeNull();
   });
 
