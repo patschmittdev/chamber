@@ -308,6 +308,21 @@ describe('ConversationHistoryPanel', () => {
     expect(screen.getByText('Q3 Roadmap')).toBeTruthy();
   });
 
+  it('shows section labels with counts for pinned, recent, and archived groups', () => {
+    const pinned = makeConversation({ sessionId: 's-pinned', title: 'Pinned thread', active: false, isPinned: true });
+    const recent = makeConversation({ sessionId: 's-recent', title: 'Recent thread', active: false });
+    const archived = makeConversation({ sessionId: 's-archived', title: 'Archived thread', active: false, isArchived: true });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [pinned, recent, archived] },
+    });
+
+    expect(screen.getByText('Pinned (1)')).toBeTruthy();
+    expect(screen.getByText('Recent (1)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Archived \(1\)/ })).toBeTruthy();
+  });
+
   it('shows an empty state and restores the list when the search is cleared', async () => {
     const roadmap = makeConversation({ sessionId: 's-roadmap', title: 'Q3 Roadmap', active: false });
     const standup = makeConversation({ sessionId: 's-standup', title: 'Daily standup', active: false });
@@ -354,6 +369,30 @@ describe('ConversationHistoryPanel', () => {
       expect(screen.getByText('Untitled thread')).toBeTruthy();
     });
     expect(api.conversationHistory.messages).toHaveBeenCalledWith(mind.mindId, 's-bugfix');
+  });
+
+  it('shows search feedback with result counts and content indexing progress', async () => {
+    const roadmap = makeConversation({ sessionId: 's-roadmap', title: 'Q3 Roadmap', active: false });
+    const untitled = makeConversation({ sessionId: 's-bugfix', title: 'Untitled thread', active: false });
+    (api.conversationHistory.messages as ReturnType<typeof vi.fn>).mockImplementation(
+      (_mindId: string, sessionId: string) => (
+        sessionId === 's-roadmap'
+          ? Promise.resolve([{ id: 'u1', role: 'user', blocks: [{ type: 'text', content: 'Roadmap details' }], timestamp: 1 }])
+          : new Promise(() => undefined)
+      ),
+    );
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [roadmap, untitled] },
+    });
+
+    fireEvent.change(screen.getByLabelText('Search conversations'), { target: { value: 'roadmap' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('1 result. 1 title match.')).toBeTruthy();
+    });
+    expect(screen.getByText(/Indexing content [0-2]\/2/)).toBeTruthy();
   });
 
   it('exports the selected conversation as Markdown through the save-dialog IPC', async () => {
@@ -425,7 +464,7 @@ describe('ConversationHistoryPanel', () => {
     await waitFor(() => {
       expect(orderedResumeTitles()).toEqual(['Bravo', 'Alpha']);
     });
-    expect(screen.getByText('Pinned')).toBeTruthy();
+    expect(screen.getByText('Pinned (1)')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unpin Bravo' })).toBeTruthy();
   });
 
@@ -474,6 +513,20 @@ describe('ConversationHistoryPanel', () => {
     expect(pin.className).toContain('group-focus-within:opacity-100');
     expect(overflow.className).toContain('group-focus-within:opacity-100');
     expect(overflow.className).toContain('focus-visible:opacity-100');
+  });
+
+  it('exposes a tooltip with the full conversation title while keeping truncation styling', () => {
+    const longTitle = 'A very long conversation title that should remain truncated in the rail row';
+    const conversation = makeConversation({ title: longTitle, active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+    });
+
+    const title = screen.getByText(longTitle);
+    expect(title.className).toContain('truncate');
+    expect(title.getAttribute('title')).toBe(longTitle);
   });
 
   it('reveals matching archived conversations while searching and restores the collapsed state when cleared', async () => {

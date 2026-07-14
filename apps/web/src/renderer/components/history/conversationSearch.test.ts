@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage, ConversationSummary } from '@chamber/shared/types';
-import { conversationSearchText, filterConversations, normalizeSearchQuery } from './conversationSearch';
+import {
+  conversationSearchText,
+  filterConversations,
+  getConversationSearchFeedback,
+  normalizeSearchQuery,
+} from './conversationSearch';
 
 function makeConversation(overrides: Partial<ConversationSummary>): ConversationSummary {
   return {
@@ -82,5 +87,44 @@ describe('conversationSearchText', () => {
 
   it('returns an empty string for a conversation with no text blocks', () => {
     expect(conversationSearchText([])).toBe('');
+  });
+});
+
+describe('getConversationSearchFeedback', () => {
+  it('returns title and content match counts with total results', () => {
+    const contentIndex = new Map<string, string>([
+      ['s-roadmap', 'roadmap details and risks'],
+      ['s-bugfix', 'saml login fail details'],
+    ]);
+
+    const feedback = getConversationSearchFeedback(conversations, 'roadmap', contentIndex);
+    expect(feedback).toEqual({
+      resultCount: 1,
+      titleMatchCount: 1,
+      contentMatchCount: 1,
+      contentOnlyMatchCount: 0,
+      indexableConversationCount: 3,
+      indexedConversationCount: 2,
+      isIndexing: true,
+    });
+  });
+
+  it('counts content-only matches and reports indexing completion', () => {
+    const contentIndex = new Map<string, string>([
+      ['s-roadmap', 'roadmap details and risks'],
+      ['s-standup', 'daily sync notes'],
+      ['s-bugfix', 'saml login fail details'],
+    ]);
+
+    const feedback = getConversationSearchFeedback(conversations, 'saml', contentIndex);
+    expect(feedback).toEqual({
+      resultCount: 1,
+      titleMatchCount: 0,
+      contentMatchCount: 1,
+      contentOnlyMatchCount: 1,
+      indexableConversationCount: 3,
+      indexedConversationCount: 3,
+      isIndexing: false,
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ConversationSummary } from '@chamber/shared/types';
-import { partitionConversations } from './conversationOrganize';
+import { groupConversationsByDate, partitionConversations, summarizeConversationSections } from './conversationOrganize';
 
 function makeConversation(overrides: Partial<ConversationSummary>): ConversationSummary {
   return {
@@ -70,5 +70,39 @@ describe('partitionConversations', () => {
 
   it('returns empty buckets for an empty list', () => {
     expect(partitionConversations([])).toEqual({ pinned: [], regular: [], archived: [] });
+  });
+});
+
+describe('summarizeConversationSections', () => {
+  it('uses consistent section labels and count metadata', () => {
+    const pinned = makeConversation({ sessionId: 's-pin', isPinned: true });
+    const regular = makeConversation({ sessionId: 's-recent' });
+    const archived = makeConversation({ sessionId: 's-archived', isArchived: true });
+
+    const sections = summarizeConversationSections(partitionConversations([pinned, regular, archived]));
+
+    expect(sections).toEqual([
+      { key: 'pinned', label: 'Pinned', count: 1 },
+      { key: 'recent', label: 'Recent', count: 1 },
+      { key: 'archived', label: 'Archived', count: 1 },
+    ]);
+  });
+});
+
+describe('groupConversationsByDate', () => {
+  it('groups ordered conversations under date headers', () => {
+    const now = new Date('2026-05-05T20:00:00.000Z');
+    const today = makeConversation({ sessionId: 's-today', updatedAt: '2026-05-05T10:00:00.000Z' });
+    const yesterday = makeConversation({ sessionId: 's-yesterday', updatedAt: '2026-05-04T10:00:00.000Z' });
+    const older = makeConversation({ sessionId: 's-older', updatedAt: '2026-04-01T10:00:00.000Z' });
+
+    const groups = groupConversationsByDate([today, yesterday, older], now);
+
+    expect(groups.map((group) => group.label)).toEqual(['Today', 'Yesterday', 'Older']);
+    expect(groups.map((group) => group.conversations.map((conversation) => conversation.sessionId))).toEqual([
+      ['s-today'],
+      ['s-yesterday'],
+      ['s-older'],
+    ]);
   });
 });
