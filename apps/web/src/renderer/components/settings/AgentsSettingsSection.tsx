@@ -24,6 +24,8 @@ interface AgentsSettingsSectionProps {
    * different agent inside this section.
    */
   selectionToken?: number;
+  /** When set by a deep-link, the agent detail opens on this tab. */
+  initialSelectedTab?: string;
   precedenceByMindId: Record<string, MindInstructionPrecedence>;
   savingMindId: string | null;
   onToggleInheritance: (mind: MindContext, enabled: boolean) => Promise<void>;
@@ -45,6 +47,7 @@ export function AgentsSettingsSection({
   minds,
   initialSelectedMindId,
   selectionToken,
+  initialSelectedTab,
   precedenceByMindId,
   savingMindId,
   onToggleInheritance,
@@ -174,6 +177,7 @@ export function AgentsSettingsSection({
           <div className="min-w-0 flex-1">
             {selectedMind ? (
               <AgentDetail
+                key={`${selectedMind.mindId}-${selectionToken ?? 0}`}
                 mind={selectedMind}
                 profile={agentProfileByMindId[selectedMind.mindId]}
                 precedenceByMindId={precedenceByMindId}
@@ -182,6 +186,7 @@ export function AgentsSettingsSection({
                 restarting={restartingMindId === selectedMind.mindId}
                 onRestart={() => { void handleRestart(selectedMind.mindId); }}
                 actionMessage={actionMessage && actionMessage.mindId === selectedMind.mindId ? actionMessage.text : null}
+                initialTab={initialSelectedTab}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Select an agent to view its settings.</p>
@@ -202,6 +207,8 @@ interface AgentDetailProps {
   restarting: boolean;
   onRestart: () => void;
   actionMessage: string | null;
+  /** When set, the tabs open on this tab instead of overview. */
+  initialTab?: string;
 }
 
 function AgentDetail({
@@ -213,6 +220,7 @@ function AgentDetail({
   restarting,
   onRestart,
   actionMessage,
+  initialTab,
 }: AgentDetailProps) {
   const displayName = profile?.displayName ?? mind.identity.name;
   const status = STATUS_META[mind.status];
@@ -234,12 +242,13 @@ function AgentDetail({
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="mt-4">
+      <Tabs defaultValue={initialTab ?? 'overview'} className="mt-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="persona">Persona</TabsTrigger>
           <TabsTrigger value="model">Model</TabsTrigger>
           <TabsTrigger value="instructions">Instructions</TabsTrigger>
+          <TabsTrigger value="memory">Memory</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-3 space-y-4">
@@ -263,7 +272,6 @@ function AgentDetail({
           {actionMessage ? (
             <p role="status" className="text-xs text-muted-foreground">{actionMessage}</p>
           ) : null}
-          <WorkingMemoryViewer mindId={mind.mindId} precedence={precedenceByMindId[mind.mindId]} />
           <AgentDangerZone mind={mind} displayName={displayName} />
         </TabsContent>
 
@@ -282,6 +290,10 @@ function AgentDetail({
             savingMindId={savingMindId}
             onToggle={onToggleInheritance}
           />
+        </TabsContent>
+
+        <TabsContent value="memory" className="mt-3">
+          <WorkingMemoryViewer mindId={mind.mindId} precedence={precedenceByMindId[mind.mindId]} />
         </TabsContent>
       </Tabs>
     </div>
