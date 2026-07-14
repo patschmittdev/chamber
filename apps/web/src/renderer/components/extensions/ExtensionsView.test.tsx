@@ -6,7 +6,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CapabilityInventoryItem } from '@chamber/shared';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
-import { AppStateProvider, useAppState } from '../../lib/store';
+import { AppStateProvider, useAppDispatch, useAppState } from '../../lib/store';
 import { ExtensionsView } from './ExtensionsView';
 
 vi.mock('./SkillsTab', () => ({
@@ -29,6 +29,18 @@ function StateProbe() {
       <div data-testid="active-view">{activeView}</div>
       <div data-testid="pending-settings">{pendingSettingsIntent?.section ?? 'none'}</div>
     </>
+  );
+}
+
+function ScopeSwitcher() {
+  const dispatch = useAppDispatch();
+  return (
+    <button
+      type="button"
+      onClick={() => dispatch({ type: 'SET_ACTIVE_MIND', payload: null })}
+    >
+      Show global scope
+    </button>
   );
 }
 
@@ -62,6 +74,28 @@ describe('ExtensionsView', () => {
     expect(screen.getByRole('tab', { name: 'Tools 0' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Prompts 0' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Lens views 0' })).toBeTruthy();
+  });
+
+  it('refreshes the inventory and scope context when switching from a mind to the global workspace', async () => {
+    vi.mocked(api.capabilities.list).mockResolvedValue({
+      items: [capability()],
+      sources: [],
+    });
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ activeMindId: 'mind-1' }}>
+        <ExtensionsView />
+        <ScopeSwitcher />
+      </AppStateProvider>,
+    );
+
+    await waitFor(() => expect(api.capabilities.list).toHaveBeenCalledWith({ mindId: 'mind-1', availability: 'all' }));
+    expect(screen.getByText('Installed capabilities for the active mind and global workspace.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show global scope' }));
+
+    await waitFor(() => expect(api.capabilities.list).toHaveBeenLastCalledWith({ availability: 'all' }));
+    expect(screen.getByText('Installed capabilities for the global workspace.')).toBeTruthy();
   });
 
   it('defaults to the installed Skills category', async () => {
