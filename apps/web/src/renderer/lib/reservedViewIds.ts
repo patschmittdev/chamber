@@ -5,7 +5,7 @@
  * render a duplicate activity-bar button. Discovered views carrying a reserved
  * id are filtered out when they enter the store.
  */
-export const RESERVED_VIEW_IDS = ['chat', 'chatroom', 'activity', 'settings', 'a2a-relay', 'extensions'] as const;
+export const RESERVED_VIEW_IDS = ['chat', 'chatroom', 'settings', 'a2a-relay', 'extensions'] as const;
 
 export function isReservedViewId(id: string): boolean {
   return (RESERVED_VIEW_IDS as readonly string[]).includes(id);

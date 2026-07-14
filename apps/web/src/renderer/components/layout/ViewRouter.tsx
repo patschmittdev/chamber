@@ -5,10 +5,6 @@ import { ChatroomPanel } from '../chatroom/ChatroomPanel';
 import { LensViewRenderer } from '../views/LensViewRenderer';
 import { getVisibleLensViews } from '../../lib/lensVisibility';
 
-const OperatorActivityView = lazy(async () => {
-  const mod = await import('../activity/OperatorActivityView');
-  return { default: mod.OperatorActivityView };
-});
 const SettingsView = lazy(async () => {
   const mod = await import('../settings/SettingsView');
   return { default: mod.SettingsView };
@@ -39,6 +35,10 @@ export function ViewRouter() {
   );
 
   useEffect(() => {
+    if (activeView === 'activity') {
+      dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+      return;
+    }
     const isDisabledActiveLens = discoveredViews.some((view) => view.id === activeView)
       && !visibleViews.some((view) => view.id === activeView);
     if (isDisabledActiveLens) {
@@ -52,14 +52,6 @@ export function ViewRouter() {
 
   if (activeView === 'chatroom') {
     return <ChatroomPanel />;
-  }
-
-  if (activeView === 'activity') {
-    return (
-      <Suspense fallback={<LazyViewFallback />}>
-        <OperatorActivityView />
-      </Suspense>
-    );
   }
 
   if (activeView === 'settings') {

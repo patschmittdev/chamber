@@ -1,6 +1,5 @@
 import type { Dispatch } from 'react';
 import {
-  Activity,
   Archive,
   ArchiveRestore,
   Blocks,
@@ -46,7 +45,6 @@ const GROUP_GENERAL = 'General';
 const STATIC_VIEWS: readonly { id: LensView; label: string; icon: LucideIcon }[] = [
   { id: 'chat', label: 'Open Chat', icon: MessageSquare },
   { id: 'chatroom', label: 'Open Chatroom', icon: Users },
-  { id: 'activity', label: 'Open Operator Activity', icon: Activity },
   { id: 'extensions', label: 'Open Extensions', icon: Blocks },
   { id: 'settings', label: 'Open Settings', icon: Settings },
 ];

@@ -29,6 +29,21 @@ function ActiveViewProbe({ onChange }: { onChange: (activeView: string) => void 
 }
 
 describe('ViewRouter', () => {
+  it('migrates legacy activity view state back to chat', async () => {
+    const onActiveViewChange = vi.fn();
+    render(
+      <AppStateProvider testInitialState={{ activeView: 'activity' }}>
+        <ActiveViewProbe onChange={onActiveViewChange} />
+        <ViewRouter />
+      </AppStateProvider>,
+    );
+
+    expect(screen.getByText('Chat panel')).toBeTruthy();
+    await waitFor(() => {
+      expect(onActiveViewChange).toHaveBeenCalledWith('chat');
+    });
+  });
+
   it('falls back to chat when the active Lens view is disabled', async () => {
     const onActiveViewChange = vi.fn();
     render(
