@@ -58,15 +58,21 @@ describe('seedLensDefaults', () => {
 
     expect(fileText(mindLensPath('hello-world/view.json'))).toContain('"Hello World"');
     expect(fileText(mindLensPath('newspaper/view.json'))).toContain('"Newspaper"');
+    expect(fileText(mindLensPath('hello-world/view.json'))).toContain('Starter template');
+    expect(fileText(mindLensPath('newspaper/view.json'))).toContain('Starter template');
+    expect(fileText(mindLensPath('hello-world/view.json'))).toContain('"isSampleTemplate": true');
+    expect(fileText(mindLensPath('newspaper/view.json'))).toContain('"isSampleTemplate": true');
   });
 
-  it('skips when views exist', () => {
-    addFile(mindLensPath('hello-world/view.json'), '{}');
-    addFile(mindLensPath('newspaper/view.json'), '{}');
+  it('preserves deliberate replacements when default view ids already exist', () => {
+    addFile(mindLensPath('hello-world/view.json'), '{"name":"My replacement"}');
+    addFile(mindLensPath('newspaper/view.json'), '{"name":"My briefing"}');
 
     seedLensDefaults(MIND_PATH);
 
     expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled();
+    expect(fileText(mindLensPath('hello-world/view.json'))).toBe('{"name":"My replacement"}');
+    expect(fileText(mindLensPath('newspaper/view.json'))).toBe('{"name":"My briefing"}');
   });
 });
 

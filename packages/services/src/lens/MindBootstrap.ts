@@ -28,7 +28,8 @@ export function seedLensDefaults(mindPath: string): void {
     fs.writeFileSync(helloViewJson, JSON.stringify({
       name: 'Hello World',
       icon: 'zap',
-      description: 'Sample form view: shows a snapshot of the mind (agent name, inbox count, initiatives, domains). A simple example you can edit or replace.',
+      isSampleTemplate: true,
+      description: 'Starter template: a simple snapshot of this mind. First use generates current data, and you can keep, hide, or replace it.',
       view: 'form',
       source: 'data.json',
       prompt: 'Report your current status including: your agent name, the mind directory name, how many files are in inbox/, how many initiatives exist, how many domains exist, and what extensions are loaded. Write the result as a flat JSON object to the path specified below.',
@@ -56,7 +57,8 @@ export function seedLensDefaults(mindPath: string): void {
     fs.writeFileSync(newsViewJson, JSON.stringify({
       name: 'Newspaper',
       icon: 'newspaper',
-      description: 'Morning briefing: top priorities, active initiatives, inbox volume, and recent changes from this mind.',
+      isSampleTemplate: true,
+      description: 'Starter template: a morning briefing for this mind. First use generates current data, and you can keep, hide, or replace it.',
       view: 'briefing',
       source: 'briefing.json',
       prompt: 'Generate a morning briefing for this mind. Count inbox/ items, list active initiatives with their status and next actions, count domains, and note any recent changes. Write the result as a flat JSON object to the path specified below.',

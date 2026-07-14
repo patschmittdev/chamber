@@ -12,6 +12,9 @@ import { LensEditor } from './LensEditor';
 import { LensForm } from './LensForm';
 import { CanvasLensView } from './CanvasLensView';
 import { Skeleton } from '../ui/skeleton';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { Button } from '../ui/button';
+import { EmptyState } from '../ui/empty-state';
 
 interface Props {
   view: LensViewManifest;
@@ -20,6 +23,9 @@ interface Props {
 const log = Logger.create('LensView');
 
 const pendingRefreshes = new Map<string, Promise<Record<string, unknown> | null>>();
+
+type LensOperation = 'loading' | 'ready' | 'loaded' | 'refreshing' | 'refreshed' | 'acting' | 'updated';
+type LensErrorOperation = 'load' | 'refresh' | 'action';
 
 function refreshLensView(viewId: string): Promise<Record<string, unknown> | null> {
   const existing = pendingRefreshes.get(viewId);
@@ -43,8 +49,10 @@ export function LensViewRenderer({ view }: Props) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorOperation, setErrorOperation] = useState<LensErrorOperation | null>(null);
+  const [operation, setOperation] = useState<LensOperation>('loading');
   const [actionInput, setActionInput] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -59,6 +67,8 @@ export function LensViewRenderer({ view }: Props) {
     const load = async () => {
       const pendingRefresh = pendingRefreshes.get(view.id);
       if (pendingRefresh) setLoading(true);
+      setErrorOperation(null);
+      setOperation('loading');
       try {
         const result = await window.electronAPI.lens.getViewData(view.id);
         if (cancelled) return;
@@ -67,10 +77,13 @@ export function LensViewRenderer({ view }: Props) {
           const refreshed = await pendingRefresh;
           if (cancelled) return;
           setData(refreshed);
+          setOperation('refreshed');
+        } else {
+          setOperation(result ? 'loaded' : 'ready');
         }
       } catch (err) {
         log.error(`Failed to load data for ${view.id}:`, err);
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load view data');
+        if (!cancelled) setErrorOperation('load');
       } finally {
         if (!cancelled && pendingRefresh) setLoading(false);
         if (!cancelled) setInitializing(false);
@@ -80,36 +93,62 @@ export function LensViewRenderer({ view }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [view.id]);
+  }, [view.id, loadAttempt]);
 
   const handleRefresh = useCallback(async () => {
     if (loading) return;
     setLoading(true);
-    setError(null);
+    setErrorOperation(null);
+    setOperation('refreshing');
     try {
       const result = await refreshLensView(view.id);
-      if (mountedRef.current) setData(result);
+      if (mountedRef.current) {
+        setData(result);
+        setOperation('refreshed');
+      }
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : 'Refresh failed');
+      log.error(`Failed to refresh ${view.id}:`, err);
+      if (mountedRef.current) setErrorOperation('refresh');
     } finally {
       if (mountedRef.current) setLoading(false);
     }
   }, [view.id, loading]);
 
-  const handleAction = useCallback(async () => {
-    if (loading || !actionInput.trim()) return;
+  const submitAction = useCallback(async (action: string) => {
+    if (loading || !action.trim()) return;
     setLoading(true);
-    setError(null);
+    setErrorOperation(null);
+    setOperation('acting');
     try {
-      const result = await window.electronAPI.lens.sendAction(view.id, actionInput.trim());
-      setData(result);
-      setActionInput('');
+      const result = await window.electronAPI.lens.sendAction(view.id, action.trim());
+      if (mountedRef.current) {
+        setData(result);
+        setActionInput('');
+        setOperation('updated');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Action failed');
+      log.error(`Failed to apply action to ${view.id}:`, err);
+      if (mountedRef.current) setErrorOperation('action');
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
-  }, [view.id, actionInput, loading]);
+  }, [view.id, loading]);
+
+  const handleAction = useCallback(() => {
+    void submitAction(actionInput);
+  }, [actionInput, submitAction]);
+
+  const retry = useCallback(() => {
+    if (errorOperation === 'refresh') {
+      void handleRefresh();
+      return;
+    }
+    if (errorOperation === 'action') {
+      void submitAction(actionInput);
+      return;
+    }
+    setLoadAttempt((attempt) => attempt + 1);
+  }, [actionInput, errorOperation, handleRefresh, submitAction]);
 
   const isWideView = view.view === 'table' || view.view === 'status-board' || view.view === 'timeline';
   const isProseView = view.view === 'detail';
@@ -128,72 +167,54 @@ export function LensViewRenderer({ view }: Props) {
             <p className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">{view.view} view</p>
           </div>
           {view.prompt && (
-            <button
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
               onClick={handleRefresh}
               disabled={loading}
-              className={cn(
-                'surface-card surface-card-hover flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-border bg-card text-muted-foreground hover:text-foreground',
-                loading && 'opacity-50 cursor-not-allowed'
-              )}
             >
               <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
               {loading ? 'Refreshing…' : 'Refresh'}
-            </button>
+            </Button>
           )}
         </div>
 
-        {/* Error state */}
-        {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
+        {view.isSampleTemplate ? <SampleLensNotice view={view} /> : null}
+
+        <LensStatus operation={operation} />
+
+        {errorOperation ? (
+          <Alert variant="destructive">
+            <AlertTitle>{lensErrorTitle(errorOperation)}</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center gap-3">
+              <span>{lensErrorMessage(errorOperation)}</span>
+              <Button type="button" size="sm" variant="outline" onClick={retry}>
+                Try again
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         {/* Content */}
-        {initializing && !data && !error ? (
+        {initializing && !data && !errorOperation ? (
           <LensViewSkeleton wide={isWideView} />
         ) : data ? (
           <div className="chamber-fade-in">
-          <LensViewContent view={view} data={data} onAction={async (action) => {
-            setLoading(true);
-            try {
-              const result = await window.electronAPI.lens.sendAction(view.id, action);
-              setData(result);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : 'Action failed');
-            } finally {
-              setLoading(false);
-            }
-          }} />
+          <LensViewContent view={view} data={data} onAction={submitAction} />
           </div>
         ) : (
-          <div className="surface-card rounded-xl border border-border bg-card px-6 py-10 text-center flex flex-col items-center">
-            <div className="h-11 w-11 rounded-xl bg-primary flex items-center justify-center mb-4">
-              <Sparkles size={18} className="text-primary-foreground" />
-            </div>
-            {view.prompt ? (
-              <>
-                <p className="text-sm font-medium text-foreground">No data yet</p>
-                <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                  {description || 'Generate this view to populate it with live data from the mind.'}
-                </p>
-                <button
-                  onClick={handleRefresh}
-                  disabled={loading}
-                  className={cn(
-                    'mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-                    'bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.99]',
-                    loading && 'opacity-50 cursor-not-allowed',
-                  )}
-                >
+          <EmptyState
+            icon={<Sparkles size={18} />}
+            title={view.prompt ? 'No data yet' : 'No data available'}
+            description={view.prompt ? description || 'Generate this view to populate it with live data from the mind.' : undefined}
+            action={view.prompt ? (
+              <Button type="button" onClick={handleRefresh} disabled={loading}>
                   <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
                   {loading ? 'Generating…' : 'Generate'}
-                </button>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">No data available.</p>
-            )}
-          </div>
+              </Button>
+            ) : undefined}
+          />
         )}
 
         {/* Action input — write-back via agent */}
@@ -208,23 +229,89 @@ export function LensViewRenderer({ view }: Props) {
               disabled={loading}
               className="flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
             />
-            <button
+            <Button
+              type="button"
+              size="icon"
+              aria-label="Send action"
               onClick={handleAction}
               disabled={loading || !actionInput.trim()}
-              className={cn(
-                'shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all',
+              className={cn('size-8',
                 actionInput.trim() && !loading
-                  ? 'bg-primary text-primary-foreground hover:opacity-90'
-                  : 'bg-muted text-muted-foreground'
+                  ? ''
+                  : 'bg-muted text-muted-foreground hover:bg-muted',
               )}
             >
               <Send size={14} />
-            </button>
+            </Button>
           </div>
         )}
       </div>
     </div>
   );
+}
+
+function SampleLensNotice({ view }: { view: LensViewManifest }) {
+  const [hiding, setHiding] = useState(false);
+  const [hideError, setHideError] = useState(false);
+
+  const hideSample = async () => {
+    setHiding(true);
+    setHideError(false);
+    try {
+      await window.electronAPI.lens.setViewEnabled(view.id, false);
+    } catch (err) {
+      log.error(`Failed to hide sample Lens ${view.id}:`, err);
+      setHideError(true);
+    } finally {
+      setHiding(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+      <p className="text-sm font-medium">Sample template</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        This starter view is safe to keep, hide, or replace.
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        First use generates a current snapshot from this mind. Refresh runs the same request again.
+      </p>
+      <details className="mt-3 text-sm">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Hide or replace this sample</summary>
+        <p className="mt-2 text-muted-foreground">
+          Hide removes it from navigation without deleting it. Replace it by changing this template in your mind&apos;s Lens source.
+        </p>
+        <Button type="button" size="sm" variant="outline" className="mt-3" disabled={hiding} onClick={() => { void hideSample(); }}>
+          {hiding ? 'Hiding…' : 'Hide sample'}
+        </Button>
+      </details>
+      {hideError ? <p className="mt-2 text-sm text-destructive" role="alert">This sample could not be hidden. Try again.</p> : null}
+    </div>
+  );
+}
+
+function LensStatus({ operation }: { operation: LensOperation }) {
+  const message = {
+    loading: 'Loading this view.',
+    ready: 'Ready to generate.',
+    loaded: 'Current view data loaded.',
+    refreshing: 'Refreshing this view.',
+    refreshed: 'View refreshed.',
+    acting: 'Sending action to the mind.',
+    updated: 'View updated.',
+  }[operation];
+
+  return <p className="sr-only" role="status" aria-live="polite">{message}</p>;
+}
+
+function lensErrorTitle(operation: LensErrorOperation): string {
+  return operation === 'action' ? 'Could not update this Lens view' : 'Could not load this Lens view';
+}
+
+function lensErrorMessage(operation: LensErrorOperation): string {
+  if (operation === 'action') return 'This Lens view could not be updated. Try again.';
+  if (operation === 'refresh') return 'This Lens view could not be refreshed. Try again.';
+  return 'This Lens view could not be loaded. Try again.';
 }
 
 /**

@@ -144,6 +144,66 @@ describe('CanvasLensView', () => {
     expect(screen.queryByText('Action failed.')).toBeNull();
   });
 
+  it('announces the bounded Canvas action lifecycle without treating acceptance as completion', async () => {
+    render(<CanvasLensView view={{
+      icon: 'layout',
+      id: 'command-center',
+      name: 'Command Center',
+      source: 'index.html',
+      view: 'canvas',
+    }} />);
+
+    await screen.findByTitle('Command Center');
+    emitCanvasActionStatus?.({
+      actionId: 'action-1',
+      mindId: 'mind-1',
+      status: 'accepted',
+      viewId: 'command-center',
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('Action received.');
+    });
+
+    emitCanvasActionStatus?.({
+      actionId: 'action-1',
+      mindId: 'mind-1',
+      status: 'running',
+      viewId: 'command-center',
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('Action in progress.');
+    });
+
+    emitCanvasActionStatus?.({
+      actionId: 'action-1',
+      mindId: 'mind-1',
+      status: 'completed',
+      viewId: 'command-center',
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('Action completed.');
+    });
+  });
+
+  it('presents a safe retry when the Canvas source cannot load', async () => {
+    const api = window.electronAPI;
+    vi.mocked(api.lens.getCanvasUrl).mockRejectedValue(new Error('C:\\private\\mind\\canvas\\failure.html'));
+
+    render(<CanvasLensView view={{
+      icon: 'layout',
+      id: 'command-center',
+      name: 'Command Center',
+      source: 'index.html',
+      view: 'canvas',
+    }} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toContain('This Canvas Lens could not be loaded. Try again.');
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    });
+    expect(screen.queryByText('C:\\private\\mind\\canvas\\failure.html')).toBeNull();
+  });
+
   it('refreshes the view before reloading the iframe url', async () => {
     render(<CanvasLensView view={{
       icon: 'layout',

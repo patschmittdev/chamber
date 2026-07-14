@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add curated extension discovery** — Adds a safe, searchable directory with bounded details and an inline install preflight that routes tool changes to the existing source-specific management flow.
 - **Safe connector and tool operations** — Adds redacted MCP configuration checks and serialized global CLI install, update, and removal feedback.
 - **Add focused Skills and Prompts authoring workspaces** — Replaces modal-driven editing with safe inline detail editors, validation, explicit scope and provenance, unsaved-change protection, and active-mind drafting handoffs.
+- **Clarify Lens templates and lifecycle feedback** — Default Lens templates now explain first use, hide or replace behavior, and truthful refresh or action progress; Canvas actions surface the trusted lifecycle inside their frame.
 
 ### Refactor
 

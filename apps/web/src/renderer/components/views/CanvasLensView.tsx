@@ -4,6 +4,8 @@ import { RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Logger } from '../../lib/logger';
 import { useTheme } from '../../hooks/useTheme';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { Button } from '../ui/button';
 
 interface Props {
   view: LensViewManifest;
@@ -33,7 +35,8 @@ export function CanvasLensView({ view }: Props) {
   const { resolvedTheme } = useTheme();
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<'load' | 'refresh' | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [frameKey, setFrameKey] = useState(0);
   const [actionStatus, setActionStatus] = useState<CanvasActionStatus | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -82,7 +85,7 @@ export function CanvasLensView({ view }: Props) {
       } catch (err) {
         log.error(`Failed to load Canvas Lens ${view.id}:`, err);
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load Canvas Lens');
+          setError('load');
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -92,7 +95,7 @@ export function CanvasLensView({ view }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [view.id]);
+  }, [view.id, loadAttempt]);
 
   const handleRefresh = useCallback(async () => {
     if (loading) return;
@@ -102,7 +105,8 @@ export function CanvasLensView({ view }: Props) {
       await window.electronAPI.lens.refreshView(view.id);
       await loadCanvasUrl();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Refresh failed');
+      log.error(`Failed to refresh Canvas Lens ${view.id}:`, err);
+      setError('refresh');
     } finally {
       setLoading(false);
     }
@@ -116,25 +120,35 @@ export function CanvasLensView({ view }: Props) {
           <p className="text-xs text-muted-foreground">Canvas Lens</p>
         </div>
         {view.prompt && (
-          <button
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
             onClick={handleRefresh}
             disabled={loading}
-            className={cn(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors',
-              'bg-secondary hover:bg-accent text-muted-foreground hover:text-foreground',
-              loading && 'opacity-50 cursor-not-allowed'
-            )}
           >
             <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
             {loading ? 'Refreshing...' : 'Refresh'}
-          </button>
+          </Button>
         )}
       </div>
 
       {error && (
-        <div className="m-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert className="m-4 w-auto" variant="destructive">
+          <AlertTitle>{error === 'refresh' ? 'Could not refresh this Canvas Lens' : 'Could not load this Canvas Lens'}</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>{error === 'refresh' ? 'This Canvas Lens could not be refreshed. Try again.' : 'This Canvas Lens could not be loaded. Try again.'}</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => {
+              if (error === 'refresh') {
+                void handleRefresh();
+              } else {
+                setLoadAttempt((attempt) => attempt + 1);
+              }
+            }}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
       {actionStatus && (
         <div className="mx-4 mt-4 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground" role="status">
