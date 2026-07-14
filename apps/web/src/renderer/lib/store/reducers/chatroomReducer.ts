@@ -2,7 +2,7 @@ import type { ChatroomMessage, TaskLedgerItem } from '@chamber/shared/chatroom-t
 import { isOrchestrationEvent } from '@chamber/shared/chatroom-types';
 import type { ChatEvent } from '@chamber/shared/types';
 import type { AppState, AppAction } from '../state';
-import { handleChatEvent } from './helpers';
+import { handleChatEvent, messageHasId } from './helpers';
 
 type Handler<T extends AppAction['type']> = (
   state: AppState,
@@ -114,7 +114,7 @@ function chatroomEvent(
   const chatEvent = event as ChatEvent;
   let messages = state.chatroomMessages;
 
-  const exists = messages.some((m) => m.id === messageId);
+  const exists = messageHasId(messages, messageId);
   if (!exists) {
     const placeholder: ChatroomMessage = {
       id: messageId,

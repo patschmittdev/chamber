@@ -227,6 +227,10 @@ function messageIndexFor(messages: readonly ChatMessage[]): Map<string, number> 
   return index;
 }
 
+export function messageHasId(messages: readonly ChatMessage[], messageId: string): boolean {
+  return messageIndexFor(messages).has(messageId);
+}
+
 export function handleChatEvent<T extends ChatMessage>(messages: T[], messageId: string, event: ChatEvent): T[] {
   const index = messageIndexFor(messages);
   const at = index.get(messageId);
