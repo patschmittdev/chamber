@@ -252,6 +252,7 @@ export function installBrowserApi(): void {
       }),
       onViewsChanged: () => noopUnsubscribe,
       onVisibilityChanged: () => noopUnsubscribe,
+      onCanvasActionStatus: () => noopUnsubscribe,
     },
     auth: {
       getStatus: () => client.getAuthStatus(),

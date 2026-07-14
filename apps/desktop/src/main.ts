@@ -514,7 +514,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     }),
   });
   canvasService = new CanvasService({
-    onAction: (action) => {
+    onAction: async (action) => {
       if (!action.lensViewId) {
         log.info('Canvas action received:', action);
         return;
@@ -524,12 +524,14 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
         log.warn(`Canvas Lens action for unknown mind: ${action.mindId}`);
         return;
       }
-      void viewDiscovery.sendCanvasAction(action.lensViewId, {
+      await viewDiscovery.sendCanvasAction(action.lensViewId, {
         action: action.action,
         data: action.data,
-      }, mindPath).catch((error: unknown) => {
-        log.warn('Canvas Lens action failed:', error);
-      });
+        correlationId: action.actionId,
+      }, mindPath);
+      const sourcePath = viewDiscovery.getViewSourcePath(action.lensViewId, mindPath);
+      if (!sourcePath) throw new Error(`Canvas Lens source not found after action: ${action.lensViewId}`);
+      await canvasService.showLensCanvas(action.mindId, mindPath, action.lensViewId, sourcePath);
     },
     openExternal: { open: (url) => shell.openExternal(url) },
   });
@@ -1233,6 +1235,12 @@ function createLensRefreshHandler(sendBackgroundPrompt: (mindPath: string, promp
       if (Number.isFinite(delayMs) && delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
+      if (prompt.startsWith('The user interacted with the Canvas Lens view')) {
+        const sourcePath = parseCanvasLensActionSourcePath(prompt);
+        const source = fs.readFileSync(sourcePath, 'utf8');
+        fs.writeFileSync(sourcePath, source.replace('Action pending', 'Action completed'));
+        return;
+      }
       fs.writeFileSync(parseLensRefreshOutputPath(prompt), `${JSON.stringify(refreshData, null, 2)}\n`);
     },
   };
@@ -1241,5 +1249,11 @@ function createLensRefreshHandler(sendBackgroundPrompt: (mindPath: string, promp
 function parseLensRefreshOutputPath(prompt: string): string {
   const match = /Write the JSON output to:\s*(.+)\s*$/m.exec(prompt);
   if (!match?.[1]) throw new Error('E2E Lens refresh prompt did not include an output path.');
+  return match[1].trim();
+}
+
+function parseCanvasLensActionSourcePath(prompt: string): string {
+  const match = /Canvas Lens view ".+" \(source: (.+)\)\./.exec(prompt);
+  if (!match?.[1]) throw new Error('E2E Canvas Lens action prompt did not include a source path.');
   return match[1].trim();
 }

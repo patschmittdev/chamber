@@ -124,6 +124,7 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     setViewEnabled: { status: 'planned' },
     onViewsChanged: { status: 'planned' },
     onVisibilityChanged: { status: 'planned' },
+    onCanvasActionStatus: { status: 'planned' },
   },
   auth: {
     getStatus: supported,

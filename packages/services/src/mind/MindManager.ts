@@ -2049,23 +2049,9 @@ export class MindManager extends EventEmitter {
     const mind = this.listMinds().find(m => this.mindPathKey(m.mindPath) === requestedMindPathKey);
     if (!mind) return;
     const context = this.minds.get(mind.mindId);
-    if (!context?.session) return;
+    if (!context) return;
 
-    await context.session.send({ prompt: injectCurrentDateTimeContext(prompt, getCurrentDateTimeContext()) });
-    await new Promise<void>((resolve) => {
-      let unsub: (() => void) | undefined;
-      const timeout = setTimeout(() => {
-        unsub?.();
-        unsub = undefined;
-        resolve();
-      }, 120_000);
-      unsub = context.session?.on('session.idle', () => {
-        clearTimeout(timeout);
-        unsub?.();
-        unsub = undefined;
-        resolve();
-      });
-    });
+    await this.runIsolatedPrompt(mind.mindId, prompt);
   }
 
   private persistConfig(): void {

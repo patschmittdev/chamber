@@ -10,6 +10,7 @@ const cdpPort = Number(process.env.CHAMBER_E2E_LENS_CDP_PORT ?? 9336);
 const smokeViewId = 'smoke-hotload';
 const refreshViewId = 'smoke-refresh-continuity';
 const canvasSmokeViewId = 'canvas-smoke';
+const fixedCanvasSmokeViewId = 'canvas-fixed-smoke';
 
 test.describe('electron Lens hot-load smoke', () => {
   test.setTimeout(180_000);
@@ -181,7 +182,8 @@ test.describe('electron Lens hot-load smoke', () => {
       { timeout: 10_000 },
     ).toBe(true);
 
-    await page.getByRole('button', { name: 'Canvas Smoke' }).click();
+    await page.locator('button').filter({ hasText: /\bActive Lens Smoke Mind\b/ }).click();
+    await page.getByRole('button', { name: 'Canvas Smoke', exact: true }).click();
 
     const frame = page.frameLocator('iframe[title="Canvas Smoke"]');
     await expect(frame.getByRole('heading', { name: 'Chamber Canvas Smoke' })).toBeVisible();
@@ -209,13 +211,63 @@ test.describe('electron Lens hot-load smoke', () => {
       { timeout: 10_000 },
     ).toBe(true);
 
-    await page.getByRole('button', { name: 'Canvas Smoke' }).click();
+    await page.locator('button').filter({ hasText: /\bActive Lens Smoke Mind\b/ }).click();
+    await page.getByRole('button', { name: 'Canvas Smoke', exact: true }).click();
 
     const frame = page.frameLocator('iframe[title="Canvas Smoke"]');
     await frame.getByRole('button', { name: 'Send smoke action' }).click();
 
-    await expect(frame.getByText('Action bridge returned: ok')).toBeVisible();
+    await expect(page.getByRole('status')).toHaveText('Action completed.');
+    await expect(frame.getByText('Action completed')).toBeVisible();
     expect((app?.logs ?? []).join('\n')).not.toContain('SDK contract mismatch for tool.execution_start');
+  });
+
+  test('propagates inherited Canvas appearance live and retains fixed appearance across iframe reloads', async () => {
+    const page = await findRendererPage(app?.browser, app?.logs ?? []);
+    await page.waitForLoadState('domcontentloaded');
+
+    const mind = await page.evaluate(async ({ pathToMind }) => {
+      const loaded = await window.electronAPI.mind.add(pathToMind);
+      await window.electronAPI.mind.setActive(loaded.mindId);
+      return loaded;
+    }, { pathToMind: mindPath });
+
+    writeCanvasLensView(mindPath);
+    writeCanvasLensView(mindPath, {
+      appearance: 'light',
+      id: fixedCanvasSmokeViewId,
+      name: 'Fixed Canvas Smoke',
+    });
+
+    await expect.poll(
+      () => page.evaluate(async ({ mindId, inheritedId, fixedId }) => {
+        const views = await window.electronAPI.lens.getViews(mindId);
+        return views.some((view) => view.id === inheritedId)
+          && views.some((view) => view.id === fixedId);
+      }, { mindId: mind.mindId, inheritedId: canvasSmokeViewId, fixedId: fixedCanvasSmokeViewId }),
+      { timeout: 10_000 },
+    ).toBe(true);
+
+    await page.evaluate(() => window.chamberAppearance?.set({ themePreference: 'light' }));
+    await page.locator('button').filter({ hasText: /\bActive Lens Smoke Mind\b/ }).click();
+    await page.getByRole('button', { name: 'Canvas Smoke', exact: true }).click();
+    const inheritedFrame = page.frameLocator('iframe[title="Canvas Smoke"]');
+    await expect(inheritedFrame.locator('html')).toHaveAttribute('data-chamber-theme', 'light');
+
+    await page.evaluate(async ({ viewId, mindId }) => {
+      await window.electronAPI.lens.getCanvasUrl(viewId, mindId);
+    }, { viewId: canvasSmokeViewId, mindId: mind.mindId });
+    await expect(inheritedFrame.locator('html')).toHaveAttribute('data-chamber-theme', 'light');
+
+    await page.evaluate(() => window.chamberAppearance?.set({ themePreference: 'dark' }));
+    await expect(inheritedFrame.locator('html')).toHaveAttribute('data-chamber-theme', 'dark');
+
+    await page.getByRole('button', { name: 'Fixed Canvas Smoke', exact: true }).click();
+    const fixedFrame = page.frameLocator('iframe[title="Fixed Canvas Smoke"]');
+    await expect(fixedFrame.locator('html')).toHaveAttribute('data-chamber-theme', 'light');
+
+    await page.evaluate(() => window.chamberAppearance?.set({ themePreference: 'dark' }));
+    await expect(fixedFrame.locator('html')).toHaveAttribute('data-chamber-theme', 'light');
   });
 });
 
@@ -253,16 +305,22 @@ function writeLensView(
   fs.writeFileSync(path.join(viewDir, 'data.json'), JSON.stringify(data, null, 2));
 }
 
-function writeCanvasLensView(root: string): void {
-  const viewDir = path.join(root, '.github', 'lens', canvasSmokeViewId);
+function writeCanvasLensView(
+  root: string,
+  options: { appearance?: 'light' | 'dark'; id?: string; name?: string } = {},
+): void {
+  const id = options.id ?? canvasSmokeViewId;
+  const name = options.name ?? 'Canvas Smoke';
+  const viewDir = path.join(root, '.github', 'lens', id);
   fs.mkdirSync(viewDir, { recursive: true });
   fs.writeFileSync(
     path.join(viewDir, 'view.json'),
     JSON.stringify({
-      name: 'Canvas Smoke',
+      name,
       icon: 'layout',
       view: 'canvas',
       source: 'index.html',
+      ...(options.appearance ? { appearance: options.appearance } : {}),
     }, null, 2),
   );
   fs.writeFileSync(
@@ -270,7 +328,7 @@ function writeCanvasLensView(root: string): void {
     [
       '<!DOCTYPE html>',
       '<html lang="en">',
-      '<head><meta charset="utf-8"><title>Canvas Smoke</title></head>',
+      `<head><meta charset="utf-8"><title>${name}</title></head>`,
       '<body>',
       '  <main class="ch-page">',
       '    <section class="ch-card">',

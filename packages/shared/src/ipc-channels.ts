@@ -61,6 +61,7 @@ export const IPC = {
     SET_VIEW_ENABLED: 'lens:setViewEnabled',
     VISIBILITY_CHANGED: 'lens:visibilityChanged',
     VIEWS_CHANGED: 'lens:viewsChanged',
+    CANVAS_ACTION_STATUS: 'lens:canvasActionStatus',
   },
   AUTH: {
     GET_STATUS: 'auth:getStatus',

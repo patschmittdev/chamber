@@ -299,19 +299,48 @@ describe('MindManager', () => {
       expect(manager.listMinds()[0].activeSessionId).toBe('chamber-q-a1b2-existing');
     });
 
-    it('injects current datetime context into background prompts', async () => {
+    it('runs background prompts in an isolated session with current datetime context', async () => {
       await manager.loadMind('/tmp/agents/q');
-      const session = mockCreateSession.mock.results.at(-1)?.value;
-      session.on.mockImplementation((event: string, callback: () => void) => {
-        if (event === 'session.idle') setTimeout(callback, 0);
-        return vi.fn();
+      const activeSession = mockCreateSession.mock.results.at(-1)?.value;
+      const isolatedSession = createSessionStub();
+      isolatedSession.sendAndWait.mockResolvedValue({
+        type: 'assistant.message',
+        data: { content: 'Background work completed', messageId: 'assistant-1' },
       });
+      mockCreateSession.mockReturnValueOnce(isolatedSession);
+
       await manager.sendBackgroundPrompt('/tmp/agents/q', 'do background work');
 
-      const sentPrompt = session.send.mock.calls[0]?.[0]?.prompt;
+      const sentPrompt = isolatedSession.sendAndWait.mock.calls[0]?.[0]?.prompt;
       expect(sentPrompt).toEqual(expect.stringContaining('<current_datetime>'));
       expect(sentPrompt).toEqual(expect.stringContaining('<timezone>'));
       expect(sentPrompt).toEqual(expect.stringContaining('do background work'));
+      expect(activeSession.send).not.toHaveBeenCalled();
+      expect(isolatedSession.disconnect).toHaveBeenCalled();
+    });
+
+    it('does not let another turn idle event complete a background prompt', async () => {
+      vi.useFakeTimers();
+      await manager.loadMind('/tmp/agents/q');
+      const activeSession = mockCreateSession.mock.results.at(-1)?.value;
+      const isolatedSession = createSessionStub();
+      isolatedSession.sendAndWait.mockResolvedValue({
+        type: 'assistant.message',
+        data: { content: 'Background work completed', messageId: 'assistant-1' },
+      });
+      mockCreateSession.mockReturnValueOnce(isolatedSession);
+
+      const completion = manager.sendBackgroundPrompt('/tmp/agents/q', 'do background work');
+      try {
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(activeSession.on).not.toHaveBeenCalled();
+        await completion;
+      } finally {
+        await vi.runAllTimersAsync();
+        vi.useRealTimers();
+      }
     });
 
     it('runs automation prompts in an isolated session without touching the active conversation', async () => {

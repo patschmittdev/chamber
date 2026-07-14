@@ -1,11 +1,26 @@
+import type { CanvasLensActionStatus } from '@chamber/shared/types';
+
 export interface CanvasAction {
   mindId: string;
   canvas: string;
   action: string;
   data: unknown;
   timestamp: number;
+  actionId: string;
   lensViewId?: string;
 }
+
+export type CanvasActionStatus = CanvasLensActionStatus;
+
+export interface CanvasActionStatusEvent {
+  mindId: string;
+  canvas: string;
+  actionId: string;
+  status: CanvasActionStatus;
+  lensViewId?: string;
+}
+
+export type CanvasActionHandler = (action: CanvasAction) => Promise<void> | void;
 
 export interface CanvasEntry {
   name: string;

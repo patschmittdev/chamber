@@ -50,6 +50,7 @@ import type {
   ConversationExportResult,
   ConversationResumeResult,
   ConversationSummary,
+  CanvasLensActionStatusEvent,
   DesktopUpdateActionResult,
   DesktopUpdateState,
   GenesisMindTemplate,
@@ -157,6 +158,7 @@ export interface ElectronAPI {
     setViewEnabled: (viewId: string, enabled: boolean, mindId?: string) => Promise<LensViewVisibility>;
     onViewsChanged: (callback: (views: LensViewManifest[], mindId?: string) => void) => () => void;
     onVisibilityChanged: (callback: (visibility: LensViewVisibility) => void) => () => void;
+    onCanvasActionStatus: (callback: (status: CanvasLensActionStatusEvent) => void) => () => void;
   };
   auth: {
     getStatus: () => Promise<{ authenticated: boolean; login?: string }>;
