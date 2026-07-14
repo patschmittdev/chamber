@@ -85,4 +85,33 @@ describe('PromptLibraryStore', () => {
   it('accepts the canonical prompts file inside the config directory', () => {
     expect(() => assertPromptsPathConfined(dir, path.join(dir, 'prompts.json'))).not.toThrow();
   });
+
+  it.skipIf(!CAN_SYMLINK)('rejects a prompts file reached through a symlink', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-prompts-outside-'));
+    const link = path.join(dir, 'prompts.json');
+    try {
+      fs.writeFileSync(path.join(outside, 'prompts.json'), '[]');
+      fs.symlinkSync(path.join(outside, 'prompts.json'), link, 'file');
+      expect(() => assertPromptsPathConfined(dir, link)).toThrow(/symbolic link/i);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
 });
+
+function canSymlink(): boolean {
+  const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-prompts-symlink-probe-'));
+  try {
+    const target = path.join(probe, 'target.txt');
+    const link = path.join(probe, 'link.txt');
+    fs.writeFileSync(target, 'x');
+    fs.symlinkSync(target, link, 'file');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+const CAN_SYMLINK = canSymlink();

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { assertContained, ContainmentError } from '../fsContainment';
 import type { Prompt } from '@chamber/shared/types';
 import { MAX_PROMPTS, MAX_PROMPT_BODY_BYTES } from '@chamber/shared/prompt-authoring';
 
@@ -94,24 +95,25 @@ function isPrompt(value: unknown): value is Prompt {
 }
 
 /**
- * Ensures `file` stays within `configDir` and that no segment between the two is
- * a symlink, mirroring the working-memory and skill path guards. Throws
- * otherwise. Exported so the confinement logic can be unit-tested without
- * symlink privileges on the host platform.
+ * Ensures `file` (absolute) stays within `configDir`, rejecting traversal and
+ * any symlink between the two. Delegates the containment decision to the shared
+ * `assertContained` primitive (realpath-canonicalized root plus a per-component
+ * symlink walk) and re-frames its error with a prompt-library message. Exported
+ * so the confinement logic can be unit-tested without symlink privileges on the
+ * host platform.
  */
 export function assertPromptsPathConfined(configDir: string, file: string): void {
-  const root = path.resolve(configDir);
-  const relative = path.relative(root, file);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('Prompt library path escapes the config directory.');
-  }
-
-  let current = root;
-  for (const segment of relative.split(path.sep)) {
-    current = path.join(current, segment);
-    if (!fs.existsSync(current)) break;
-    if (fs.lstatSync(current).isSymbolicLink()) {
-      throw new Error('Prompt library path cannot traverse a symbolic link.');
+  try {
+    assertContained(configDir, path.relative(path.resolve(configDir), file));
+  } catch (error) {
+    if (error instanceof ContainmentError) {
+      throw new Error(
+        /symlink|junction/i.test(error.message)
+          ? 'Prompt library path cannot traverse a symbolic link.'
+          : 'Prompt library path escapes the config directory.',
+        { cause: error },
+      );
     }
+    throw error;
   }
 }
