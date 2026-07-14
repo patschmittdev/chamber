@@ -25,7 +25,7 @@ function statusColor(status: MindContext['status']): string {
 }
 
 export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean }) {
-  const { minds, activeMindId } = useAppState();
+  const { minds, activeMindId, activeView } = useAppState();
   const dispatch = useAppDispatch();
   const profileByMindId = useMindProfiles(minds);
   const [width, setWidth] = useState(() => {
@@ -48,7 +48,9 @@ export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean
     } else {
       window.electronAPI.mind.setActive(mind.mindId);
       dispatch({ type: 'SET_ACTIVE_MIND', payload: mind.mindId });
-      dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+      if (activeView !== 'extensions') {
+        dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+      }
     }
   };
 

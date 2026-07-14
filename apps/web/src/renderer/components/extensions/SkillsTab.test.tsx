@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MindContext } from '@chamber/shared/types';
 import type { SkillDetail, SkillMarketplaceBrowseResult } from '@chamber/shared/skill-types';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
-import { AppStateProvider } from '../../lib/store';
+import { AppStateProvider, useAppState } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
 import { SkillsTab } from './SkillsTab';
 
@@ -23,6 +23,16 @@ function renderTab(api: ReturnType<typeof mockElectronAPI>, state?: Partial<AppS
     <AppStateProvider testInitialState={{ activeMindId: 'mind-1', minds: [mind], ...state }}>
       <SkillsTab />
     </AppStateProvider>,
+  );
+}
+
+function StateProbe() {
+  const { activeView, activeMindId, composeDraftByMind } = useAppState();
+  return (
+    <>
+      <div data-testid="active-view">{activeView}</div>
+      <div data-testid="compose-draft">{activeMindId ? (composeDraftByMind[activeMindId] ?? '') : ''}</div>
+    </>
   );
 }
 
@@ -280,6 +290,21 @@ describe('SkillsTab', () => {
 
     await waitFor(() => expect(screen.getByText('Lens')).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'Edit Lens' })).toBeNull();
+  });
+
+  it('links manual skill authoring to agentic authoring in chat', async () => {
+    vi.mocked(api.skills.listForMindDetails).mockResolvedValue([]);
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ activeMindId: 'mind-1', minds: [mind], activeView: 'extensions' }}>
+        <SkillsTab />
+        <StateProbe />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft with active mind' }));
+    expect(screen.getByTestId('active-view').textContent).toBe('chat');
+    expect(screen.getByTestId('compose-draft').textContent).toContain('Create a new skill');
   });
 });
 

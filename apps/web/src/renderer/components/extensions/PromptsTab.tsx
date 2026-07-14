@@ -21,7 +21,7 @@ const fieldInputClass =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary';
 
 export function PromptsTab() {
-  const { pendingExtensionsIntent } = useAppState();
+  const { activeMindId, pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
 
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -85,10 +85,26 @@ export function PromptsTab() {
             <h3 className="text-sm font-medium">Saved prompts</h3>
             <p className="text-xs text-muted-foreground">Stored on this device and available to every mind.</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus size={16} />
-            New prompt
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {activeMindId ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  dispatch({
+                    type: 'SET_COMPOSE_DRAFT',
+                    payload: { mindId: activeMindId, draft: 'Create a reusable prompt for my prompt library. Include title, description, and body.' },
+                  });
+                  dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+                }}
+              >
+                Draft with active mind
+              </Button>
+            ) : null}
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus size={16} />
+              New prompt
+            </Button>
+          </div>
         </div>
         <PromptsList
           prompts={prompts}
@@ -244,9 +260,10 @@ function PromptDialog({
 
   const editing = prompt !== null;
   const canSubmit = title.trim().length > 0 && body.trim().length > 0 && !saving;
+  const validateDraft = () => validatePromptInput({ title, body, description });
 
   const handleSave = async () => {
-    const validationError = validatePromptInput({ title, body, description });
+    const validationError = validateDraft();
     if (validationError) {
       setError(validationError);
       return;
@@ -294,6 +311,7 @@ function PromptDialog({
               id="prompt-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              onBlur={() => setError(validateDraft())}
               className={fieldInputClass}
             />
           </Field>
@@ -302,6 +320,7 @@ function PromptDialog({
               id="prompt-description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
+              onBlur={() => setError(validateDraft())}
               className={fieldInputClass}
             />
           </Field>
@@ -310,6 +329,7 @@ function PromptDialog({
               id="prompt-body"
               value={body}
               onChange={(event) => setBody(event.target.value)}
+              onBlur={() => setError(validateDraft())}
               className={cn(fieldInputClass, 'min-h-[160px] resize-none font-mono leading-6')}
             />
           </Field>

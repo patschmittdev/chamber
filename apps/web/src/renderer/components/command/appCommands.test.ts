@@ -32,6 +32,7 @@ function makeDeps(overrides: Partial<CommandContext> = {}): CommandContext {
     disabledLensViewKeys: [],
     featureFlags: DEFAULT_APP_FEATURE_FLAGS,
     activeMindId: null,
+    activeView: 'chat',
     activeConversation: null,
     isActiveMindBusy: false,
     canRegenerate: false,
@@ -82,6 +83,21 @@ describe('buildCommandItems', () => {
     expect(electronAPI.mind.setActive).toHaveBeenCalledWith(mind.mindId);
     expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_MIND', payload: mind.mindId });
     expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+  });
+
+  it('preserves Extensions view when switching minds from the command palette', () => {
+    const dispatch = vi.fn();
+    const electronAPI = mockElectronAPI();
+    const commands = buildCommandItems(
+      makeDeps({ minds: [mind], activeMindId: mind.mindId, activeView: 'extensions', dispatch, electronAPI }),
+    );
+
+    const switchCommand = commands.find((command) => command.id === `mind:${mind.mindId}`);
+    expect(switchCommand).toBeDefined();
+    switchCommand?.run();
+
+    expect(dispatch).toHaveBeenCalledWith({ type: 'SET_ACTIVE_MIND', payload: mind.mindId });
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
   });
 
   it('offers the new conversation command only for an idle active mind', () => {

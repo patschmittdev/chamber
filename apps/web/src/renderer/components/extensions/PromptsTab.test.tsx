@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Prompt } from '@chamber/shared/types';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
-import { AppStateProvider } from '../../lib/store';
+import { AppStateProvider, useAppState } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
 import { PromptsTab } from './PromptsTab';
 
@@ -15,6 +15,16 @@ function renderTab(api: ReturnType<typeof mockElectronAPI>, state?: Partial<AppS
     <AppStateProvider testInitialState={{ ...state }}>
       <PromptsTab />
     </AppStateProvider>,
+  );
+}
+
+function StateProbe() {
+  const { activeView, activeMindId, composeDraftByMind } = useAppState();
+  return (
+    <>
+      <div data-testid="active-view">{activeView}</div>
+      <div data-testid="compose-draft">{activeMindId ? (composeDraftByMind[activeMindId] ?? '') : ''}</div>
+    </>
   );
 }
 
@@ -160,6 +170,20 @@ describe('PromptsTab', () => {
 
     await waitFor(() => expect(screen.getByText(untrusted)).toBeTruthy());
     expect(document.querySelector('script')).toBeNull();
+  });
+
+  it('links manual prompt authoring to agentic authoring in chat', async () => {
+    vi.mocked(api.prompts.list).mockResolvedValue([]);
+    render(
+      <AppStateProvider testInitialState={{ activeMindId: 'mind-1', activeView: 'extensions' }}>
+        <PromptsTab />
+        <StateProbe />
+      </AppStateProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Draft with active mind' }));
+    expect(screen.getByTestId('active-view').textContent).toBe('chat');
+    expect(screen.getByTestId('compose-draft').textContent).toContain('Create a reusable prompt');
   });
 });
 

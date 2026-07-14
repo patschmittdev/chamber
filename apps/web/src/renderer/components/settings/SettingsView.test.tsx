@@ -6,7 +6,7 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { version } from '../../../../../../package.json';
 import { SettingsView } from './SettingsView';
-import { AppStateProvider } from '../../lib/store';
+import { AppStateProvider, useAppState } from '../../lib/store';
 import { APPEARANCE_STORAGE_KEYS } from '../../lib/appearance';
 import { appearanceStore } from '../../lib/appearanceStore';
 import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
@@ -18,6 +18,16 @@ import type { MindContext, MindInstructionPrecedence } from '@chamber/shared/typ
 function gotoTab(label: 'Profile' | 'Custom instructions' | 'Account' | 'Marketplaces' | 'Appearance' | 'Local LLM' | 'Voice dictation') {
   const nav = screen.getByRole('navigation', { name: /settings sections/i });
   fireEvent.click(within(nav).getByRole('button', { name: label }));
+}
+
+function StateProbe() {
+  const { activeView, pendingExtensionsIntent } = useAppState();
+  return (
+    <>
+      <div data-testid="active-view">{activeView}</div>
+      <div data-testid="pending-extensions">{pendingExtensionsIntent?.tab ?? 'none'}</div>
+    </>
+  );
 }
 
 const settingsMind: MindContext = {
@@ -666,6 +676,22 @@ describe('SettingsView', () => {
       expect(api.marketplace.refreshGenesisRegistry).toHaveBeenCalledWith('github:agency-microsoft/genesis-minds');
       expect(api.marketplace.removeGenesisRegistry).toHaveBeenCalledWith('github:agency-microsoft/genesis-minds');
     });
+  });
+
+  it('cross-links from Marketplaces back to Extensions skills', async () => {
+    (api.marketplace.listGenesisRegistries as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    render(
+      <AppStateProvider testInitialState={{ activeView: 'settings' }}>
+        <SettingsView />
+        <StateProbe />
+      </AppStateProvider>,
+    );
+    gotoTab('Marketplaces');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Extensions skills' }));
+    expect(screen.getByTestId('active-view').textContent).toBe('extensions');
+    expect(screen.getByTestId('pending-extensions').textContent).toBe('skills');
   });
 
   describe('Appearance section', () => {

@@ -131,10 +131,24 @@ export function SkillsTab() {
           detail="Local and Chamber-managed skills are read from bounded metadata under .github/skills."
           action={
             activeMindId ? (
-              <Button onClick={() => setCreateOpen(true)}>
-                <Plus size={16} />
-                New skill
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    dispatch({
+                      type: 'SET_COMPOSE_DRAFT',
+                      payload: { mindId: activeMindId, draft: 'Create a new skill for this mind. Propose an id, name, and description first.' },
+                    });
+                    dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
+                  }}
+                >
+                  Draft with active mind
+                </Button>
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus size={16} />
+                  New skill
+                </Button>
+              </div>
             ) : undefined
           }
         />
@@ -219,6 +233,8 @@ function LocalSkillsSection({
 }) {
   if (loading) return <TabLoading label="Loading skills" />;
   if (error) return <TabError message={error} />;
+  const customSkills = skills.filter((skill) => isEditableSkill(skill));
+  const seededSkills = skills.filter((skill) => !isEditableSkill(skill));
   if (skills.length === 0) {
     return (
       <TabEmptyState
@@ -230,8 +246,16 @@ function LocalSkillsSection({
   }
 
   return (
-    <ul className="grid gap-3">
-      {skills.map((skill) => (
+    <div className="grid gap-3">
+      {customSkills.length === 0 && seededSkills.length > 0 ? (
+        <TabEmptyState
+          icon={<Sparkles size={22} />}
+          title="No custom skills yet"
+          detail="This mind already has seeded managed skills. Add a custom skill to extend it further."
+        />
+      ) : null}
+      <ul className="grid gap-3">
+        {[...customSkills, ...seededSkills].map((skill) => (
         <li key={skill.id} className="rounded-xl border border-border bg-card p-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{skill.name}</span>
@@ -264,8 +288,9 @@ function LocalSkillsSection({
             ) : null}
           </div>
         </li>
-      ))}
-    </ul>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -709,18 +734,20 @@ function SkillCreateDialog({
   }, [open]);
 
   const canSubmit = id.trim().length > 0 && name.trim().length > 0 && description.trim().length > 0 && !saving;
+  const validateDraft = () => {
+    const idError = validateSkillId(id.trim());
+    if (idError) return idError;
+    if (!name.trim() || !description.trim()) return 'Name and description are required.';
+    return null;
+  };
 
   const handleCreate = async () => {
+    const validationError = validateDraft();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     const trimmedId = id.trim();
-    const idError = validateSkillId(trimmedId);
-    if (idError) {
-      setError(idError);
-      return;
-    }
-    if (!name.trim() || !description.trim()) {
-      setError('Name and description are required.');
-      return;
-    }
 
     setSaving(true);
     setError(null);
@@ -758,6 +785,7 @@ function SkillCreateDialog({
               id="skill-create-id"
               value={id}
               onChange={(event) => setId(event.target.value)}
+              onBlur={() => setError(validateDraft())}
               spellCheck={false}
               autoComplete="off"
               className={fieldInputClass}
@@ -768,6 +796,7 @@ function SkillCreateDialog({
               id="skill-create-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
+              onBlur={() => setError(validateDraft())}
               className={fieldInputClass}
             />
           </Field>
@@ -776,6 +805,7 @@ function SkillCreateDialog({
               id="skill-create-description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
+              onBlur={() => setError(validateDraft())}
               className={cn(fieldInputClass, 'min-h-[80px] resize-none')}
             />
           </Field>
@@ -861,34 +891,39 @@ function SkillSourceEditor({
     }
   };
 
+  if (!skill) return null;
+
   return (
-    <Dialog open={Boolean(skill)} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="flex max-h-[88vh] max-w-4xl flex-col">
-        <DialogHeader>
-          <DialogTitle>{skill ? `Edit ${skill.name}` : 'Edit skill'}</DialogTitle>
-          <DialogDescription>{skill?.source.manifestPath ?? 'SKILL.md'}</DialogDescription>
-        </DialogHeader>
-        {loadError ? <Alert variant="destructive">{loadError}</Alert> : null}
-        {error ? <Alert variant="destructive">{error}</Alert> : null}
-        <textarea
-          aria-label="SKILL.md content"
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          spellCheck={false}
-          disabled={loading}
-          className="min-h-[240px] w-full flex-1 resize-none rounded-xl border border-border bg-background p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-primary disabled:opacity-50"
-        />
-        <DialogFooter>
-          {dirty ? <span className="mr-auto self-center text-xs text-amber-600 dark:text-amber-300">Unsaved edits</span> : null}
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!dirty || saving || loading}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <section className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-base font-semibold">Editing {skill.name}</h3>
+          <p className="text-xs text-muted-foreground">{skill.source.manifestPath}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onClose}>
+          Close editor
+        </Button>
+      </div>
+      {loadError ? <Alert variant="destructive">{loadError}</Alert> : null}
+      {error ? <Alert variant="destructive">{error}</Alert> : null}
+      <textarea
+        aria-label="SKILL.md content"
+        value={content}
+        onChange={(event) => setContent(event.target.value)}
+        spellCheck={false}
+        disabled={loading}
+        className="min-h-[260px] w-full resize-y rounded-xl border border-border bg-background p-4 font-mono text-sm leading-6 text-foreground outline-none focus:border-primary disabled:opacity-50"
+      />
+      <div className="mt-3 flex items-center justify-end gap-2">
+        {dirty ? <span className="mr-auto text-xs text-amber-600 dark:text-amber-300">Unsaved edits</span> : null}
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave} disabled={!dirty || saving || loading}>
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </div>
+    </section>
   );
 }
 
