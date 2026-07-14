@@ -22,7 +22,7 @@ import {
   type McpServerFormState,
 } from './mcpFormUtils';
 
-export function McpServersTab() {
+export function McpServersTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
   const { activeMindId, minds } = useAppState();
   const activeMind = minds.find((mind) => mind.mindId === activeMindId) ?? null;
 
@@ -97,9 +97,10 @@ export function McpServersTab() {
       const result = await persist(next);
       if (requestSeq.current !== seq || targetMindId !== activeMindId) return false;
       setEntries(result);
+      onInventoryChanged?.();
       return true;
     },
-    [persist, loadedMindId, activeMindId],
+    [persist, loadedMindId, activeMindId, onInventoryChanged],
   );
 
   const otherNames = useMemo(

@@ -20,7 +20,7 @@ import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 const fieldInputClass =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary';
 
-export function PromptsTab() {
+export function PromptsTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
   const { activeMindId, pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
 
@@ -68,6 +68,7 @@ export function PromptsTab() {
     setPrompts(next);
     closeDialog();
     setDeleteTarget(null);
+    onInventoryChanged?.();
   };
 
   return (

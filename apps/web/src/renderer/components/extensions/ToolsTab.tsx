@@ -6,7 +6,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
 
-export function ToolsTab() {
+export function ToolsTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
   const [tools, setTools] = useState<ToolCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +36,8 @@ export function ToolsTab() {
       await load();
       if (!result.success) {
         setError(result.error);
+      } else {
+        onInventoryChanged?.();
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -52,6 +54,8 @@ export function ToolsTab() {
       await load();
       if (!result.success && result.error) {
         setError(result.error);
+      } else if (result.success) {
+        onInventoryChanged?.();
       }
     } catch (err) {
       setError(getErrorMessage(err));

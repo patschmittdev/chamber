@@ -37,7 +37,7 @@ type DetailSelection =
   | { type: 'marketplace-template'; item: MarketplaceTemplateEntry }
   | { type: 'malformed-skill'; item: MarketplaceSkillMalformedEntry };
 
-export function SkillsTab() {
+export function SkillsTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
   const { activeMindId, minds, pendingExtensionsIntent } = useAppState();
   const dispatch = useAppDispatch();
   const activeMind = minds.find((mind) => mind.mindId === activeMindId) ?? null;
@@ -199,6 +199,7 @@ export function SkillsTab() {
           onCreated={() => {
             setCreateOpen(false);
             reloadLocalSkills();
+            onInventoryChanged?.();
           }}
         />
       ) : null}
@@ -211,6 +212,7 @@ export function SkillsTab() {
           onSaved={() => {
             setEditTarget(null);
             reloadLocalSkills();
+            onInventoryChanged?.();
           }}
         />
       ) : null}

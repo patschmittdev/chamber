@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Author and edit skills from the Skills tab** - Add a New skill dialog and an Edit surface for each editable skill in Extensions > Skills, backed by a path-confined MindSkillAuthoring service with frontmatter validation and optimistic-concurrency writes. Desktop-only for now; the browser host reports authoring as unavailable without faking success.
 - **Expanded command palette and keyboard coverage** - Registered the shipped-but-unlisted features as palette commands (pin/archive/rename/export, view working memory, set/clear per-conversation system prompt, regenerate, toggle theme, open Extensions, open A2A relay), bound the common ones with conflict-checked keybindings (Mod+Shift+O new conversation, Mod+Shift+M working memory, Mod+Shift+L toggle theme), surfaced every command (bound and unbound) in the Keyboard shortcuts overlay, and moved New skill and New prompt into a dedicated Create group (shell-F3, rail-H4, shell-F6, ext-E10/shell-F8).
 - **Add a renderer-safe capability inventory contract** — Provides a normalized read-only lifecycle projection for skills, MCP connectors, CLI tools, prompts, and Lens views without exposing configuration, paths, credentials, raw errors, or generic capability actions.
+- **Add installed Extensions workspace** — Organize renderer-safe capability inventory by skills, connectors, tools, prompts, and Lens views with source-specific management actions.
 
 ### Refactor
 

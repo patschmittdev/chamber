@@ -11,7 +11,7 @@ import { TabEmptyState, TabError } from './extensionsShared';
 
 const log = Logger.create('LensViewsTab');
 
-export function LensViewsTab() {
+export function LensViewsTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
   const { activeMindId, activeView, discoveredViews, disabledLensViewKeys } = useAppState();
   const dispatch = useAppDispatch();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -26,6 +26,7 @@ export function LensViewsTab() {
     try {
       const visibility = await window.electronAPI.lens.setViewEnabled(view.id, enabled, activeMindId);
       dispatch({ type: 'SET_LENS_VIEW_ENABLED', payload: visibility });
+      onInventoryChanged?.();
       if (!visibility.enabled && activeView === view.id) {
         dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'chat' });
       }
