@@ -14,7 +14,7 @@
  * A short-lived, single-use token minted synchronously inside a renderer user
  * event handler and transmitted to the Canvas iframe via postMessage. It binds
  * a specific action dispatch to a specific user gesture for a specific mind /
- * view pair.
+ * view pair, and commits to the exact request the user approved via a hash.
  *
  * INVARIANT: grants are minted only inside trusted click/submit/keyboard handlers
  * in the CanvasLensView renderer component. They must not be created from
@@ -33,6 +33,14 @@ export interface CanvasGestureGrant {
   expiresAt: number;
   /** Unix ms timestamp when the grant was minted. */
   issuedAt: number;
+  /**
+   * SHA-256 hex digest of canonicalRequestJson(approvedRequest).
+   * Binds this grant to the exact CanvasActionRequest the user saw and approved.
+   * CanvasServer recomputes the hash after parsing and rejects on mismatch,
+   * preventing a Canvas script from swapping _pendingRequest between requestAction()
+   * and grant delivery.
+   */
+  requestHash: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +92,23 @@ export type CanvasActionRequest = CanvasUserAction;
 // ---------------------------------------------------------------------------
 // Strict parser
 // ---------------------------------------------------------------------------
+
+/**
+ * Produce the canonical JSON string of a CanvasActionRequest for hashing.
+ * Field keys are sorted so the output is deterministic regardless of
+ * insertion order.
+ */
+export function canonicalRequestJson(request: CanvasActionRequest): string {
+  const sortedFields = Object.fromEntries(
+    Object.entries(request.fields).sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return JSON.stringify({
+    schemaVersion: request.schemaVersion,
+    variant: request.variant,
+    label: request.label,
+    fields: sortedFields,
+  });
+}
 
 /**
  * Parse and validate a raw (untrusted) value as a CanvasActionRequest.
@@ -182,6 +207,7 @@ export function isCanvasGestureGrantShape(value: unknown): value is CanvasGestur
     obj.actionVariant === 'user-action' &&
     typeof obj.nonce === 'string' && obj.nonce.length > 0 &&
     typeof obj.expiresAt === 'number' &&
-    typeof obj.issuedAt === 'number'
+    typeof obj.issuedAt === 'number' &&
+    typeof obj.requestHash === 'string' && obj.requestHash.length > 0
   );
 }

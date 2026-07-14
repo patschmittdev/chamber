@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
+import { canonicalRequestJson } from '@chamber/shared/canvas-action-types';
 import { CanvasServer } from './CanvasServer';
 
 const tempDirs: string[] = [];
@@ -126,6 +128,7 @@ describe('CanvasServer', () => {
     onAction.mockReturnValueOnce(action.promise);
 
     const now = Date.now();
+    const acceptedRequest = { schemaVersion: 1 as const, variant: 'user-action' as const, label: 'button-clicked', fields: { id: 'approve' } };
     const grant: CanvasGestureGrant = {
       mindId: 'mind-1',
       viewId: 'v',
@@ -133,13 +136,14 @@ describe('CanvasServer', () => {
       nonce: 'test-nonce-accepts-' + now,
       expiresAt: now + 5000,
       issuedAt: now,
+      requestHash: createHash('sha256').update(canonicalRequestJson(acceptedRequest)).digest('hex'),
     };
     server.registerGrant(grant);
 
     const port = await server.start();
     const response = await fetch(`http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`, {
       body: JSON.stringify({
-        request: { schemaVersion: 1, variant: 'user-action', label: 'button-clicked', fields: { id: 'approve' } },
+        request: acceptedRequest,
         grant,
         timestamp: 123,
       }),
@@ -174,6 +178,7 @@ describe('CanvasServer', () => {
     onAction.mockReturnValueOnce(action.promise);
 
     const now = Date.now();
+    const lifecycleRequest = { schemaVersion: 1 as const, variant: 'user-action' as const, label: 'add-todo', fields: { title: 'Write tests' } };
     const grant: CanvasGestureGrant = {
       mindId: 'mind-1',
       viewId: 'v',
@@ -181,6 +186,7 @@ describe('CanvasServer', () => {
       nonce: 'test-nonce-lifecycle-' + now,
       expiresAt: now + 5000,
       issuedAt: now,
+      requestHash: createHash('sha256').update(canonicalRequestJson(lifecycleRequest)).digest('hex'),
     };
     server.registerGrant(grant);
 
@@ -191,7 +197,7 @@ describe('CanvasServer', () => {
     await readChunk(reader);
 
     const response = await fetch(`http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`, {
-      body: JSON.stringify({ request: { schemaVersion: 1, variant: 'user-action', label: 'add-todo', fields: { title: 'Write tests' } }, grant }),
+      body: JSON.stringify({ request: lifecycleRequest, grant }),
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     });
@@ -249,7 +255,21 @@ describe('CanvasServer', () => {
   });
 
   describe('gesture grant validation', () => {
+    function validRequest() {
+      return {
+        schemaVersion: 1 as const,
+        variant: 'user-action' as const,
+        label: 'submit-form',
+        fields: { id: 'item-1' },
+      };
+    }
+
+    function requestHash(req: ReturnType<typeof validRequest>): string {
+      return createHash('sha256').update(canonicalRequestJson(req)).digest('hex');
+    }
+
     function makeGrant(overrides: Partial<CanvasGestureGrant> = {}): CanvasGestureGrant {
+      const req = validRequest();
       return {
         mindId: 'mind-1',
         viewId: 'command-center',
@@ -257,19 +277,13 @@ describe('CanvasServer', () => {
         nonce: 'test-nonce-' + Math.random().toString(36).slice(2),
         expiresAt: Date.now() + 5000,
         issuedAt: Date.now(),
+        requestHash: requestHash(req),
         ...overrides,
       };
     }
 
-    function validRequest() {
-      return {
-        request: {
-          schemaVersion: 1,
-          variant: 'user-action',
-          label: 'submit-form',
-          fields: { id: 'item-1' },
-        },
-      };
+    function validBody(grant: CanvasGestureGrant) {
+      return { request: validRequest(), grant };
     }
 
     it('rejects a token-only action without a grant before invoking any callback', async () => {
@@ -305,7 +319,7 @@ describe('CanvasServer', () => {
       const response = await fetch(
         `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
         {
-          body: JSON.stringify({ ...validRequest(), grant: expiredGrant }),
+          body: JSON.stringify(validBody(expiredGrant)),
           headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
@@ -331,7 +345,7 @@ describe('CanvasServer', () => {
       const first = await fetch(
         `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
         {
-          body: JSON.stringify({ ...validRequest(), grant }),
+          body: JSON.stringify(validBody(grant)),
           headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
@@ -342,7 +356,7 @@ describe('CanvasServer', () => {
       const second = await fetch(
         `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
         {
-          body: JSON.stringify({ ...validRequest(), grant }),
+          body: JSON.stringify(validBody(grant)),
           headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
@@ -365,7 +379,7 @@ describe('CanvasServer', () => {
       const response = await fetch(
         `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
         {
-          body: JSON.stringify({ ...validRequest(), grant }),
+          body: JSON.stringify(validBody(grant)),
           headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
@@ -386,7 +400,7 @@ describe('CanvasServer', () => {
       const response = await fetch(
         `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
         {
-          body: JSON.stringify({ ...validRequest(), grant }),
+          body: JSON.stringify(validBody(grant)),
           headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
@@ -409,7 +423,7 @@ describe('CanvasServer', () => {
       const response = await fetch(
         `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
         {
-          body: JSON.stringify({ ...validRequest(), grant }),
+          body: JSON.stringify(validBody(grant)),
           headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
@@ -450,6 +464,38 @@ describe('CanvasServer', () => {
       expect(onAction).not.toHaveBeenCalled();
     });
 
+    it('rejects a grant whose requestHash does not match the dispatched action', async () => {
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const port = await server.start();
+      // Grant was approved for 'submit-form'. Canvas script swaps it to something else.
+      const grant = makeGrant(); // hash = SHA-256 of validRequest() ('submit-form')
+      server.registerGrant(grant);
+
+      const swappedRequest = {
+        schemaVersion: 1 as const,
+        variant: 'user-action' as const,
+        label: 'swapped-request',
+        fields: { payload: 'injected' },
+      };
+
+      const response = await fetch(
+        `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+        {
+          body: JSON.stringify({ request: swappedRequest, grant }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json() as { error: string };
+      expect(body.error).toMatch(/hash/i);
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
     it('the bridge script returns the migration error for legacy sendAction calls', async () => {
       const mindDir = makeMindDir();
       mindDirs.set('mind-1', mindDir);
@@ -468,3 +514,4 @@ describe('CanvasServer', () => {
     });
   });
 });
+

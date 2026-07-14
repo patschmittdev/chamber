@@ -295,6 +295,7 @@ describe('CanvasLensView', () => {
         nonce: expect.any(String),
         expiresAt: expect.any(Number),
         issuedAt: expect.any(Number),
+        requestHash: expect.any(String),
       });
       expect(grantCall[0].expiresAt - grantCall[0].issuedAt).toBe(5000);
 

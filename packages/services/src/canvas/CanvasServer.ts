@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { URL } from 'node:url';
 import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
-import { parseCanvasActionRequest } from '@chamber/shared/canvas-action-types';
+import { canonicalRequestJson, parseCanvasActionRequest } from '@chamber/shared/canvas-action-types';
 import { isPathInside } from './pathUtils';
 import type { CanvasAction, CanvasActionHandler, CanvasActionStatusEvent, CanvasServerLike } from './types';
 
@@ -123,10 +123,10 @@ class PendingGrantRegistry {
   }
 
   /**
-   * Validates the grant against the expected mindId, marks it as used if
-   * valid. Returns an error string if invalid, or null if valid.
+   * Validates the grant against the expected mindId and request hash, marks it
+   * as used if valid. Returns an error string if invalid, or null if valid.
    */
-  validateAndConsume(grant: CanvasGestureGrant, expectedMindId: string): string | null {
+  validateAndConsume(grant: CanvasGestureGrant, expectedMindId: string, expectedRequestHash: string): string | null {
     this.prune();
     const stored = this.entries.get(grant.nonce);
     if (!stored) {
@@ -140,6 +140,9 @@ class PendingGrantRegistry {
     }
     if (stored.grant.mindId !== expectedMindId) {
        return 'Grant mindId does not match request';
+    }
+    if (stored.grant.requestHash !== expectedRequestHash) {
+       return 'Grant request hash does not match dispatched action';
     }
     stored.used = true;
     return null;
@@ -527,7 +530,7 @@ export class CanvasServer implements CanvasServerLike {
       return;
     }
 
-    // --- Gesture grant validation ---
+    // --- Gesture grant shape check (structural only — consume happens after hash) ---
     const rawGrant = parsed.grant;
     if (!rawGrant || typeof rawGrant !== 'object' || Array.isArray(rawGrant)) {
       res.writeHead(403);
@@ -538,19 +541,14 @@ export class CanvasServer implements CanvasServerLike {
     }
     const grant = rawGrant as Record<string, unknown>;
     if (typeof grant.nonce !== 'string' || !grant.nonce ||
-        typeof grant.mindId !== 'string' || typeof grant.expiresAt !== 'number') {
+        typeof grant.mindId !== 'string' || typeof grant.expiresAt !== 'number' ||
+        typeof grant.requestHash !== 'string' || !grant.requestHash) {
       res.writeHead(403);
       res.end(JSON.stringify({ error: 'Malformed gesture grant' }));
       return;
     }
-    const grantError = this.grantRegistry.validateAndConsume(grant as unknown as CanvasGestureGrant, mindId);
-    if (grantError) {
-      res.writeHead(403);
-      res.end(JSON.stringify({ error: `Invalid gesture grant: ${grantError}` }));
-      return;
-    }
 
-    // --- Bounded action schema validation ---
+    // --- Bounded action schema validation (before consuming the nonce) ---
     const rawRequest = parsed.request;
     let actionRequest: ReturnType<typeof parseCanvasActionRequest>;
     try {
@@ -558,6 +556,15 @@ export class CanvasServer implements CanvasServerLike {
     } catch (err) {
       res.writeHead(400);
       res.end(JSON.stringify({ error: `Invalid action request: ${err instanceof Error ? err.message : 'parse error'}` }));
+      return;
+    }
+
+    // --- Grant consume (validates nonce, expiry, mindId, and request hash) ---
+    const expectedHash = createHash('sha256').update(canonicalRequestJson(actionRequest)).digest('hex');
+    const grantError = this.grantRegistry.validateAndConsume(grant as unknown as CanvasGestureGrant, mindId, expectedHash);
+    if (grantError) {
+      res.writeHead(403);
+      res.end(JSON.stringify({ error: `Invalid gesture grant: ${grantError}` }));
       return;
     }
 

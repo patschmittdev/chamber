@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { CanvasActionRequest, CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
+import { canonicalRequestJson } from '@chamber/shared/canvas-action-types';
 import type { LensViewManifest } from '@chamber/shared/types';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -151,8 +152,19 @@ export function CanvasLensView({ view }: Props) {
    * onClick handler. Canvas scripts cannot trigger this because the iframe is
    * sandboxed in a separate origin; the only path here is a real user click.
    */
-  const handleApproveAction = useCallback(() => {
-    if (!pendingAction || !url || !iframeRef.current?.contentWindow || !mindId) return;
+  const handleApproveAction = useCallback(async () => {
+    if (!pendingAction || !url || !mindId) return;
+
+    // Capture and clear before the async hash step to prevent double-dispatch
+    // if the user clicks Approve twice before the Promise resolves.
+    const captured = pendingAction;
+    setPendingAction(null);
+
+    const canonical = canonicalRequestJson(captured);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+    const requestHash = Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
 
     const now = Date.now();
     const grant: CanvasGestureGrant = {
@@ -162,6 +174,7 @@ export function CanvasLensView({ view }: Props) {
       nonce: crypto.randomUUID(),
       expiresAt: now + GRANT_EXPIRY_MS,
       issuedAt: now,
+      requestHash,
     };
 
     // Register with main process BEFORE sending to iframe so CanvasServer
@@ -170,18 +183,19 @@ export function CanvasLensView({ view }: Props) {
       log.warn('Failed to register Canvas gesture grant:', err);
     });
 
+    // Re-check iframe ref after the await (component may have updated).
+    const iframeWindow = iframeRef.current?.contentWindow;
+    if (!iframeWindow) return;
+
     // Send to iframe via exact-origin postMessage.
     try {
-      iframeRef.current.contentWindow.postMessage(
+      iframeWindow.postMessage(
         { type: 'chamber:canvas-gesture-grant', grant },
         new URL(url).origin,
       );
     } catch (err) {
       log.warn('Failed to deliver gesture grant to Canvas iframe:', err);
     }
-
-    // Clear the pending action — grant is single-use.
-    setPendingAction(null);
   }, [mindId, pendingAction, url, view.id]);
 
   const handleDismissAction = useCallback(() => {
