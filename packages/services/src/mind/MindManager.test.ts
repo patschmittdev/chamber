@@ -314,6 +314,37 @@ describe('MindManager', () => {
       expect(sentPrompt).toEqual(expect.stringContaining('do background work'));
     });
 
+    it('subscribes before dispatching a background prompt so it does not miss an idle event', async () => {
+      await manager.loadMind('/tmp/agents/q');
+      const session = mockCreateSession.mock.results.at(-1)?.value;
+      let emitIdle: (() => void) | undefined;
+      let resolveSend: (() => void) | undefined;
+      const send = new Promise<void>((resolve) => {
+        resolveSend = resolve;
+      });
+
+      session.on.mockImplementation((event: string, callback: () => void) => {
+        if (event === 'session.idle') emitIdle = callback;
+        return vi.fn();
+      });
+      session.send.mockReturnValue(send);
+
+      const completion = manager.sendBackgroundPrompt('/tmp/agents/q', 'do background work');
+      try {
+        await Promise.resolve();
+
+        expect(session.on.mock.invocationCallOrder[0]).toBeLessThan(session.send.mock.invocationCallOrder[0] ?? Infinity);
+
+        emitIdle?.();
+        resolveSend?.();
+        await completion;
+      } finally {
+        resolveSend?.();
+        await Promise.resolve();
+        emitIdle?.();
+      }
+    });
+
     it('runs automation prompts in an isolated session without touching the active conversation', async () => {
       const mind = await manager.loadMind('/tmp/agents/q');
       const activeSession = manager.getMind(mind.mindId)?.session as unknown as ReturnType<typeof createSessionStub>;

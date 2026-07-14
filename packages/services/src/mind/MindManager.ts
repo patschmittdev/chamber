@@ -2051,21 +2051,32 @@ export class MindManager extends EventEmitter {
     const context = this.minds.get(mind.mindId);
     if (!context?.session) return;
 
-    await context.session.send({ prompt: injectCurrentDateTimeContext(prompt, getCurrentDateTimeContext()) });
-    await new Promise<void>((resolve) => {
+    const session = context.session;
+    let settle: (() => void) | undefined;
+    const completion = new Promise<void>((resolve) => {
       let unsub: (() => void) | undefined;
-      const timeout = setTimeout(() => {
-        unsub?.();
-        unsub = undefined;
-        resolve();
-      }, 120_000);
-      unsub = context.session?.on('session.idle', () => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeout);
         unsub?.();
         unsub = undefined;
         resolve();
-      });
+      };
+      const timeout = setTimeout(finish, 120_000);
+      unsub = session.on('session.idle', finish);
+      if (settled) unsub();
+      settle = finish;
     });
+
+    try {
+      await session.send({ prompt: injectCurrentDateTimeContext(prompt, getCurrentDateTimeContext()) });
+      await completion;
+    } catch (error) {
+      settle?.();
+      throw error;
+    }
   }
 
   private persistConfig(): void {
