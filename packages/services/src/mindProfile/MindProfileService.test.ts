@@ -63,15 +63,60 @@ describe('MindProfileService', () => {
     }
   });
 
-  it('rejects symlinked profile files', async () => {
+  it('rejects directory junctions on the agents path', async () => {
+    // Directory junctions do not require Administrator or Developer Mode on Windows,
+    // making this the reliable core assertion for the symlink-rejection invariant on all OSes.
     const { root, service } = createProfileFixture();
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-profile-outside-agents-'));
     try {
-      const outside = path.join(os.tmpdir(), `chamber-profile-outside-${Date.now()}.md`);
-      const soulPath = path.join(root, 'SOUL.md');
-      fs.writeFileSync(outside, '# Outside\n');
-      fs.rmSync(soulPath);
-      fs.symlinkSync(outside, soulPath, 'file');
+      const outsideFile = path.join(outsideDir, 'outside.agent.md');
+      fs.writeFileSync(outsideFile, '# Outside\n');
 
+      // Replace the .github/agents directory with a junction pointing outside the mind root.
+      const agentsDir = path.join(root, '.github', 'agents');
+      fs.rmSync(agentsDir, { recursive: true });
+      // 'junction' is an NTFS directory junction on Windows (no privilege needed);
+      // on Linux/macOS it creates a regular directory symlink (also no privilege needed).
+      fs.symlinkSync(outsideDir, agentsDir, 'junction');
+
+      const result = await service.saveFile({
+        mindId: 'mind-1',
+        kind: 'agent',
+        relativePath: path.join('.github', 'agents', 'outside.agent.md'),
+        content: '# Updated\n',
+        expectedMtimeMs: fs.lstatSync(outsideFile).mtimeMs,
+      });
+
+      if (result.success) throw new Error('Expected junction save to fail');
+      expect(result.error).toContain('symlinks');
+      expect(fs.readFileSync(outsideFile, 'utf-8')).toBe('# Outside\n');
+    } finally {
+      // Remove root first so the junction reparse-point is removed before we delete its target.
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects file symlinks on the soul path when privilege is available (supplemental)', async () => {
+    // File symlinks require Administrator or Developer Mode on Windows. This test is
+    // supplemental: it skips (does not fail) when that privilege is unavailable.
+    // The core symlink-rejection invariant is covered by the junction test above.
+    const { root, service } = createProfileFixture();
+    const outside = path.join(os.tmpdir(), `chamber-profile-outside-${Date.now()}.md`);
+    const soulPath = path.join(root, 'SOUL.md');
+    fs.writeFileSync(outside, '# Outside\n');
+    fs.rmSync(soulPath);
+    try {
+      fs.symlinkSync(outside, soulPath, 'file');
+    } catch {
+      // File-symlink privilege unavailable (Windows without Developer Mode / Administrator).
+      // The junction test above covers the invariant.
+      fs.rmSync(outside, { force: true });
+      fs.rmSync(root, { recursive: true, force: true });
+      return;
+    }
+
+    try {
       const result = await service.saveFile({
         mindId: 'mind-1',
         kind: 'soul',

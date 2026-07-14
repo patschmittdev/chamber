@@ -2,7 +2,7 @@
 
 Chamber Insiders is the fast-cadence prerelease channel. Builds ship sooner than the public stable releases on GitHub Releases. **This page is invitation-only**: it is not linked from the README or product website. If someone forwarded you the link, that's the invitation.
 
-Insiders ships **Windows only**. macOS Insiders is intentionally not built; the public stable release on GitHub Releases is the macOS channel.
+Insiders ships **Windows (x64) and macOS (arm64)**. Both installers are code-signed and notarized using the same Azure Trusted Signing (Windows) and Apple Developer ID (macOS) identities used for stable releases.
 
 ## What you're trusting
 
@@ -21,6 +21,8 @@ If you would like to be removed from the invite list, tell whoever invited you. 
 
 ## Install
 
+### Windows (x64)
+
 1. Download the latest Windows installer:
 
    ```
@@ -32,6 +34,13 @@ If you would like to be removed from the invite list, tell whoever invited you. 
 2. Run the installer. SmartScreen should accept it because the file is signed with Chamber's Trusted Signing certificate.
 
 3. Done. Future updates are automatic.
+
+### macOS (Apple Silicon / arm64)
+
+1. Download the latest macOS DMG from the insiders blob (URL shared out-of-band with testers, e.g. `Chamber-vX.Y.Z-insiders.N-arm64.dmg`).
+2. Open the DMG, drag Chamber to Applications.
+3. macOS Gatekeeper should accept it — the build is signed and notarized.
+4. Done. Future updates are automatic.
 
 ## Updates
 
@@ -52,7 +61,6 @@ You will remain on the version you have installed until the public stable channe
 ## Caveats
 
 - The download URL is unlisted, not access-controlled. Anyone with the URL can fetch.
-- Builds are signed but **not notarized for macOS** (because macOS isn't built for this channel at all).
 - There is no SLA. Insiders builds may regress, break auto-update, or be pulled without notice.
 
 ## Reporting issues

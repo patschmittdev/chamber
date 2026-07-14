@@ -111,21 +111,9 @@ npx tsc --noEmit
 
 ## Versioning
 
-Chamber follows [Semantic Versioning](https://semver.org/):
+Chamber uses [Model B release versioning](ai-docs/release-channels.md). `master`'s `package.json#version` always equals the last shipped stable version — it is stale between releases and **must not be bumped in feature or fix PRs**. Version bumps happen only on `release/bump-vX.Y.Z` branches opened automatically by the `post-release-bump` workflow after a stable release succeeds.
 
-| Change | Bump | Example |
-|--------|------|---------|
-| Breaking API/behavior change | **Major** (`X.0.0`) | Remove a feature, change IPC contract |
-| New feature, non-breaking enhancement | **Minor** (`0.X.0`) | Add a view type, new service |
-| Bug fix, patch, internal cleanup | **Patch** (`0.0.X`) | Fix a cache bug, update a dependency |
-
-Bump the version with:
-
-```bash
-npm version major|minor|patch --no-git-tag-version
-```
-
-Include the version bump in your PR commit — don't merge without bumping.
+The next stable version is computed at release time from the conventional `### Headings` in `## [Unreleased]` in `CHANGELOG.md`. Use `ship` to append entries; the release skill handles version computation and tagging.
 
 ## Changelog
 
@@ -170,13 +158,18 @@ All work is tracked via [GitHub Issues](https://github.com/ianphil/chamber/issue
 
 ## Releases
 
-1. Ensure all tests pass and lint is clean.
-2. Bump the version in `package.json`.
-3. Update `CHANGELOG.md` with the new version entry.
-4. Merge the PR to `master`.
-5. Tag the release: `git tag vX.Y.Z && git push --tags`.
-6. Build the distributable: `npm run make`.
-7. Confirm the release artifacts include `Chamber-X.Y.Z-x64.exe`, the matching `.blockmap`, and `latest.yml`.
+Chamber uses a two-channel Model B release process. See
+[`ai-docs/release-channels.md`](ai-docs/release-channels.md) for the full
+model and the release skill (`.github/skills/release/SKILL.md`) for the
+operational runbook. In brief:
+
+1. Use `ship` to append bullets to `## [Unreleased]` in `CHANGELOG.md`.
+2. Dispatch `release-insiders.yml` to cut an insider build (invite-only,
+   Windows + macOS arm64, Azure Blob).
+3. After testers validate, dispatch `release.yml` with `source_ref` set to
+   the insider tag to promote to stable (public GitHub Releases).
+4. The `post-release-bump.yml` workflow opens the bump PR automatically on
+   stable tag push — review and merge it to advance `master`.
 
 ## Stack
 

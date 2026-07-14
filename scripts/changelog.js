@@ -268,8 +268,29 @@ function canonicalHeading(kind) {
 }
 
 /**
+ * Build the canonical bullet string from entry components. This is the
+ * exact string that `appendEntry` writes to the file, so comparing against
+ * it detects exact duplicates without false positives.
+ *
+ * @param {{ summary: string, detail?: string, issue?: string }} entry
+ * @returns {string}
+ */
+function buildBullet({ summary, detail, issue }) {
+  const parts = [`**${summary}**`];
+  if (detail) parts.push(detail.trim());
+  let bullet = `- ${parts.join(' — ')}`;
+  if (issue) bullet += ` (#${issue})`;
+  return bullet;
+}
+
+/**
  * Append a bullet under the appropriate `### Heading` of `## Unreleased`,
  * creating the section and the heading if either is missing.
+ *
+ * Exact-duplicate detection: if the rendered bullet string already exists
+ * under the same canonical heading, the call is a no-op. "Exact" means the
+ * same summary, detail, and issue reference. Near-duplicates (different
+ * detail or different issue) are still appended.
  *
  * @param {string} changelogPath
  * @param {{ kind: string, summary: string, detail?: string, issue?: string }} entry
@@ -294,10 +315,7 @@ function appendEntry(changelogPath, { kind, summary, detail, issue }) {
     }
   }
 
-  const bulletParts = [`**${summary}**`];
-  if (detail) bulletParts.push(detail.trim());
-  let bullet = `- ${bulletParts.join(' — ')}`;
-  if (issue) bullet += ` (#${issue})`;
+  const bullet = buildBullet({ summary, detail, issue });
 
   if (headingLine === -1) {
     // Insert a new ### Heading block at the end of ## Unreleased, ensuring a
@@ -314,7 +332,10 @@ function appendEntry(changelogPath, { kind, summary, detail, issue }) {
 
   let insertAt = headingLine + 1;
   while (insertAt < section.endLine && lines[insertAt].trim() === '') insertAt += 1;
-  while (insertAt < section.endLine && /^\s*-\s+/.test(lines[insertAt])) insertAt += 1;
+  while (insertAt < section.endLine && /^\s*-\s+/.test(lines[insertAt])) {
+    if (lines[insertAt] === bullet) return; // exact duplicate — no-op
+    insertAt += 1;
+  }
   const updated = [...lines.slice(0, insertAt), bullet, ...lines.slice(insertAt)];
   fs.writeFileSync(changelogPath, updated.join('\n'));
 }
@@ -330,5 +351,6 @@ module.exports = {
   recommendBumpFromChangelog,
   promoteUnreleasedToVersion,
   ensureUnreleasedSection,
+  buildBullet,
   appendEntry,
 };

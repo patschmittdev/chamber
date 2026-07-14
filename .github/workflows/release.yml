@@ -29,7 +29,8 @@ jobs:
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
-      source_ref: ${{ steps.check.outputs.source_ref }}
+      source_ref: ${{ steps.source.outputs.source_ref }}
+      resolved_sha: ${{ steps.resolve.outputs.resolved_sha }}
       promoted_from: ${{ steps.check.outputs.promoted_from }}
     steps:
       - name: Resolve source ref
@@ -47,6 +48,21 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ steps.source.outputs.source_ref }}
+
+      - name: Resolve to immutable SHA
+        id: resolve
+        run: |
+          resolved_sha=$(git rev-parse HEAD)
+          if [ -z "$resolved_sha" ]; then
+            echo "::error::Failed to resolve source ref '${{ steps.source.outputs.source_ref }}' to a commit SHA."
+            exit 1
+          fi
+          echo "resolved_sha=$resolved_sha" >> $GITHUB_OUTPUT
+          if [ "${{ steps.source.outputs.source_ref }}" != "$resolved_sha" ]; then
+            echo "::notice::Mutable ref '${{ steps.source.outputs.source_ref }}' resolved to $resolved_sha"
+          else
+            echo "Source ref is already a full SHA: $resolved_sha"
+          fi
 
       - name: Check for major/minor version change
         id: check
@@ -133,7 +149,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.check-version.outputs.source_ref }}
+          ref: ${{ needs.check-version.outputs.resolved_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -201,7 +217,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.check-version.outputs.source_ref }}
+          ref: ${{ needs.check-version.outputs.resolved_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -291,7 +307,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.check-version.outputs.source_ref }}
+          ref: ${{ needs.check-version.outputs.resolved_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -381,7 +397,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.check-version.outputs.source_ref }}
+          ref: ${{ needs.check-version.outputs.resolved_sha }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -398,6 +414,8 @@ jobs:
         shell: bash
         run: |
           promoted_from="${{ needs.check-version.outputs.promoted_from }}"
+          source_ref="${{ needs.check-version.outputs.source_ref }}"
+          resolved_sha="${{ needs.check-version.outputs.resolved_sha }}"
           build_macos="${{ vars.STABLE_RELEASE_BUILD_MACOS }}"
           {
             echo "body<<EOF"
@@ -405,6 +423,8 @@ jobs:
               echo "Promoted from insiders build \`$promoted_from\`."
               echo ""
             fi
+            echo "Build provenance: source ref \`${source_ref}\` resolved to commit \`${resolved_sha}\`."
+            echo ""
             if [ "$build_macos" = "false" ]; then
               echo "macOS artifacts were skipped because repository variable \`STABLE_RELEASE_BUILD_MACOS\` is set to \`false\`."
               echo ""
