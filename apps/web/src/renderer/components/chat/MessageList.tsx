@@ -1,7 +1,8 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
-import { MessageActions, type RowAction, type RegenerateAction } from './MessageActions';
+import { MessageActions, useMessageActionItems, type RowAction, type RegenerateAction } from './MessageActions';
 import { MessageVariantPager } from './MessageVariantPager';
+import { RowContextMenu } from '../ui/row-actions';
 import { useAppState, useAppDispatch, getPlainContent } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useConversationActions } from '../../hooks/useConversationActions';
@@ -378,7 +379,20 @@ const MessageRow = memo(function MessageRow({
     )
     : null;
 
+  const isAssistant = message.role === 'assistant';
+  const contextActionItems = useMessageActionItems({
+    message,
+    isBusy,
+    regenerate: isAssistant ? regenerate : undefined,
+    edit: isAssistant ? undefined : edit,
+    fork,
+    onDelete: deleteAction,
+  });
+  const actionsReady = !message.isStreaming && (isAssistant ? getPlainContent(message).trim().length > 0 : true);
+  const rowContextItems = actionsReady ? contextActionItems : [];
+
   return (
+    <RowContextMenu items={rowContextItems}>
     <div
       className={cn('group flex gap-3', launch ? 'chamber-launch' : animate && 'chamber-fade-in')}
       style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 140px' } as React.CSSProperties}
@@ -492,6 +506,7 @@ const MessageRow = memo(function MessageRow({
         )}
       </div>
     </div>
+    </RowContextMenu>
   );
 });
 

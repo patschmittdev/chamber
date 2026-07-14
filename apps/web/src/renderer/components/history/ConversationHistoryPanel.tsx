@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ChevronDown, ChevronLeft, ChevronRight, Download, Pencil, Pin, Plus, Search, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronLeft, ChevronRight, Download, FileJson, Pencil, Pin, Plus, Search, Trash2, X } from 'lucide-react';
 import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationExportFormat, ConversationSummary } from '@chamber/shared/types';
@@ -19,7 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { RowActionOverflowMenu, RowContextMenu, ROW_ACTION_REVEAL, type RowActionItem } from '../ui/row-actions';
 
 const log = Logger.create('ConversationHistoryPanel');
 const HISTORY_COLLAPSED_STORAGE_KEY = 'chamber:conversation-history-collapsed';
@@ -56,7 +56,6 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [exportingId, setExportingId] = useState<string | null>(null);
-  const [exportMenuId, setExportMenuId] = useState<string | null>(null);
   const [contentIndexVersion, setContentIndexVersion] = useState(0);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const creatingConversationRef = useRef(false);
@@ -180,7 +179,6 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
   useEffect(() => {
     setSearchQuery('');
     setDebouncedQuery('');
-    setExportMenuId(null);
   }, [activeMindId]);
 
   // Best-effort content index for search: lazily load each conversation's
@@ -354,7 +352,6 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
 
   const exportConversation = async (conversation: ConversationSummary, format: ConversationExportFormat) => {
     if (!activeMindId || exportingId) return;
-    setExportMenuId(null);
     setExportingId(conversation.sessionId);
     try {
       await window.electronAPI.conversationHistory.export(activeMindId, conversation.sessionId, format);
@@ -401,124 +398,120 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
 
   const renderConversationRow = (conversation: ConversationSummary) => {
     const isSelected = conversation.sessionId === selectedConversationId || conversation.active;
+    const pinItem: RowActionItem = {
+      id: 'pin',
+      label: conversation.isPinned ? 'Unpin' : 'Pin',
+      icon: Pin,
+      disabled: organizingId !== null,
+      onSelect: () => { void togglePin(conversation); },
+    };
+    const secondaryActions: RowActionItem[] = [
+      {
+        id: 'archive',
+        label: conversation.isArchived ? 'Unarchive' : 'Archive',
+        icon: conversation.isArchived ? ArchiveRestore : Archive,
+        disabled: organizingId !== null,
+        onSelect: () => { void toggleArchive(conversation); },
+      },
+      {
+        id: 'export-markdown',
+        label: 'Export as Markdown',
+        icon: Download,
+        disabled: exportingId !== null,
+        onSelect: () => { void exportConversation(conversation, 'markdown'); },
+      },
+      {
+        id: 'export-json',
+        label: 'Export as JSON',
+        icon: FileJson,
+        disabled: exportingId !== null,
+        onSelect: () => { void exportConversation(conversation, 'json'); },
+      },
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: Pencil,
+        disabled: isActiveMindBusy || deletingId === conversation.sessionId,
+        onSelect: () => startRename(conversation),
+      },
+      {
+        id: 'delete',
+        label: 'Delete',
+        icon: Trash2,
+        danger: true,
+        separatorBefore: true,
+        disabled: isActiveMindBusy || deletingId !== null,
+        onSelect: () => { void deleteConversation(conversation); },
+      },
+    ];
+    const contextActions: RowActionItem[] = [pinItem, ...secondaryActions];
 
     return (
-      <div
-        key={conversation.sessionId}
-        className={cn(
-          'group flex items-center gap-2 rounded-lg border-l-2 px-2 py-2 transition-colors',
-          isSelected
-            ? 'border-l-primary bg-accent text-foreground'
-            : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
-        )}
-      >
-        <button
-          type="button"
-          aria-label={`Resume ${conversation.title}`}
-          disabled={isActiveMindBusy}
-          onClick={() => { void resumeConversation(conversation.sessionId); }}
-          className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
-        >
-          {renamingId === conversation.sessionId ? (
-            <input
-              ref={renameInputRef}
-              value={renameValue}
-              onChange={(event) => setRenameValue(event.target.value)}
-              onKeyDown={(event) => handleRenameKeyDown(event, conversation.sessionId)}
-              onBlur={() => { void completeRename(conversation.sessionId, renameValue.trim() || null); }}
-              className="w-full rounded border border-primary bg-background px-1.5 py-0.5 text-sm text-foreground outline-none"
-            />
-          ) : (
-            <>
-              <div className="truncate text-sm font-medium">{conversation.title}</div>
-              {conversation.forkOf && conversation.title !== `Fork of ${conversation.forkOf.sourceTitle}` && (
-                <div className="truncate text-xs text-muted-foreground">
-                  Fork of {conversation.forkOf.sourceTitle}
-                </div>
-              )}
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                {formatRelativeTime(conversation.updatedAt)}
-                {conversation.active ? ' · Active' : ''}
-              </div>
-            </>
+      <RowContextMenu key={conversation.sessionId} items={contextActions}>
+        <div
+          className={cn(
+            'group flex items-center gap-2 rounded-lg border-l-2 px-2 py-2 transition-colors',
+            isSelected
+              ? 'border-l-primary bg-accent text-foreground'
+              : 'border-l-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
-        </button>
-
-        <div className="flex items-center">
+        >
           <button
             type="button"
-            onClick={() => { void togglePin(conversation); }}
-            disabled={organizingId !== null}
-            className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40',
-              conversation.isPinned
-                ? 'text-primary opacity-100'
-                : 'text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+            aria-label={`Resume ${conversation.title}`}
+            disabled={isActiveMindBusy}
+            onClick={() => { void resumeConversation(conversation.sessionId); }}
+            className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
+          >
+            {renamingId === conversation.sessionId ? (
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => handleRenameKeyDown(event, conversation.sessionId)}
+                onBlur={() => { void completeRename(conversation.sessionId, renameValue.trim() || null); }}
+                className="w-full rounded border border-primary bg-background px-1.5 py-0.5 text-sm text-foreground outline-none"
+              />
+            ) : (
+              <>
+                <div className="truncate text-sm font-medium">{conversation.title}</div>
+                {conversation.forkOf && conversation.title !== `Fork of ${conversation.forkOf.sourceTitle}` && (
+                  <div className="truncate text-xs text-muted-foreground">
+                    Fork of {conversation.forkOf.sourceTitle}
+                  </div>
+                )}
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {formatRelativeTime(conversation.updatedAt)}
+                  {conversation.active ? ' · Active' : ''}
+                </div>
+              </>
             )}
-            aria-label={conversation.isPinned ? `Unpin ${conversation.title}` : `Pin ${conversation.title}`}
-          >
-            <Pin size={13} />
           </button>
-          <button
-            type="button"
-            onClick={() => { void toggleArchive(conversation); }}
-            disabled={organizingId !== null}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={conversation.isArchived ? `Unarchive ${conversation.title}` : `Archive ${conversation.title}`}
-          >
-            {conversation.isArchived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-          </button>
-          <Popover
-            open={exportMenuId === conversation.sessionId}
-            onOpenChange={(open) => setExportMenuId(open ? conversation.sessionId : null)}
-          >
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                disabled={exportingId !== null}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label={`Export ${conversation.title}`}
-              >
-                <Download size={13} />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-44 p-1">
-              <button
-                type="button"
-                onClick={() => { void exportConversation(conversation, 'markdown'); }}
-                className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
-              >
-                Export as Markdown
-              </button>
-              <button
-                type="button"
-                onClick={() => { void exportConversation(conversation, 'json'); }}
-                className="w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-accent"
-              >
-                Export as JSON
-              </button>
-            </PopoverContent>
-          </Popover>
-          <button
-            type="button"
-            onClick={() => startRename(conversation)}
-            disabled={isActiveMindBusy || deletingId === conversation.sessionId}
-            className="h-7 w-7 rounded-md text-muted-foreground opacity-0 hover:text-foreground hover:bg-accent group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={`Rename ${conversation.title}`}
-          >
-            <Pencil size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => { void deleteConversation(conversation); }}
-            disabled={isActiveMindBusy || deletingId !== null}
-            className="h-7 w-7 rounded-md text-muted-foreground opacity-0 hover:text-destructive hover:bg-destructive/10 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={`Delete ${conversation.title}`}
-          >
-            <Trash2 size={13} />
-          </button>
+
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => { void togglePin(conversation); }}
+              disabled={organizingId !== null}
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-40',
+                conversation.isPinned
+                  ? 'text-primary opacity-100'
+                  : 'text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
+              )}
+              aria-label={conversation.isPinned ? `Unpin ${conversation.title}` : `Pin ${conversation.title}`}
+            >
+              <Pin size={13} />
+            </button>
+            <RowActionOverflowMenu
+              items={secondaryActions}
+              label={`More actions for ${conversation.title}`}
+              align="end"
+              triggerClassName={ROW_ACTION_REVEAL}
+            />
+          </div>
         </div>
-      </div>
+      </RowContextMenu>
     );
   };
 

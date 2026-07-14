@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Chatroom @mentions target selected agents** - Routes selected @mentions by stable mindId, falls back only for exact unique names, avoids broadcasts when mentioned agents are disabled or unavailable, and preserves hydrated event IDs for message reconciliation (#48)
 - **Isolate packaged Copilot runtime validation** — Runs the bundled CLI smoke check with a temporary home so self-updated developer cache builds cannot cause false package-version mismatches.
 - **Promote WTD runtimes across Windows volumes** — Falls back to copy-and-remove when temporary staging and the Actions workspace are on different drives, so Insiders packaging can complete (#400)
+- **Unify keyboard-accessible row actions across the agents, history, and chat rows** - Adds shared Radix dropdown-menu, context-menu, and row-actions primitives and adopts one discoverability convention (persistent kebab overflow, right-click context menu, focus-within reveal, and tooltips) across the agents rail, conversation history rail, and chat message rows. Agents rail controls are now real keyboard-focusable buttons in an absolute overlay instead of nested button-role spans, which restores the mind name width and adds a filter input, and history rows keep pin inline while moving archive, export, rename, and delete into the kebab so they no longer overflow the panel edge. Addresses findings shell-F1, shell-F4, rail-H2, rail-H3, perf-D1, and shell-F9.
 
 ### Tests
 

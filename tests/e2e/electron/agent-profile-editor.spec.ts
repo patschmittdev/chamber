@@ -51,9 +51,10 @@ test.describe('electron agent profile editor smoke', () => {
     }, { targetMindPath: mindPath });
 
     await expect(page.getByText('How can I help you today?')).toBeVisible();
-    // The sidebar action deep-links into Settings > Agents with this mind
-    // preselected; the persona editor lives on the Persona tab.
-    await page.getByRole('button', { name: `Manage ${mindName}`, exact: true }).click();
+    // The sidebar row overflow menu deep-links into Settings > Agents with this
+    // mind preselected; the persona editor lives on the Persona tab.
+    await page.getByRole('button', { name: `More actions for ${mindName}` }).click();
+    await page.getByRole('menuitem', { name: 'Manage agent' }).click();
     await page.getByRole('tab', { name: 'Persona' }).click();
 
     await page.getByRole('button', { name: /SOUL.md/ }).click();
