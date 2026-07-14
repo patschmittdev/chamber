@@ -67,7 +67,9 @@ import {
   MindScaffold,
   MindSkillAuthoring,
   MindSkillDiscovery,
+  McpConnectorOperationsService,
   listMcpServerSummaries,
+  listMcpConnectorStatuses,
   readMcpServers,
   writeMcpServers,
   TaskManager,
@@ -278,6 +280,7 @@ let mindManager: MindManager;
 let mindProfileService: MindProfileService;
 let mindMemoryService: MindMemoryService;
 let userProfileService: UserProfileService;
+let mcpConnectorOperationsService: McpConnectorOperationsService;
 let promptLibraryService: PromptLibraryService;
 let capabilityInventoryService: CapabilityInventoryService;
 let skillDiscovery: MindSkillDiscovery;
@@ -479,6 +482,10 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     listLensViews: (mindPath) => viewDiscovery.getViews(mindPath),
     isLensViewEnabled: (mindId, viewId) => lensPreferencesService.isViewEnabled(mindId, viewId),
   });
+  mcpConnectorOperationsService = new McpConnectorOperationsService(
+    { listStatuses: listMcpConnectorStatuses },
+    mindManager,
+  );
   microsoftGraphProfileImporter = new MicrosoftGraphProfileImporter(
     userProfileService,
     new MsalBrokerGraphTokenProvider({
@@ -1063,6 +1070,7 @@ app.on('ready', async () => {
       getActiveMindId: () => mindManager.getActiveMindId(),
     },
     { read: readMcpServers, write: writeMcpServers },
+    mcpConnectorOperationsService,
   );
   setupPromptsIPC(promptLibraryService);
   setupCapabilitiesIPC(

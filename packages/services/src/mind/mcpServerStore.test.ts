@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { McpServerEntry } from '@chamber/shared/mcp-types';
-import { listMcpServerSummaries, readMcpServers, writeMcpServers } from './mcpServerStore';
+import { listMcpConnectorStatuses, listMcpServerSummaries, readMcpServers, writeMcpServers } from './mcpServerStore';
 import { loadMcpServersFromMindPath, MCP_CONFIG_FILENAME } from './mcpConfig';
 
 describe('mcpServerStore', () => {
@@ -59,6 +59,33 @@ describe('mcpServerStore', () => {
       expect(serialized).not.toContain('super-secret-token');
       expect(serialized).not.toContain('mcp.example.test');
       expect(serialized).not.toContain('npx');
+    });
+
+    it('reports configuration readiness without revealing connector configuration or secrets', () => {
+      writeFile({
+        mcpServers: {
+          remote: {
+            type: 'http',
+            url: 'https://mcp.example.test/private',
+            headers: { Authorization: 'super-secret-token' },
+          },
+          broken: { type: 'stdio' },
+        },
+      });
+
+      const status = listMcpConnectorStatuses(tmpDir);
+      const serialized = JSON.stringify(status);
+
+      expect(status).toEqual({
+        connectors: [
+          { name: 'broken', transport: 'unknown', configuration: 'needs-attention', connection: 'unknown' },
+          { name: 'remote', transport: 'http', configuration: 'ready', connection: 'unknown' },
+        ],
+        sourceStatus: 'needs-attention',
+      });
+      expect(serialized).not.toContain('super-secret-token');
+      expect(serialized).not.toContain('mcp.example.test');
+      expect(serialized).not.toContain('Authorization');
     });
 
     it('surfaces stdio and http servers sorted by name', () => {

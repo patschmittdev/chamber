@@ -64,3 +64,31 @@ export interface McpHttpServerEntry extends McpServerEntryBase {
  * discriminant selects the stdio or http shape.
  */
 export type McpServerEntry = McpStdioServerEntry | McpHttpServerEntry;
+
+/**
+ * Renderer-safe connector status. It deliberately omits all launch, endpoint,
+ * credential, and configuration values.
+ */
+export interface McpConnectorStatus {
+  readonly name: string;
+  readonly transport: McpServerTransport | 'unknown';
+  readonly configuration: 'ready' | 'needs-attention';
+  /** Chamber cannot attest a live connection until the SDK uses the connector. */
+  readonly connection: 'unknown';
+}
+
+export interface McpConnectorStatusResult {
+  readonly connectors: readonly McpConnectorStatus[];
+  readonly sourceStatus: 'ready' | 'needs-attention';
+}
+
+/**
+ * The result of Chamber's bounded SDK session-creation check. A successful
+ * result only attests that Chamber applied configuration, not that a remote
+ * connector is reachable or authenticated.
+ */
+export type McpConnectorCheckResult =
+  | { readonly status: 'configuration-applied' }
+  | { readonly status: 'configuration-required' }
+  | { readonly status: 'connector-not-found' }
+  | { readonly status: 'reload-failed' };

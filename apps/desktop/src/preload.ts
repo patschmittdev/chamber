@@ -144,9 +144,10 @@ const electronAPI: ElectronAPI = {
     importFromMicrosoft: () => ipcRenderer.invoke(IPC.USER_PROFILE.IMPORT_FROM_MICROSOFT),
   },
   tools: {
-    list: () => ipcRenderer.invoke(IPC.TOOLS.LIST),
-    install: (toolId, marketplaceId) => ipcRenderer.invoke(IPC.TOOLS.INSTALL, toolId, marketplaceId),
-    uninstall: (toolId) => ipcRenderer.invoke(IPC.TOOLS.UNINSTALL, toolId),
+    listOperations: () => ipcRenderer.invoke(IPC.TOOLS.LIST_OPERATIONS),
+    install: (toolId, marketplaceId) => ipcRenderer.invoke(IPC.TOOLS.INSTALL_OPERATION, toolId, marketplaceId),
+    update: (toolId, marketplaceId) => ipcRenderer.invoke(IPC.TOOLS.UPDATE_OPERATION, toolId, marketplaceId),
+    remove: (toolId, marketplaceId) => ipcRenderer.invoke(IPC.TOOLS.REMOVE_OPERATION, toolId, marketplaceId),
   },
   tasks: {
     list: (mindId) => ipcRenderer.invoke(IPC.TASKS.LIST, mindId),
@@ -209,8 +210,8 @@ const electronAPI: ElectronAPI = {
     save: (request: SkillSaveRequest) => ipcRenderer.invoke(IPC.SKILLS.SAVE, request),
   },
   mcp: {
-    getServers: (mindId?) => ipcRenderer.invoke(IPC.MCP.GET_SERVERS, mindId),
-    setServers: (servers, mindId?) => ipcRenderer.invoke(IPC.MCP.SET_SERVERS, servers, mindId),
+    listStatus: (mindId?) => ipcRenderer.invoke(IPC.MCP.LIST_STATUS, mindId),
+    checkConnector: (connectorName, mindId?) => ipcRenderer.invoke(IPC.MCP.CHECK_CONNECTOR, connectorName, mindId),
   },
   prompts: {
     list: () => ipcRenderer.invoke(IPC.PROMPTS.LIST),

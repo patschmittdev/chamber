@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Add a renderer-safe capability inventory contract** — Provides a normalized read-only lifecycle projection for skills, MCP connectors, CLI tools, prompts, and Lens views without exposing configuration, paths, credentials, raw errors, or generic capability actions.
 - **Add installed Extensions workspace** — Organize renderer-safe capability inventory by skills, connectors, tools, prompts, and Lens views with source-specific management actions.
 - **Add curated extension discovery** — Adds a safe, searchable directory with bounded details and an inline install preflight that routes tool changes to the existing source-specific management flow.
+- **Safe connector and tool operations** — Adds redacted MCP configuration checks and serialized global CLI install, update, and removal feedback.
 
 ### Refactor
 

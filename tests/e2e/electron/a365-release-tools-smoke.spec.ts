@@ -123,9 +123,9 @@ test.describe('electron A365 release tools smoke', () => {
       expect(record?.install?.installedPath && fs.existsSync(record.install.installedPath)).toBe(true);
     }
 
-    const toolsList = await page.evaluate(() => window.electronAPI.tools.list());
+    const toolsList = await page.evaluate(() => window.electronAPI.tools.listOperations());
     for (const id of a365ToolIds) {
-      expect(toolsList.find((entry) => entry.id === id)?.status, `${id} should be installed in tools:list`).toBe('installed');
+      expect(toolsList.tools.find((entry) => entry.id === id)?.installation, `${id} should be installed in tools:listOperations`).toBe('installed');
     }
 
     const minds = await page.evaluate(() => window.electronAPI.mind.list());

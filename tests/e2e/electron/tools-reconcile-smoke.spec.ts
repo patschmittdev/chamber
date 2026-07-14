@@ -94,11 +94,11 @@ test.describe('electron marketplace tools reconcile smoke', () => {
     expect(workiqRecord.agentInstructions).toContain('workiq ask');
     expect(workiqRecord.help).toBe('workiq ask --help');
 
-    // Renderer-side: tools API surfaces the entry as installed.
-    const toolsList = await page.evaluate(() => window.electronAPI.tools.list());
-    const workiqEntry = toolsList.find((entry) => entry.id === 'workiq');
+    // Renderer-side: the redacted operations API surfaces the entry as installed.
+    const toolsList = await page.evaluate(() => window.electronAPI.tools.listOperations());
+    const workiqEntry = toolsList.tools.find((entry) => entry.id === 'workiq');
     expect(workiqEntry).toBeDefined();
-    expect(workiqEntry?.status).toBe('installed');
+    expect(workiqEntry?.installation).toBe('installed');
 
     // Force a fresh conversation so MindManager.startNewConversation refreshes
     // identity from disk + installedTools and hands the SDK a system message

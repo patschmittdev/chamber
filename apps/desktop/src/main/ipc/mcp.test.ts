@@ -18,6 +18,8 @@ describe('MCP IPC', () => {
   const getActiveMindId = vi.fn<() => string | null>();
   const read = vi.fn<(mindPath: string) => McpServerEntry[]>();
   const write = vi.fn<(mindPath: string, servers: McpServerEntry[]) => McpServerEntry[]>();
+  const listStatuses = vi.fn();
+  const check = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,7 +27,39 @@ describe('MCP IPC', () => {
     getActiveMindId.mockReturnValue(null);
     read.mockReturnValue([]);
     write.mockImplementation((_path, servers) => servers);
-    setupMcpIPC({ getMindPath, getActiveMindId }, { read, write });
+    listStatuses.mockReturnValue({ connectors: [], sourceStatus: 'ready' });
+    check.mockResolvedValue({ status: 'configuration-applied' });
+    setupMcpIPC({ getMindPath, getActiveMindId }, { read, write }, { list: listStatuses, check });
+  });
+
+  describe('connector operations', () => {
+    it('returns only a redacted status projection for the resolved mind', async () => {
+      getMindPath.mockReturnValue('C:\\minds\\lucy');
+      listStatuses.mockReturnValue({
+        connectors: [{ name: 'files', transport: 'stdio', configuration: 'ready', connection: 'unknown' }],
+        sourceStatus: 'ready',
+      });
+
+      const result = await getHandler(IPC.MCP.LIST_STATUS)(EVT, 'lucy');
+
+      expect(result).toEqual({
+        connectors: [{ name: 'files', transport: 'stdio', configuration: 'ready', connection: 'unknown' }],
+        sourceStatus: 'ready',
+      });
+      expect(JSON.stringify(result)).not.toContain('C:\\minds\\lucy');
+      expect(listStatuses).toHaveBeenCalledWith('C:\\minds\\lucy');
+    });
+
+    it('validates connector names before invoking the bounded check path', async () => {
+      getMindPath.mockReturnValue('C:\\minds\\lucy');
+
+      await expect(getHandler(IPC.MCP.CHECK_CONNECTOR)(EVT, 'files', 'lucy'))
+        .resolves.toEqual({ status: 'configuration-applied' });
+      expect(check).toHaveBeenCalledWith('lucy', 'C:\\minds\\lucy', 'files');
+
+      await expect(getHandler(IPC.MCP.CHECK_CONNECTOR)(EVT, '', 'lucy')).rejects.toThrow(TypeError);
+      expect(check).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getServers', () => {

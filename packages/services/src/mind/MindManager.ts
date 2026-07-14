@@ -533,6 +533,28 @@ export class MindManager extends EventEmitter {
     return this.createNewConversationSession(mindId, context, replaceSessionId);
   }
 
+  /**
+   * Exercises the SDK session-creation path with the mind's current MCP
+   * configuration without replacing the active conversation or unloading the
+   * mind. A successful result only means the configuration was accepted by this
+   * bounded path, not that a connector has completed a live tool call.
+   */
+  async verifyMcpConfiguration(mindId: string): Promise<void> {
+    const context = this.minds.get(mindId);
+    if (!context) throw new Error(`Mind ${mindId} not found`);
+    const session = await this.createSessionForMind({
+      kind: 'task',
+      client: context.client,
+      mindPath: context.mindPath,
+      systemMessage: context.identity.systemMessage,
+      tools: this.getSessionTools(mindId, context.mindPath),
+      model: context.selectedModel,
+      modelProvider: context.selectedModelProvider,
+      sessionId: randomUUID(),
+    });
+    await session.disconnect();
+  }
+
   async recoverActiveConversationSession(mindId: string): Promise<CopilotSession> {
     const context = this.minds.get(mindId);
     if (!context) throw new Error(`Mind ${mindId} not found`);

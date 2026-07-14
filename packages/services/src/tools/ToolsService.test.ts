@@ -123,6 +123,7 @@ describe('ToolsService', () => {
       marketplaceLabel: 'github:ianphil/genesis-minds',
       status: 'installed',
       installedVersion: 'latest',
+      updateAvailable: false,
     }]);
     expect(result.sources).toEqual([{
       id: 'github:ianphil/genesis-minds',
@@ -149,6 +150,39 @@ describe('ToolsService', () => {
     const result = await svc.install('workiq');
     expect(result.success).toBe(false);
     expect(store.config.installedTools ?? []).toHaveLength(0);
+  });
+
+  it('returns display-safe operator outcomes and never returns installer output', async () => {
+    setupTools(client);
+    runner.responses.set('npm install -g @microsoft/workiq@latest', {
+      exitCode: 1,
+      stdout: 'C:\\private\\installer',
+      stderr: 'token=super-secret',
+    });
+
+    const result = await svc.installForOperator('workiq', 'github:ianphil/genesis-minds');
+
+    expect(result).toEqual({ status: 'failed', action: 'install' });
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
+
+  it('marks an installed tool for update without exposing installer metadata', async () => {
+    setupTools(client, [{ ...TOOL_ENTRY, install: { type: 'npm-global', package: '@microsoft/workiq', version: '2.0.0' } }]);
+    store.config.installedTools = [installedRecord()];
+
+    const result = await svc.listOperations();
+
+    expect(result.tools).toEqual([{
+      id: 'workiq',
+      displayName: 'Microsoft Work IQ',
+      description: 'Query M365 data.',
+      marketplaceId: 'github:ianphil/genesis-minds',
+      marketplaceLabel: 'Public Genesis Minds',
+      installation: 'installed',
+      updateAvailable: true,
+    }]);
+    expect(JSON.stringify(result)).not.toContain('@microsoft/workiq');
   });
 
   it('uninstall removes the record and rejects unknown ids', async () => {

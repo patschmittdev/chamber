@@ -99,6 +99,10 @@ export const IPC = {
     LIST: 'tools:list',
     INSTALL: 'tools:install',
     UNINSTALL: 'tools:uninstall',
+    LIST_OPERATIONS: 'tools:listOperations',
+    INSTALL_OPERATION: 'tools:installOperation',
+    UPDATE_OPERATION: 'tools:updateOperation',
+    REMOVE_OPERATION: 'tools:removeOperation',
   },
   TASKS: {
     LIST: 'tasks:list',
@@ -208,6 +212,8 @@ export const IPC = {
   MCP: {
     GET_SERVERS: 'mcp:getServers',
     SET_SERVERS: 'mcp:setServers',
+    LIST_STATUS: 'mcp:listStatus',
+    CHECK_CONNECTOR: 'mcp:checkConnector',
   },
   PROMPTS: {
     LIST: 'prompts:list',

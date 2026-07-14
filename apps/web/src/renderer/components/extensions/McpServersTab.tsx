@@ -1,69 +1,48 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
-import type { McpServerEntry } from '@chamber/shared/mcp-types';
-import { Globe, Pencil, Plus, Server, Terminal, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { McpConnectorCheckResult, McpConnectorStatusResult } from '@chamber/shared/mcp-types';
+import { Globe, Server, Terminal } from 'lucide-react';
 import { useAppState } from '../../lib/store';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
 import { TabEmptyState, TabError, TabLoading } from './extensionsShared';
-import {
-  emptyMcpForm,
-  entryToForm,
-  formToEntry,
-  validateMcpForm,
-  type McpServerFormState,
-} from './mcpFormUtils';
 
 export function McpServersTab({ onInventoryChanged }: { readonly onInventoryChanged?: () => void }) {
   const { activeMindId, minds } = useAppState();
   const activeMind = minds.find((mind) => mind.mindId === activeMindId) ?? null;
-
-  const [entries, setEntries] = useState<McpServerEntry[]>([]);
+  const [status, setStatus] = useState<McpConnectorStatusResult>({ connectors: [], sourceStatus: 'ready' });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // The mind whose entries are currently displayed. Writes are only allowed
-  // when this equals activeMindId, so a slow load for a previously-selected
-  // mind can never persist over the newly-active mind's .mcp.json (blocker 3).
-  const [loadedMindId, setLoadedMindId] = useState<string | null>(null);
-  // Monotonic token: only the most recent load may apply its result. Guards
-  // against an earlier getServers() resolving after the user switched minds.
+  const [failedLoad, setFailedLoad] = useState(false);
+  const [busyName, setBusyName] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, McpConnectorCheckResult>>({});
   const requestSeq = useRef(0);
+  const activeMindIdRef = useRef(activeMindId);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [form, setForm] = useState<McpServerFormState>(emptyMcpForm);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    activeMindIdRef.current = activeMindId;
+    setBusyName(null);
+    setResults({});
+  }, [activeMindId]);
 
   const load = useCallback(async () => {
-    const seq = ++requestSeq.current;
+    const sequence = ++requestSeq.current;
     const mindId = activeMindId;
-    setLoadedMindId(null);
     if (!mindId) {
-      setEntries([]);
+      setStatus({ connectors: [], sourceStatus: 'ready' });
       setLoading(false);
       return;
     }
     setLoading(true);
-    setError(null);
+    setFailedLoad(false);
     try {
-      const result = await window.electronAPI.mcp.getServers(mindId);
-      if (requestSeq.current !== seq) return;
-      setEntries(result);
-      setLoadedMindId(mindId);
-    } catch (err) {
-      if (requestSeq.current !== seq) return;
-      setError(getErrorMessage(err));
+      const next = await window.electronAPI.mcp.listStatus(mindId);
+      if (requestSeq.current === sequence) setStatus(next);
+    } catch {
+      if (requestSeq.current === sequence) {
+        setStatus({ connectors: [], sourceStatus: 'needs-attention' });
+        setFailedLoad(true);
+      }
     } finally {
-      if (requestSeq.current === seq) setLoading(false);
+      if (requestSeq.current === sequence) setLoading(false);
     }
   }, [activeMindId]);
 
@@ -71,93 +50,22 @@ export function McpServersTab({ onInventoryChanged }: { readonly onInventoryChan
     void load();
   }, [load]);
 
-  // Writable only once the active mind's servers have loaded. Using loadedMindId
-  // as the write target means a persist is always addressed to the mind whose
-  // data the user actually edited.
-  const canWrite = loadedMindId !== null && loadedMindId === activeMindId && !loading;
-
-  const persist = useCallback(
-    async (next: McpServerEntry[]): Promise<McpServerEntry[]> => {
-      if (loadedMindId === null || loadedMindId !== activeMindId) {
-        throw new Error('The selected mind changed. Reload before saving.');
+  const check = async (name: string) => {
+    if (!activeMindId || busyName) return;
+    const sequence = requestSeq.current;
+    const targetMindId = activeMindId;
+    setBusyName(name);
+    try {
+      const result = await window.electronAPI.mcp.checkConnector(name, targetMindId);
+      if (requestSeq.current === sequence && activeMindIdRef.current === targetMindId) {
+        setResults((current) => ({ ...current, [name]: result }));
       }
-      return window.electronAPI.mcp.setServers(next, loadedMindId);
-    },
-    [loadedMindId, activeMindId],
-  );
-
-  // Persists `next`, then applies the result only if the view still shows the
-  // same mind it was written for. Without this the result of an in-flight save
-  // for a previously-active mind could land after a switch and poison `entries`
-  // (which the next write would then persist into the wrong mind) (blocker 3).
-  const runWrite = useCallback(
-    async (next: McpServerEntry[]): Promise<boolean> => {
-      const seq = requestSeq.current;
-      const targetMindId = loadedMindId;
-      const result = await persist(next);
-      if (requestSeq.current !== seq || targetMindId !== activeMindId) return false;
-      setEntries(result);
-      onInventoryChanged?.();
-      return true;
-    },
-    [persist, loadedMindId, activeMindId, onInventoryChanged],
-  );
-
-  const otherNames = useMemo(
-    () => entries.filter((entry) => entry.name !== editingName).map((entry) => entry.name),
-    [entries, editingName],
-  );
-  const validateCurrentForm = useCallback(
-    () => validateMcpForm(form, otherNames),
-    [form, otherNames],
-  );
-
-  const openAdd = () => {
-    setEditingName(null);
-    setForm(emptyMcpForm());
-    setFormError(null);
-    setDialogOpen(true);
-  };
-
-  const openEdit = (entry: McpServerEntry) => {
-    setEditingName(entry.name);
-    setForm(entryToForm(entry));
-    setFormError(null);
-    setDialogOpen(true);
-  };
-
-  const submit = async () => {
-    if (!canWrite) {
-      setFormError('The selected mind changed. Reload before saving.');
-      return;
-    }
-    const message = validateCurrentForm();
-    if (message) {
-      setFormError(message);
-      return;
-    }
-    const entry = formToEntry(form);
-    const next = editingName
-      ? entries.map((existing) => (existing.name === editingName ? entry : existing))
-      : [...entries, entry];
-    setSaving(true);
-    setFormError(null);
-    try {
-      if (await runWrite(next)) setDialogOpen(false);
-    } catch (err) {
-      setFormError(getErrorMessage(err));
     } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async (name: string) => {
-    if (!canWrite) return;
-    setError(null);
-    try {
-      await runWrite(entries.filter((entry) => entry.name !== name));
-    } catch (err) {
-      setError(getErrorMessage(err));
+      if (activeMindIdRef.current === targetMindId) {
+        setBusyName(null);
+        await load();
+        onInventoryChanged?.();
+      }
     }
   };
 
@@ -166,223 +74,96 @@ export function McpServersTab({ onInventoryChanged }: { readonly onInventoryChan
       <TabEmptyState
         icon={<Server size={22} />}
         title="No mind selected"
-        detail="Select a mind from the sidebar to manage the MCP servers in its .mcp.json."
+        detail="Select a mind to review its connector configuration."
       />
+    );
+  }
+
+  if (loading) return <TabLoading label="Loading connector status" />;
+
+  if (failedLoad) {
+    return (
+      <div className="flex flex-col gap-3">
+        <TabError message="Could not load connector status. Try again." />
+        <div><Button variant="outline" size="sm" onClick={() => void load()}>Retry</Button></div>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">MCP servers</h2>
-          <p className="text-sm text-muted-foreground">
-            Model Context Protocol servers configured in{' '}
-            <span className="font-medium text-foreground">{activeMind?.identity.name ?? 'this mind'}</span>&apos;s{' '}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">.mcp.json</code>.
-          </p>
-        </div>
-        <Button onClick={openAdd} disabled={saving || !canWrite}>
-          <Plus size={16} />
-          Add server
-        </Button>
+      <div>
+        <h2 className="text-lg font-semibold">Connectors</h2>
+        <p className="text-sm text-muted-foreground">
+          Configured for <span className="font-medium text-foreground">{activeMind?.identity.name ?? 'this mind'}</span>.
+          Connector configuration is mind scoped and stays private.
+        </p>
       </div>
 
-      {error && <TabError message={error} />}
+      {status.sourceStatus === 'needs-attention' ? (
+        <TabError message="Connector configuration needs attention. Update the required configuration, then reload this view." />
+      ) : null}
 
-      {loading ? (
-        <TabLoading label="Loading servers" />
-      ) : entries.length === 0 ? (
+      {status.connectors.length === 0 ? (
         <TabEmptyState
           icon={<Server size={22} />}
-          title="No MCP servers yet"
-          detail="Add a stdio command or an HTTP endpoint to give this mind extra tools."
+          title="No connectors configured"
+          detail="Add connector configuration for this mind before Chamber can load it."
         />
       ) : (
         <ul className="flex flex-col gap-2">
-          {entries.map((entry) => (
-            <li
-              key={entry.name}
-              className="flex items-start justify-between gap-4 rounded-xl border border-border bg-card p-4"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  {entry.transport === 'stdio' ? <Terminal size={16} className="text-muted-foreground" /> : <Globe size={16} className="text-muted-foreground" />}
-                  <span className="font-medium">{entry.name}</span>
-                  <Badge variant="outline">{entry.transport}</Badge>
+          {status.connectors.map((connector) => {
+            const result = results[connector.name];
+            const busy = busyName === connector.name;
+            const canCheck = connector.configuration === 'ready';
+            const retry = result?.status === 'reload-failed';
+            return (
+              <li key={connector.name} className="rounded-xl border border-border bg-card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {connector.transport === 'stdio'
+                        ? <Terminal size={16} className="text-muted-foreground" aria-hidden />
+                        : <Globe size={16} className="text-muted-foreground" aria-hidden />}
+                      <span className="font-medium">{connector.name}</span>
+                      <Badge variant="outline">{connector.transport === 'unknown' ? 'Unknown transport' : connector.transport}</Badge>
+                      <Badge variant={connector.configuration === 'ready' ? 'secondary' : 'destructive'}>
+                        {connector.configuration === 'ready' ? 'Configuration ready' : 'Configuration required'}
+                      </Badge>
+                      <Badge variant="outline">Connection unknown</Badge>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Chamber can verify configuration through session setup, not live connector reachability or authentication.
+                    </p>
+                    {result ? <p role="status" aria-live="polite" className="mt-2 text-xs text-muted-foreground">{resultMessage(result)}</p> : null}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!canCheck || busy}
+                    onClick={() => void check(connector.name)}
+                  >
+                    {busy ? 'Checking configuration...' : retry ? 'Retry configuration check' : 'Check configuration'}
+                  </Button>
                 </div>
-                <div className="mt-1 truncate text-sm text-muted-foreground">
-                  {entry.transport === 'stdio'
-                    ? [entry.command, ...entry.args].join(' ')
-                    : entry.url}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <button
-                  aria-label={`Edit ${entry.name}`}
-                  className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                  onClick={() => openEdit(entry)}
-                  disabled={!canWrite}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  aria-label={`Remove ${entry.name}`}
-                  className="rounded-md p-2 text-muted-foreground hover:bg-destructive/10 hover:text-red-300 disabled:opacity-40"
-                  onClick={() => void remove(entry.name)}
-                  disabled={!canWrite}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingName ? 'Edit MCP server' : 'Add MCP server'}</DialogTitle>
-            <DialogDescription>
-              Configure a stdio launch command or a remote HTTP endpoint. Changes are written to{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">.mcp.json</code>.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-4">
-            <TextField
-              label="Name"
-              value={form.name}
-              onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
-              onBlur={() => setFormError(validateCurrentForm())}
-              placeholder="filesystem"
-            />
-            <SelectField
-              label="Transport"
-              value={form.transport}
-              onChange={(value) => setForm((prev) => ({ ...prev, transport: value as McpServerFormState['transport'] }))}
-              onBlur={() => setFormError(validateCurrentForm())}
-              options={[
-                { label: 'stdio (local command)', value: 'stdio' },
-                { label: 'http (remote endpoint)', value: 'http' },
-              ]}
-            />
-
-            {form.transport === 'stdio' ? (
-              <>
-                <TextField
-                  label="Command"
-                  value={form.command}
-                  onChange={(value) => setForm((prev) => ({ ...prev, command: value }))}
-                  onBlur={() => setFormError(validateCurrentForm())}
-                  placeholder="npx"
-                />
-                <TextAreaField
-                  label="Arguments"
-                  hint="One argument per line."
-                  value={form.argsText}
-                  onChange={(value) => setForm((prev) => ({ ...prev, argsText: value }))}
-                  onBlur={() => setFormError(validateCurrentForm())}
-                  placeholder={'-y\n@modelcontextprotocol/server-filesystem'}
-                />
-                <TextAreaField
-                  label="Environment"
-                  hint="One KEY=VALUE per line."
-                  value={form.envText}
-                  onChange={(value) => setForm((prev) => ({ ...prev, envText: value }))}
-                  onBlur={() => setFormError(validateCurrentForm())}
-                  placeholder={'ROOT=/tmp'}
-                />
-              </>
-            ) : (
-              <>
-                <TextField
-                  label="URL"
-                  value={form.url}
-                  onChange={(value) => setForm((prev) => ({ ...prev, url: value }))}
-                  onBlur={() => setFormError(validateCurrentForm())}
-                  placeholder="https://mcp.example.com/v1"
-                />
-                <TextAreaField
-                  label="Headers"
-                  hint="One KEY=VALUE per line."
-                  value={form.headersText}
-                  onChange={(value) => setForm((prev) => ({ ...prev, headersText: value }))}
-                  onBlur={() => setFormError(validateCurrentForm())}
-                  placeholder={'Authorization=Bearer token'}
-                />
-              </>
-            )}
-
-            {formError && <TabError message={formError} />}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={() => void submit()} disabled={saving}>
-              {saving ? 'Saving…' : 'Save server'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
 
-function TextField({ label, value, onChange, onBlur, placeholder }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; placeholder?: string }) {
-  const id = `mcp-field-${label.toLowerCase().replaceAll(' ', '-')}`;
-  return (
-    <div className="block">
-      <label className="text-sm font-medium text-muted-foreground" htmlFor={id}>{label}</label>
-      <input
-        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-        id={id}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={onBlur}
-        placeholder={placeholder}
-        value={value}
-      />
-    </div>
-  );
-}
-
-function TextAreaField({ label, value, onChange, onBlur, hint, placeholder }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; hint?: string; placeholder?: string }) {
-  const id = `mcp-field-${label.toLowerCase().replaceAll(' ', '-')}`;
-  return (
-    <div className="block">
-      <label className="text-sm font-medium text-muted-foreground" htmlFor={id}>{label}</label>
-      <textarea
-        className="mt-2 h-20 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-primary"
-        id={id}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={onBlur}
-        placeholder={placeholder}
-        value={value}
-      />
-      {hint && <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>}
-    </div>
-  );
-}
-
-function SelectField({ label, value, onChange, onBlur, options }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void; options: Array<{ label: string; value: string }> }) {
-  const id = `mcp-field-${label.toLowerCase().replaceAll(' ', '-')}`;
-  return (
-    <div className="block">
-      <label className="text-sm font-medium text-muted-foreground" htmlFor={id}>{label}</label>
-      <select
-        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-        id={id}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={onBlur}
-        value={value}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </div>
-  );
+function resultMessage(result: McpConnectorCheckResult): string {
+  switch (result.status) {
+    case 'configuration-applied':
+      return 'Configuration was applied. Connection health remains unknown until this connector is used.';
+    case 'configuration-required':
+      return 'Required configuration is incomplete. Update it, then check again.';
+    case 'connector-not-found':
+      return 'This connector is no longer configured. Refresh the list and try again.';
+    case 'reload-failed':
+      return 'Chamber could not reload this connector configuration. Retry the check.';
+  }
 }
