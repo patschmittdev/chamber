@@ -70,7 +70,6 @@ export function PerMindCustomInstructionsControls({
                               {instructionLayerStatus(layer)}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">{layer.source}</p>
                           <p className="mt-1 text-xs text-muted-foreground">{layer.description}</p>
                         </div>
                       </li>

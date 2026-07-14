@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { Camera, LogOut, UserRound } from 'lucide-react';
 import type { MarketplaceRegistry, MindContext, UserProfile } from '@chamber/shared/types';
 import { APP_VERSION } from '@/renderer/lib/appVersion';
@@ -27,9 +26,13 @@ const SETTINGS_CARD_CLASS = 'rounded-xl border border-border bg-card p-5';
 const SETTINGS_FIELD_LABEL_CLASS = 'text-xs font-medium text-muted-foreground';
 const SETTINGS_FIELD_INPUT_CLASS = 'mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20';
 const SETTINGS_FIELD_TEXTAREA_CLASS = 'mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20';
+const PROFILE_ERROR = 'Could not update your profile. Try again.';
+const INSTRUCTIONS_ERROR = 'Could not update custom instructions. Try again.';
+const SOURCES_LOAD_ERROR = 'Could not load enrolled sources. Try again.';
+const SOURCES_UPDATE_ERROR = 'Could not update enrolled sources. Try again.';
 
 export function SettingsView() {
-  const { featureFlags, minds } = useAppState();
+  const { activeMindId, featureFlags, minds } = useAppState();
   const dispatch = useAppDispatch();
   const [login, setLogin] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Array<{ login: string }>>([]);
@@ -104,8 +107,8 @@ export function SettingsView() {
       .then((profile) => {
         if (!cancelled) applyUserProfile(profile);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setProfileMessage(getErrorMessage(err));
+      .catch(() => {
+        if (!cancelled) setProfileMessage(PROFILE_ERROR);
       });
     return () => {
       cancelled = true;
@@ -117,8 +120,8 @@ export function SettingsView() {
   };
 
   useEffect(() => {
-    void refreshMarketplaces().catch((err: unknown) => {
-      setMarketplaceMessage(getErrorMessage(err));
+    void refreshMarketplaces().catch(() => {
+      setMarketplaceMessage(SOURCES_LOAD_ERROR);
     });
   }, []);
 
@@ -167,8 +170,8 @@ export function SettingsView() {
       });
       applyUserProfile(profile);
       setProfileMessage('Profile saved.');
-    } catch (err) {
-      setProfileMessage(getErrorMessage(err));
+    } catch {
+      setProfileMessage(PROFILE_ERROR);
     } finally {
       setProfileSaving(false);
     }
@@ -182,8 +185,8 @@ export function SettingsView() {
       setCustomInstructions(profile.customInstructions ?? '');
       await refreshInstructionPrecedence();
       setCustomInstructionsMessage('Custom instructions saved. New chats use them.');
-    } catch (err) {
-      setCustomInstructionsMessage(getErrorMessage(err));
+    } catch {
+      setCustomInstructionsMessage(INSTRUCTIONS_ERROR);
     } finally {
       setCustomInstructionsSaving(false);
     }
@@ -196,8 +199,8 @@ export function SettingsView() {
       setCustomInstructionsMessage(enabled
         ? `${mind.identity.name} now inherits global custom instructions.`
         : `${mind.identity.name} now skips global custom instructions.`);
-    } catch (err) {
-      setCustomInstructionsMessage(getErrorMessage(err));
+    } catch {
+      setCustomInstructionsMessage(INSTRUCTIONS_ERROR);
     }
   };
 
@@ -207,13 +210,13 @@ export function SettingsView() {
     try {
       const result = await window.electronAPI.userProfile.importFromMicrosoft();
       if (!result.success) {
-        setProfileMessage(result.cancelled ? 'Microsoft 365 profile import was cancelled.' : result.error);
+        setProfileMessage(result.cancelled ? 'Microsoft 365 profile import was cancelled.' : PROFILE_ERROR);
         return;
       }
       applyUserProfile(result.profile);
       setProfileMessage('Imported Microsoft 365 profile. You can edit the fields and save local changes.');
-    } catch (err) {
-      setProfileMessage(getErrorMessage(err));
+    } catch {
+      setProfileMessage(PROFILE_ERROR);
     } finally {
       setProfileImporting(false);
     }
@@ -224,7 +227,7 @@ export function SettingsView() {
     setMarketplaceMessage(null);
     const result = await window.electronAPI.marketplace.addGenesisRegistry(marketplaceUrl);
     if (!result.success) {
-      setMarketplaceMessage(result.error);
+      setMarketplaceMessage(SOURCES_UPDATE_ERROR);
       return;
     }
     setMarketplaceUrl('');
@@ -235,7 +238,7 @@ export function SettingsView() {
   const handleToggleMarketplace = async (registry: MarketplaceRegistry) => {
     const result = await window.electronAPI.marketplace.setGenesisRegistryEnabled(registry.id, !registry.enabled);
     if (!result.success) {
-      setMarketplaceMessage(result.error);
+      setMarketplaceMessage(SOURCES_UPDATE_ERROR);
       return;
     }
     await refreshMarketplaces();
@@ -243,13 +246,13 @@ export function SettingsView() {
 
   const handleRefreshMarketplace = async (registry: MarketplaceRegistry) => {
     const result = await window.electronAPI.marketplace.refreshGenesisRegistry(registry.id);
-    setMarketplaceMessage(result.success ? `Refreshed ${result.registry.label}.` : result.error);
+    setMarketplaceMessage(result.success ? `Refreshed ${result.registry.label}.` : SOURCES_UPDATE_ERROR);
   };
 
   const handleRemoveMarketplace = async (registry: MarketplaceRegistry) => {
     const result = await window.electronAPI.marketplace.removeGenesisRegistry(registry.id);
     if (!result.success) {
-      setMarketplaceMessage(result.error);
+      setMarketplaceMessage(SOURCES_UPDATE_ERROR);
       return;
     }
     setMarketplaceMessage(`Removed ${result.registry.label}.`);
@@ -258,8 +261,6 @@ export function SettingsView() {
 
   return (
     <SettingsLayout
-      showLocalLlm={Boolean(featureFlags.byoLlm)}
-      showVoiceDictation={Boolean(featureFlags.voiceDictation)}
     >
       {(activeSection, agentsMindId, agentsSelectionToken, agentsInitialTab) => (
         <>
@@ -504,11 +505,17 @@ export function SettingsView() {
             </section>
           )}
 
-          {activeSection === 'marketplaces' && (
+          {activeSection === 'models' && (
+            <ModelsAndProvidersSection activeMindId={activeMindId} showLocalLlm={Boolean(featureFlags.byoLlm)} />
+          )}
+
+          {activeSection === 'sources-security' && (
             <section className="space-y-3">
               <header>
-                <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Marketplaces</h2>
-                <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>Repositories Chamber pulls Genesis mind templates from.</p>
+                <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Sources &amp; security</h2>
+                <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>
+                  Manage enrolled marketplace sources and local voice permissions. Changes stay in this workspace.
+                </p>
                 <div className="mt-2">
                   <button
                     type="button"
@@ -518,11 +525,17 @@ export function SettingsView() {
                       dispatch({ type: 'SET_ACTIVE_VIEW', payload: 'extensions' });
                     }}
                   >
-                    Open Extensions skills
+                    Browse source offerings
                   </button>
                 </div>
               </header>
               <div className={`${SETTINGS_CARD_CLASS} space-y-4`}>
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">Enrolled marketplace sources</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    These sources provide Genesis templates and safe metadata for the Extensions directory.
+                  </p>
+                </div>
                 <form className="flex gap-2" onSubmit={(event) => { void handleAddMarketplace(event); }}>
                   <input
                     type="url"
@@ -547,7 +560,6 @@ export function SettingsView() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-medium">{registry.label}</p>
-                          <p className="truncate text-xs text-muted-foreground">{registry.url}</p>
                           <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                             <span>{registry.enabled ? 'Enabled' : 'Disabled'}</span>
                             {registry.isDefault ? (
@@ -581,23 +593,16 @@ export function SettingsView() {
                   ))}
                 </div>
               </div>
+              {featureFlags.voiceDictation ? (
+                <div className="border-t border-border pt-6">
+                  <VoiceDictationSettingsSection />
+                </div>
+              ) : null}
             </section>
           )}
 
           {activeSection === 'appearance' && (
             <AppearanceSettingsSection />
-          )}
-
-          {activeSection === 'local-llm' && featureFlags.byoLlm && (
-            <section className="space-y-3">
-              <LocalLlmSettingsSection />
-            </section>
-          )}
-
-          {activeSection === 'voice-dictation' && featureFlags.voiceDictation && (
-            <section className="space-y-3">
-              <VoiceDictationSettingsSection />
-            </section>
           )}
 
           <AddAccountModal
@@ -621,43 +626,76 @@ export function SettingsView() {
 // index.css so navigating between sections matches the rest of the app.
 // ---------------------------------------------------------------------------
 
-export type SettingsSectionId = 'profile' | 'custom-instructions' | 'agents' | 'account' | 'marketplaces' | 'appearance' | 'local-llm' | 'voice-dictation';
+export type SettingsSectionId = 'profile' | 'custom-instructions' | 'agents' | 'account' | 'appearance' | 'models' | 'sources-security';
 
 interface SettingsRailItem {
   id: SettingsSectionId;
   label: string;
 }
 
+interface SettingsRailGroup {
+  label: string;
+  items: SettingsRailItem[];
+}
+
 interface SettingsLayoutProps {
-  showLocalLlm: boolean;
-  showVoiceDictation: boolean;
   children: (activeSection: SettingsSectionId, agentsMindId?: string, agentsSelectionToken?: number, agentsInitialTab?: string) => React.ReactNode;
+}
+
+const LEGACY_SECTION_ALIASES: Readonly<Record<string, SettingsSectionId>> = {
+  marketplaces: 'sources-security',
+  'local-llm': 'models',
+  'voice-dictation': 'sources-security',
+};
+
+function resolveSettingsSection(
+  section: string | undefined,
+  railItems: SettingsRailItem[],
+): SettingsSectionId | undefined {
+  if (!section) return undefined;
+  const id = LEGACY_SECTION_ALIASES[section] ?? section;
+  return railItems.find((item) => item.id === id)?.id;
 }
 
 function resolveInitialSection(
   intent: { section: string; mindId?: string; tab?: string } | null,
   railItems: SettingsRailItem[],
 ): SettingsSectionId {
-  const target = intent ? railItems.find((item) => item.id === intent.section) : undefined;
-  return target ? target.id : (railItems[0]?.id ?? 'profile');
+  return resolveSettingsSection(intent?.section, railItems) ?? railItems[0]?.id ?? 'profile';
 }
 
-function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: SettingsLayoutProps) {
+function SettingsLayout({ children }: SettingsLayoutProps) {
   const { pendingSettingsIntent } = useAppState();
   const dispatch = useAppDispatch();
-  const railItems = useMemo<SettingsRailItem[]>(() => {
-    const items: SettingsRailItem[] = [
-      { id: 'profile', label: 'Profile' },
-      { id: 'custom-instructions', label: 'Custom instructions' },
-      { id: 'agents', label: 'Agents' },
-      { id: 'account', label: 'Account' },
-      { id: 'marketplaces', label: 'Marketplaces' },
-      { id: 'appearance', label: 'Appearance' },
+  const railGroups = useMemo<SettingsRailGroup[]>(() => {
+    const groups: SettingsRailGroup[] = [
+      {
+        label: 'Workspace',
+        items: [
+          { id: 'profile', label: 'Profile' },
+          { id: 'account', label: 'Account' },
+          { id: 'appearance', label: 'Appearance' },
+        ],
+      },
+      {
+        label: 'Agents',
+        items: [
+          { id: 'agents', label: 'Agents' },
+          { id: 'custom-instructions', label: 'Custom instructions' },
+        ],
+      },
+      {
+        label: 'Models and providers',
+        items: [{ id: 'models', label: 'Models and providers' }],
+      },
+      {
+        label: 'Sources and security',
+        items: [{ id: 'sources-security', label: 'Sources & security' }],
+      },
     ];
-    if (showLocalLlm) items.push({ id: 'local-llm', label: 'Local LLM' });
-    if (showVoiceDictation) items.push({ id: 'voice-dictation', label: 'Voice dictation' });
-    return items;
-  }, [showLocalLlm, showVoiceDictation]);
+    return groups;
+  }, []);
+  const railItems = useMemo(() => railGroups.flatMap((group) => group.items), [railGroups]);
 
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(
     () => resolveInitialSection(pendingSettingsIntent, railItems),
@@ -677,8 +715,8 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
   // so navigating away and back does not re-trigger it.
   useEffect(() => {
     if (!pendingSettingsIntent) return;
-    const target = railItems.find((item) => item.id === pendingSettingsIntent.section);
-    if (target) setActiveSection(target.id);
+    const target = resolveSettingsSection(pendingSettingsIntent.section, railItems);
+    if (target) setActiveSection(target);
     setDeepLinkMindId(pendingSettingsIntent.mindId);
     setDeepLinkTab(pendingSettingsIntent.tab);
     setDeepLinkToken((token) => token + 1);
@@ -704,22 +742,29 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
         <div className="px-2 pb-3">
           <p className="text-lg font-semibold tracking-tight text-foreground">Settings</p>
         </div>
-        {railItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setActiveSection(item.id)}
-            aria-current={activeSection === item.id ? 'page' : undefined}
-            className={
-              'relative rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring '
-              + 'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:rounded-r-full before:bg-primary before:transition-all before:duration-200 '
-              + (activeSection === item.id
-                ? 'bg-selected text-foreground font-medium before:h-4 before:opacity-100'
-                : 'text-muted-foreground hover:bg-hover hover:text-foreground before:h-0 before:opacity-0')
-            }
-          >
-            {item.label}
-          </button>
+        {railGroups.map((group) => (
+          <section key={group.label} aria-labelledby={`settings-group-${group.label.replaceAll(' ', '-').toLowerCase()}`} className="space-y-1">
+            <h2 id={`settings-group-${group.label.replaceAll(' ', '-').toLowerCase()}`} className="px-2 pt-2 text-xs font-semibold text-muted-foreground">
+              {group.label}
+            </h2>
+            {group.items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveSection(item.id)}
+                aria-current={activeSection === item.id ? 'page' : undefined}
+                className={
+                  'relative w-full rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring '
+                  + 'before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-px before:bg-primary before:transition-all before:duration-200 '
+                  + (activeSection === item.id
+                    ? 'bg-selected text-foreground font-medium before:h-4 before:opacity-100'
+                    : 'text-muted-foreground hover:bg-hover hover:text-foreground before:h-0 before:opacity-0')
+                }
+              >
+                {item.label}
+              </button>
+            ))}
+          </section>
         ))}
         <div className="mt-auto pt-4 px-2 text-xs text-muted-foreground">
           Chamber v{APP_VERSION}
@@ -738,5 +783,45 @@ function SettingsLayout({ children, showLocalLlm, showVoiceDictation }: Settings
         </div>
       </div>
     </div>
+  );
+}
+
+function ModelsAndProvidersSection({
+  activeMindId,
+  showLocalLlm,
+}: {
+  activeMindId: string | null;
+  showLocalLlm: boolean;
+}) {
+  const dispatch = useAppDispatch();
+  return (
+    <section className="space-y-4">
+      <header>
+        <h2 className={SETTINGS_SECTION_TITLE_CLASS}>Models &amp; providers</h2>
+        <p className={SETTINGS_SECTION_DESCRIPTION_CLASS}>
+          Provider settings are saved locally. Each agent keeps its own model selection.
+        </p>
+      </header>
+      <div className={SETTINGS_CARD_CLASS}>
+        <h3 className="text-sm font-medium text-foreground">Per-agent model selection</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Choose the model an agent uses for new turns from its configuration. This does not change other agents.
+        </p>
+        <button
+          type="button"
+          className="mt-3 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => {
+            dispatch({ type: 'SET_PENDING_SETTINGS_INTENT', payload: { section: 'agents', ...(activeMindId ? { mindId: activeMindId } : {}), tab: 'model' } });
+          }}
+        >
+          Configure agent model
+        </button>
+      </div>
+      {showLocalLlm ? <LocalLlmSettingsSection /> : (
+        <div className={`${SETTINGS_CARD_CLASS} text-sm text-muted-foreground`}>
+          Local and custom providers are not enabled for this workspace.
+        </div>
+      )}
+    </section>
   );
 }

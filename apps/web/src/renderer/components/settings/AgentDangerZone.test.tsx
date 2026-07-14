@@ -55,13 +55,14 @@ describe('AgentDangerZone', () => {
   });
 
   it('surfaces a removal failure inside the dialog and keeps it open', async () => {
-    (api.mind.remove as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('disk is busy'));
+    (api.mind.remove as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('C:\\agents\\ada is busy'));
     renderDangerZone();
     fireEvent.click(screen.getByRole('button', { name: 'Remove agent' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remove agent' }));
     await waitFor(() => {
-      expect(within(dialog).getByText('disk is busy')).toBeTruthy();
+      expect(within(dialog).getByText('Could not remove this agent. Try again.')).toBeTruthy();
+      expect(within(dialog).queryByText(/C:\\agents\\ada/)).toBeNull();
     });
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
