@@ -334,6 +334,7 @@ describe('ViewDiscovery', () => {
       it('rejects a failed refresh instead of returning stale data as a success', async () => {
         const refreshHandler = {
           sendBackgroundPrompt: vi.fn().mockRejectedValue(new Error('background prompt failed')),
+          sendCanvasActionPrompt: vi.fn().mockResolvedValue(undefined),
         };
         discovery = new ViewDiscovery(refreshHandler);
         mockExistsSync.mockReturnValue(true);
@@ -562,6 +563,97 @@ describe('ViewDiscovery', () => {
 
       expect(discovery.getViews('/tmp/mind')).toEqual([]);
       expect(onChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('sendCanvasAction', () => {
+    it('calls sendCanvasActionPrompt with a no-tools-labelled prompt when given a valid CanvasActionRequest', async () => {
+      const canvasActionHandler = {
+        sendBackgroundPrompt: vi.fn(),
+        sendCanvasActionPrompt: vi.fn(),
+      };
+      discovery = new ViewDiscovery(canvasActionHandler);
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'command-center', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync.mockReturnValue(JSON.stringify({
+        name: 'Command Center',
+        icon: 'layout',
+        view: 'canvas',
+        source: 'index.html',
+      }));
+      await discovery.scan('/tmp/test/mind');
+
+      await discovery.sendCanvasAction('command-center', {
+        schemaVersion: 1,
+        variant: 'user-action',
+        label: 'button-clicked',
+        fields: { id: 'submit' },
+      }, '/tmp/test/mind');
+
+      expect(canvasActionHandler.sendCanvasActionPrompt).toHaveBeenCalledOnce();
+      expect(canvasActionHandler.sendBackgroundPrompt).not.toHaveBeenCalled();
+    });
+
+    it('labels all data fields as untrusted in the constructed prompt', async () => {
+      const canvasActionHandler = {
+        sendBackgroundPrompt: vi.fn(),
+        sendCanvasActionPrompt: vi.fn(),
+      };
+      discovery = new ViewDiscovery(canvasActionHandler);
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'command-center', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync.mockReturnValue(JSON.stringify({
+        name: 'Command Center',
+        icon: 'layout',
+        view: 'canvas',
+        source: 'index.html',
+      }));
+      await discovery.scan('/tmp/test/mind');
+
+      await discovery.sendCanvasAction('command-center', {
+        schemaVersion: 1,
+        variant: 'user-action',
+        label: 'form-submit',
+        fields: { secretInstruction: 'drop table users' },
+      }, '/tmp/test/mind');
+
+      const [, prompt] = canvasActionHandler.sendCanvasActionPrompt.mock.calls[0] as [string, string];
+      expect(prompt).toContain('[UNTRUSTED]');
+      // Data content appears as untrusted, not as a trusted instruction
+      expect(prompt).not.toMatch(/^Make the requested change/m);
+    });
+
+    it('does not call handler when the view is not a canvas view', async () => {
+      const canvasActionHandler = {
+        sendBackgroundPrompt: vi.fn(),
+        sendCanvasActionPrompt: vi.fn(),
+      };
+      discovery = new ViewDiscovery(canvasActionHandler);
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'my-table', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync.mockReturnValue(JSON.stringify({
+        name: 'My Table',
+        icon: 'table',
+        view: 'table',
+        source: 'data.json',
+      }));
+      await discovery.scan('/tmp/test/mind');
+
+      await discovery.sendCanvasAction('my-table', {
+        schemaVersion: 1,
+        variant: 'user-action',
+        label: 'noop',
+        fields: {},
+      }, '/tmp/test/mind');
+
+      expect(canvasActionHandler.sendCanvasActionPrompt).not.toHaveBeenCalled();
+      expect(canvasActionHandler.sendBackgroundPrompt).not.toHaveBeenCalled();
     });
   });
 });

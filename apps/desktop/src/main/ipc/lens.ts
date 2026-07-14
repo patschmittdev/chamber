@@ -2,6 +2,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC, parseIpcArgs } from '@chamber/shared';
+import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
 import type { CanvasService, LensPreferencesService, MindManager, ViewDiscovery } from '@chamber/services';
 import type { LensViewManifest } from '@chamber/shared/types';
 
@@ -102,5 +103,12 @@ export function setupLensIPC(
         status: status.status,
       });
     }
+  });
+
+  ipcMain.handle(IPC.LENS.CANVAS_REGISTER_GRANT, (_event, rawGrant: unknown) => {
+    if (!rawGrant || typeof rawGrant !== 'object' || Array.isArray(rawGrant)) {
+      throw new Error('registerCanvasGrant: grant must be a plain object');
+    }
+    canvasService.registerGrant(rawGrant as CanvasGestureGrant);
   });
 }

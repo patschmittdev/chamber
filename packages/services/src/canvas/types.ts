@@ -1,3 +1,4 @@
+import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
 import type { CanvasLensActionStatus } from '@chamber/shared/types';
 
 export interface CanvasAction {
@@ -54,4 +55,6 @@ export interface CanvasServerLike {
   closeClients(mindId?: string, filename?: string): void;
   getPort(): number | null;
   isRunning(): boolean;
+  /** Register a renderer-issued gesture grant for subsequent action validation. */
+  registerGrant(grant: CanvasGestureGrant): void;
 }

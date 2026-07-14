@@ -554,11 +554,18 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
         log.warn(`Canvas Lens action for unknown mind: ${action.mindId}`);
         return;
       }
-      await viewDiscovery.sendCanvasAction(action.lensViewId, {
-        action: action.action,
-        data: action.data,
-        correlationId: action.actionId,
-      }, mindPath);
+      // action.data contains { label, fields } from the validated CanvasActionRequest.
+      // Re-construct as a bounded CanvasActionRequest for sendCanvasAction.
+      const data = action.data as { label?: unknown; fields?: unknown } | null;
+      const canvasRequest = {
+        schemaVersion: 1 as const,
+        variant: 'user-action' as const,
+        label: typeof data?.label === 'string' ? data.label : action.action,
+        fields: (data?.fields && typeof data.fields === 'object' && !Array.isArray(data.fields))
+          ? data.fields as Record<string, string | number | boolean>
+          : {},
+      };
+      await viewDiscovery.sendCanvasAction(action.lensViewId, canvasRequest, mindPath);
       const sourcePath = viewDiscovery.getViewSourcePath(action.lensViewId, mindPath);
       if (!sourcePath) throw new Error(`Canvas Lens source not found after action: ${action.lensViewId}`);
       await canvasService.showLensCanvas(action.mindId, mindPath, action.lensViewId, sourcePath);
@@ -652,7 +659,10 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   chamberCopilotService = createChamberCopilotService(mindToolProviders, createTaskLedger);
   mindManager.setProviders(mindToolProviders);
   wireLifecycleEvents({ mindManager, agentCardRegistry, a2aRelayModeService, taskManager, a2aEventBus });
-  viewDiscovery.setRefreshHandler(createLensRefreshHandler((mindPath, prompt) => mindManager.sendBackgroundPrompt(mindPath, prompt)));
+  viewDiscovery.setRefreshHandler(createLensRefreshHandler({
+    sendBackgroundPrompt: (mindPath, prompt) => mindManager.sendBackgroundPrompt(mindPath, prompt),
+    sendCanvasActionPrompt: (mindPath, prompt) => mindManager.sendBackgroundPromptNoTools(mindPath, prompt),
+  }));
   updaterService = new UpdaterService({
     currentVersion: app.getVersion(),
     isPackaged: app.isPackaged,
@@ -1264,27 +1274,34 @@ app.on('will-quit', () => {
   }
 });
 
-function createLensRefreshHandler(sendBackgroundPrompt: (mindPath: string, prompt: string) => Promise<void>) {
+function createLensRefreshHandler(handler: {
+  sendBackgroundPrompt: (mindPath: string, prompt: string) => Promise<void>;
+  sendCanvasActionPrompt: (mindPath: string, prompt: string) => Promise<void>;
+}) {
   const e2eRefreshJson = process.env.CHAMBER_E2E_LENS_REFRESH_JSON;
   if (process.env.CHAMBER_E2E !== '1' || !e2eRefreshJson) {
-    return { sendBackgroundPrompt };
+    return handler;
   }
 
   const refreshData = JSON.parse(e2eRefreshJson) as unknown;
   const delayMs = Number(process.env.CHAMBER_E2E_LENS_REFRESH_DELAY_MS ?? 0);
+
+  async function e2ePromptHandler(_mindPath: string, prompt: string): Promise<void> {
+    if (Number.isFinite(delayMs) && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    if (prompt.startsWith('The user interacted with the Canvas Lens view')) {
+      const sourcePath = parseCanvasLensActionSourcePath(prompt);
+      const source = fs.readFileSync(sourcePath, 'utf8');
+      fs.writeFileSync(sourcePath, source.replace('Action pending', 'Action completed'));
+      return;
+    }
+    fs.writeFileSync(parseLensRefreshOutputPath(prompt), `${JSON.stringify(refreshData, null, 2)}\n`);
+  }
+
   return {
-    sendBackgroundPrompt: async (_mindPath: string, prompt: string) => {
-      if (Number.isFinite(delayMs) && delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-      if (prompt.startsWith('The user interacted with the Canvas Lens view')) {
-        const sourcePath = parseCanvasLensActionSourcePath(prompt);
-        const source = fs.readFileSync(sourcePath, 'utf8');
-        fs.writeFileSync(sourcePath, source.replace('Action pending', 'Action completed'));
-        return;
-      }
-      fs.writeFileSync(parseLensRefreshOutputPath(prompt), `${JSON.stringify(refreshData, null, 2)}\n`);
-    },
+    sendBackgroundPrompt: e2ePromptHandler,
+    sendCanvasActionPrompt: e2ePromptHandler,
   };
 }
 

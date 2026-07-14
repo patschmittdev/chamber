@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import type { CanvasActionRequest, CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
+import { canonicalRequestJson } from '@chamber/shared/canvas-action-types';
 import type { LensViewManifest } from '@chamber/shared/types';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -21,6 +23,9 @@ const ACTION_STATUS_LABELS = {
 
 type CanvasActionStatus = keyof typeof ACTION_STATUS_LABELS;
 
+/** 5 seconds — grant expiry window matching the spec. */
+const GRANT_EXPIRY_MS = 5_000;
+
 function canvasMindId(url: string | null): string | null {
   if (!url) return null;
   try {
@@ -39,6 +44,7 @@ export function CanvasLensView({ view }: Props) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [frameKey, setFrameKey] = useState(0);
   const [actionStatus, setActionStatus] = useState<CanvasActionStatus | null>(null);
+  const [pendingAction, setPendingAction] = useState<CanvasActionRequest | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const mindId = canvasMindId(url);
   const canvasTheme = view.appearance === 'light' || view.appearance === 'dark'
@@ -70,6 +76,35 @@ export function CanvasLensView({ view }: Props) {
   useEffect(() => window.electronAPI.lens.onCanvasActionStatus((status) => {
     if (status.mindId === mindId && status.viewId === view.id) setActionStatus(status.status);
   }), [mindId, view.id]);
+
+  // Listen for Canvas bridge action requests. Only accept messages from the
+  // exact Canvas iframe window and origin.
+  useEffect(() => {
+    if (!url) return;
+    let canvasOrigin: string;
+    try {
+      canvasOrigin = new URL(url).origin;
+    } catch {
+      return;
+    }
+
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== canvasOrigin) return;
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const payload = e.data as Record<string, unknown> | null;
+      if (!payload || payload.type !== 'chamber:canvas-action-request') return;
+      const req = payload.request;
+      if (!req || typeof req !== 'object' || Array.isArray(req)) return;
+      const r = req as Record<string, unknown>;
+      if (r.variant !== 'user-action') return;
+      // Store the pending request — a user gesture on the Approve button will
+      // mint the grant and send it to the iframe.
+      setPendingAction(req as CanvasActionRequest);
+    }
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [url]);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +147,61 @@ export function CanvasLensView({ view }: Props) {
     }
   }, [loadCanvasUrl, loading, view.id]);
 
+  /**
+   * Mint and dispatch a gesture grant. Only callable from the Approve button's
+   * onClick handler. Canvas scripts cannot trigger this because the iframe is
+   * sandboxed in a separate origin; the only path here is a real user click.
+   */
+  const handleApproveAction = useCallback(async () => {
+    if (!pendingAction || !url || !mindId) return;
+
+    // Capture and clear before the async hash step to prevent double-dispatch
+    // if the user clicks Approve twice before the Promise resolves.
+    const captured = pendingAction;
+    setPendingAction(null);
+
+    const canonical = canonicalRequestJson(captured);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+    const requestHash = Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const now = Date.now();
+    const grant: CanvasGestureGrant = {
+      mindId,
+      viewId: view.id,
+      actionVariant: 'user-action',
+      nonce: crypto.randomUUID(),
+      expiresAt: now + GRANT_EXPIRY_MS,
+      issuedAt: now,
+      requestHash,
+    };
+
+    // Register with main process BEFORE sending to iframe so CanvasServer
+    // can validate it when the bridge dispatches the action.
+    void window.electronAPI.lens.registerCanvasGrant(grant).catch((err: unknown) => {
+      log.warn('Failed to register Canvas gesture grant:', err);
+    });
+
+    // Re-check iframe ref after the await (component may have updated).
+    const iframeWindow = iframeRef.current?.contentWindow;
+    if (!iframeWindow) return;
+
+    // Send to iframe via exact-origin postMessage.
+    try {
+      iframeWindow.postMessage(
+        { type: 'chamber:canvas-gesture-grant', grant },
+        new URL(url).origin,
+      );
+    } catch (err) {
+      log.warn('Failed to deliver gesture grant to Canvas iframe:', err);
+    }
+  }, [mindId, pendingAction, url, view.id]);
+
+  const handleDismissAction = useCallback(() => {
+    setPendingAction(null);
+  }, []);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -153,6 +243,17 @@ export function CanvasLensView({ view }: Props) {
       {actionStatus && (
         <div className="mx-4 mt-4 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground" role="status">
           {ACTION_STATUS_LABELS[actionStatus]}
+        </div>
+      )}
+      {pendingAction && (
+        <div className="mx-4 mt-4 rounded-lg border border-border bg-card p-3 text-sm" role="status">
+          <p className="text-muted-foreground mb-2">
+            Canvas action request: <span className="font-mono">{(pendingAction as { label?: string }).label ?? 'action'}</span>
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" onClick={handleApproveAction}>Approve</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={handleDismissAction}>Dismiss</Button>
+          </div>
         </div>
       )}
 

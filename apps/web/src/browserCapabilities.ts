@@ -125,6 +125,7 @@ export const BROWSER_CAPABILITY_MANIFEST = {
     onViewsChanged: { status: 'planned' },
     onVisibilityChanged: { status: 'planned' },
     onCanvasActionStatus: { status: 'planned' },
+    registerCanvasGrant: { status: 'planned', rejects: true },
   },
   auth: {
     getStatus: supported,

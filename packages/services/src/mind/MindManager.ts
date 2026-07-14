@@ -1792,6 +1792,74 @@ export class MindManager extends EventEmitter {
     }
   }
 
+  /**
+   * Run an isolated prompt with NO tools. Used for Canvas Lens actions where
+   * the action request originates from untrusted Canvas HTML. The session
+   * cannot invoke side-effect tools; only the model's built-in text generation
+   * is available.
+   */
+  async runIsolatedPromptNoTools(mindId: string, prompt: string): Promise<string> {
+    const context = this.minds.get(mindId);
+    if (!context) throw new Error(`Mind ${mindId} not found`);
+
+    const refreshedIdentity = this.loadIdentityForMind(mindId, context.mindPath);
+    if (refreshedIdentity) {
+      context.identity = refreshedIdentity;
+    }
+
+    const session = await this.createSessionForMind({
+      kind: 'isolated-prompt',
+      mindId,
+      client: context.client,
+      mindPath: context.mindPath,
+      systemMessage: context.identity.systemMessage,
+      tools: [], // Intentionally empty — Canvas actions must not have tool access.
+      model: context.selectedModel,
+      modelProvider: context.selectedModelProvider,
+    });
+
+    try {
+      const response = await session.sendAndWait(
+        { prompt: injectCurrentDateTimeContext(prompt, getCurrentDateTimeContext()) },
+        ISOLATED_PROMPT_TIMEOUT_MS,
+      );
+      const text = response?.data.content;
+      if (typeof text !== 'string') {
+        throw new Error('Isolated Canvas prompt did not produce an assistant response');
+      }
+      return text;
+    } finally {
+      await session.disconnect().catch((error: unknown) => {
+        log.warn('Failed to disconnect isolated Canvas prompt session:', error);
+      });
+    }
+  }
+
+  async sendBackgroundPrompt(mindPath: string, prompt: string): Promise<void> {
+    const requestedMindPathKey = this.mindPathKey(mindPath);
+    const mind = this.listMinds().find(m => this.mindPathKey(m.mindPath) === requestedMindPathKey);
+    if (!mind) return;
+    const context = this.minds.get(mind.mindId);
+    if (!context) return;
+
+    await this.runIsolatedPrompt(mind.mindId, prompt);
+  }
+
+  /**
+   * Run a background prompt originating from a Canvas Lens action with NO
+   * tools enabled. The mindPath is resolved to the active mind the same way as
+   * sendBackgroundPrompt.
+   */
+  async sendBackgroundPromptNoTools(mindPath: string, prompt: string): Promise<void> {
+    const requestedMindPathKey = this.mindPathKey(mindPath);
+    const mind = this.listMinds().find(m => this.mindPathKey(m.mindPath) === requestedMindPathKey);
+    if (!mind) return;
+    const context = this.minds.get(mind.mindId);
+    if (!context) return;
+
+    await this.runIsolatedPromptNoTools(mind.mindId, prompt);
+  }
+
   private normalizeModelSelection(model: string | null | undefined): ModelSelection | null {
     return parseModelSelectionKey(model);
   }
@@ -2102,16 +2170,6 @@ export class MindManager extends EventEmitter {
       }),
       ...messages,
     ];
-  }
-
-  async sendBackgroundPrompt(mindPath: string, prompt: string): Promise<void> {
-    const requestedMindPathKey = this.mindPathKey(mindPath);
-    const mind = this.listMinds().find(m => this.mindPathKey(m.mindPath) === requestedMindPathKey);
-    if (!mind) return;
-    const context = this.minds.get(mind.mindId);
-    if (!context) return;
-
-    await this.runIsolatedPrompt(mind.mindId, prompt);
   }
 
   private persistConfig(): void {

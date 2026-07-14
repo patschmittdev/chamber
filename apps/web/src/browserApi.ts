@@ -253,6 +253,7 @@ export function installBrowserApi(): void {
       onViewsChanged: () => noopUnsubscribe,
       onVisibilityChanged: () => noopUnsubscribe,
       onCanvasActionStatus: () => noopUnsubscribe,
+      registerCanvasGrant: async () => unavailable('lens.registerCanvasGrant'),
     },
     auth: {
       getStatus: () => client.getAuthStatus(),

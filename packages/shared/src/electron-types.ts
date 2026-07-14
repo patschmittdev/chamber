@@ -18,6 +18,7 @@ import type {
   TaskArtifactUpdateEvent,
   TaskStatusUpdateEvent,
 } from './a2a-types';
+import type { CanvasGestureGrant } from './canvas-action-types';
 import type { ChatroomAPI } from './chatroom-types';
 import type { AppFeatureFlags } from './feature-flags';
 import type { CancelOutcome, LedgerRecord, LedgerStatus } from './ledger';
@@ -161,6 +162,12 @@ export interface ElectronAPI {
     onViewsChanged: (callback: (views: LensViewManifest[], mindId?: string) => void) => () => void;
     onVisibilityChanged: (callback: (visibility: LensViewVisibility) => void) => () => void;
     onCanvasActionStatus: (callback: (status: CanvasLensActionStatusEvent) => void) => () => void;
+    /**
+     * Register a gesture grant with the main process before transmitting it to the
+     * Canvas iframe. The main process stores the grant so CanvasServer can validate
+     * it when the Canvas bridge calls the _action endpoint.
+     */
+    registerCanvasGrant: (grant: CanvasGestureGrant) => Promise<void>;
   };
   auth: {
     getStatus: () => Promise<{ authenticated: boolean; login?: string }>;

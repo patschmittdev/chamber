@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { Logger } from '../logger';
 import type { ChamberToolProvider } from '../chamberTools';
+import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
 
 const log = Logger.create('canvas');
 import type { Tool } from '../mind/types';
@@ -245,6 +246,14 @@ export class CanvasService implements ChamberToolProvider {
   subscribeToActionStatus(listener: (status: CanvasActionStatusEvent) => void): () => void {
     this.actionStatusListeners.add(listener);
     return () => this.actionStatusListeners.delete(listener);
+  }
+
+  /**
+   * Register a renderer gesture grant with the underlying CanvasServer so it
+   * can be validated when the Canvas bridge dispatches the corresponding action.
+   */
+  registerGrant(grant: CanvasGestureGrant): void {
+    this.server.registerGrant(grant);
   }
 
   private async closeAllCanvases(mindId: string): Promise<string> {
