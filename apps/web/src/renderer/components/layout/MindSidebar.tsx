@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useAppState, useAppDispatch } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { Plus, X, Bot, ExternalLink, UserCircle, ChevronLeft, ChevronRight, Search } from 'lucide-react';
@@ -7,11 +7,12 @@ import { RowActionOverflowMenu, RowContextMenu, ROW_ACTION_REVEAL, type RowActio
 import { AgentAvatar } from '../profile/AgentAvatar';
 import { useMindProfiles } from '../../hooks/useMindProfiles';
 import { usePersistedCollapse } from '../../hooks/usePersistedCollapse';
+import { useResizableRail } from '../../hooks/useResizableRail';
 import type { MindContext } from '@chamber/shared/types';
 
 const MIN_WIDTH = 140;
 const MAX_WIDTH = 400;
-const STORAGE_KEY = 'chamber:sidebarWidth';
+const WIDTH_STORAGE_KEY = 'chamber:sidebarWidth';
 const AGENTS_COLLAPSED_STORAGE_KEY = 'chamber:agents-collapsed';
 
 function statusColor(status: MindContext['status']): string {
@@ -28,13 +29,16 @@ export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean
   const { minds, activeMindId, activeView } = useAppState();
   const dispatch = useAppDispatch();
   const profileByMindId = useMindProfiles(minds);
-  const [width, setWidth] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parseInt(saved, 10))) : 192;
-  });
   const [filter, setFilter] = useState('');
-  const isResizing = useRef(false);
   const [manualCollapsed, setManualCollapsed] = usePersistedCollapse(AGENTS_COLLAPSED_STORAGE_KEY);
+  const { isResizing, resizeHandleProps, width } = useResizableRail({
+    defaultWidth: 192,
+    label: 'Resize agents panel',
+    maxWidth: MAX_WIDTH,
+    minWidth: MIN_WIDTH,
+    side: 'left',
+    storageKey: WIDTH_STORAGE_KEY,
+  });
   const collapsed = autoCollapsed || manualCollapsed;
 
   const handleAddMind = async () => {
@@ -74,32 +78,6 @@ export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean
     { id: 'remove', label: 'Remove agent', icon: X, danger: true, separatorBefore: true, onSelect: () => handleRemoveMind(mind.mindId) },
   ];
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
-    const startX = e.clientX;
-    const startWidth = width;
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!isResizing.current) return;
-      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + ev.clientX - startX));
-      setWidth(newWidth);
-    };
-
-    const onMouseUp = () => {
-      isResizing.current = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  }, [width]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, String(width));
-  }, [width]);
-
   if (minds.length === 0) return null;
 
   const normalizedFilter = filter.trim().toLowerCase();
@@ -117,7 +95,7 @@ export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean
     return (
       <aside
         aria-label="Agents"
-        className="shrink-0 w-10 bg-card border border-border rounded-xl overflow-hidden flex flex-col"
+        className="shrink-0 w-10 bg-card border border-border rounded-xl overflow-hidden flex flex-col transition-[width] duration-200 ease-out motion-reduce:transition-none"
       >
         <button
           type="button"
@@ -135,13 +113,15 @@ export function MindSidebar({ autoCollapsed = false }: { autoCollapsed?: boolean
   return (
     <aside
       aria-label="Agents"
-      className="relative bg-card border border-border rounded-xl overflow-hidden flex flex-col shrink-0"
+      className={cn(
+        'relative bg-card border border-border rounded-xl overflow-hidden flex flex-col shrink-0',
+        isResizing ? 'transition-none' : 'transition-[width] duration-200 ease-out motion-reduce:transition-none',
+      )}
       style={{ width }}
     >
-      {/* Resize handle */}
       <div
-        onMouseDown={handleMouseDown}
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent/50 active:bg-accent z-10"
+        {...resizeHandleProps}
+        className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize hover:bg-accent/50 focus-visible:w-1.5 focus-visible:bg-accent focus-visible:outline-none active:bg-accent"
       />
       <div className="px-3 py-2 flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Agents</span>

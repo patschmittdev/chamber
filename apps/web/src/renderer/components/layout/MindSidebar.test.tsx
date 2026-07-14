@@ -13,6 +13,7 @@ import { MindSidebar } from './MindSidebar';
 installMenuDom();
 
 const AGENTS_COLLAPSED_KEY = 'chamber:agents-collapsed';
+const AGENTS_WIDTH_KEY = 'chamber:sidebarWidth';
 
 const mind: MindContext = {
   mindId: 'mind-1',
@@ -75,17 +76,45 @@ describe('MindSidebar', () => {
     renderSidebar();
     const sidebar = screen.getByLabelText('Agents');
     expect(sidebar.className).not.toContain('w-10');
+    expect(sidebar.className).toContain('duration-200');
     expect(screen.getByText('Add Agent')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Collapse agents panel' })).toBeTruthy();
+  });
+
+  it('restores, pointer-resizes, and keyboard-resizes the persisted agents width', () => {
+    localStorage.setItem(AGENTS_WIDTH_KEY, '240');
+    renderSidebar();
+
+    const sidebar = screen.getByLabelText('Agents');
+    const resizeHandle = screen.getByRole('separator', { name: 'Resize agents panel' });
+    expect(sidebar.style.width).toBe('240px');
+    expect(resizeHandle.getAttribute('aria-valuenow')).toBe('240');
+
+    fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(document, { clientX: 140 });
+    fireEvent.pointerUp(document);
+    expect(sidebar.style.width).toBe('280px');
+
+    fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 140 });
+    expect(sidebar.className).toContain('transition-none');
+    fireEvent.pointerCancel(document);
+    expect(sidebar.className).toContain('duration-200');
+
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' });
+    expect(sidebar.style.width).toBe('260px');
+    expect(localStorage.getItem(AGENTS_WIDTH_KEY)).toBe('260');
   });
 
   it('collapses and expands via the toggle and persists the preference', () => {
     renderSidebar();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse agents panel' }));
 
-    expect(screen.getByLabelText('Agents').className).toContain('w-10');
+    const sidebar = screen.getByLabelText('Agents');
+    expect(sidebar.className).toContain('w-10');
+    expect(sidebar.className).toContain('duration-200');
     expect(localStorage.getItem(AGENTS_COLLAPSED_KEY)).toBe('true');
     expect(screen.queryByText('Add Agent')).toBeNull();
+    expect(screen.queryByRole('separator', { name: 'Resize agents panel' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand agents panel' }));
 
@@ -107,6 +136,7 @@ describe('MindSidebar', () => {
     expect(sidebar.className).toContain('w-10');
     const expand = screen.getByRole('button', { name: 'Expand agents panel' }) as HTMLButtonElement;
     expect(expand.disabled).toBe(true);
+    expect(screen.queryByRole('separator', { name: 'Resize agents panel' })).toBeNull();
   });
 
   it('keeps the collapse control keyboard focusable and operable', () => {
