@@ -660,6 +660,8 @@ export interface LensViewManifest {
   id: string;
   name: string;
   icon: string;
+  /** Chamber-created starter template, surfaced with first-use guidance. */
+  isSampleTemplate?: boolean;
   /** Optional one-line description shown in catalogs and the About panel. */
   description?: string;
   view: 'form' | 'table' | 'briefing' | 'status-board' | 'list' | 'monitor' | 'detail' | 'timeline' | 'editor' | 'canvas';

@@ -160,6 +160,24 @@ describe('ViewDiscovery', () => {
       expect(views[1]).toEqual(expect.objectContaining({ id: 'fixed', appearance: 'light' }));
     });
 
+    it('preserves explicit sample-template provenance from a Lens manifest', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'hello-world', isDirectory: () => true },
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      mockReadFileSync.mockReturnValue(JSON.stringify({
+        name: 'Hello World',
+        icon: 'zap',
+        isSampleTemplate: true,
+        view: 'form',
+        source: 'data.json',
+      }));
+
+      const [view] = await discovery.scan('/tmp/test/mind');
+
+      expect(view).toEqual(expect.objectContaining({ id: 'hello-world', isSampleTemplate: true }));
+    });
+
     it('skips invalid and non-Canvas appearance declarations', async () => {
       mockExistsSync.mockReturnValue(true);
       mockReaddirSync.mockReturnValue([
@@ -310,6 +328,29 @@ describe('ViewDiscovery', () => {
 
       expect(discovery.getViews('/tmp/mind-a')).toEqual([]);
       expect(mockClose).toHaveBeenCalled();
+    });
+
+    describe('view operations', () => {
+      it('rejects a failed refresh instead of returning stale data as a success', async () => {
+        const refreshHandler = {
+          sendBackgroundPrompt: vi.fn().mockRejectedValue(new Error('background prompt failed')),
+        };
+        discovery = new ViewDiscovery(refreshHandler);
+        mockExistsSync.mockReturnValue(true);
+        mockReaddirSync.mockReturnValue([
+          { name: 'briefing', isDirectory: () => true },
+        ] as unknown as ReturnType<typeof fs.readdirSync>);
+        mockReadFileSync.mockReturnValue(JSON.stringify({
+          name: 'Briefing',
+          icon: 'newspaper',
+          prompt: 'Generate a briefing',
+          source: 'briefing.json',
+          view: 'briefing',
+        }));
+        await discovery.scan('/tmp/test/mind');
+
+        await expect(discovery.refreshView('briefing', '/tmp/test/mind')).rejects.toThrow('Lens refresh failed');
+      });
     });
   });
 

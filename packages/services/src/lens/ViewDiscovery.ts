@@ -119,10 +119,14 @@ export class ViewDiscovery {
     const fullPrompt = `${view.prompt}\n\n${outputInstruction}`;
 
     try {
-      await this.refreshHandler?.sendBackgroundPrompt(mindPath, fullPrompt);
+      if (!this.refreshHandler) {
+        throw new Error('Lens refresh handler is unavailable');
+      }
+      await this.refreshHandler.sendBackgroundPrompt(mindPath, fullPrompt);
       return this.getViewData(viewId, mindPath);
-    } catch {
-      return this.getViewData(viewId, mindPath);
+    } catch (error) {
+      log.warn(`Lens refresh failed for ${viewId}:`, error);
+      throw new Error('Lens refresh failed', { cause: error });
     }
   }
 
@@ -135,10 +139,14 @@ export class ViewDiscovery {
     const fullPrompt = `The user is viewing "${view.name}" (source: ${dataPath}).\n\nAction requested: ${action}\n\nMake the requested change and write the updated JSON to: ${dataPath}`;
 
     try {
-      await this.refreshHandler?.sendBackgroundPrompt(mindPath, fullPrompt);
+      if (!this.refreshHandler) {
+        throw new Error('Lens action handler is unavailable');
+      }
+      await this.refreshHandler.sendBackgroundPrompt(mindPath, fullPrompt);
       return this.getViewData(viewId, mindPath);
-    } catch {
-      return this.getViewData(viewId, mindPath);
+    } catch (error) {
+      log.warn(`Lens action failed for ${viewId}:`, error);
+      throw new Error('Lens action failed', { cause: error });
     }
   }
 
@@ -249,6 +257,7 @@ function parseLensViewManifest(value: unknown, id: string, basePath: string): Le
   const appearance = value.view === 'canvas' && isCanvasAppearance(value.appearance)
     ? value.appearance
     : undefined;
+  const isSampleTemplate = value.isSampleTemplate === true;
 
   return {
     ...value,
@@ -256,6 +265,7 @@ function parseLensViewManifest(value: unknown, id: string, basePath: string): Le
     name: value.name,
     icon: value.icon,
     description,
+    ...(isSampleTemplate ? { isSampleTemplate } : {}),
     view: value.view,
     source: value.source,
     _basePath: basePath,
