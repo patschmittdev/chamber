@@ -226,6 +226,10 @@ export class ChatroomService extends EventEmitter {
     this.sessionGroup.abortAll();
   }
 
+  isRunning(): boolean {
+    return this.sessionGroup.isRunning;
+  }
+
   setOrchestration(mode: OrchestrationMode, config?: GroupChatConfig | HandoffConfig | MagenticConfig): void {
     this.orchestrationMode = mode;
     this.groupChatConfig = null;

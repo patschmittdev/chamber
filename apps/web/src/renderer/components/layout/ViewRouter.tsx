@@ -1,13 +1,34 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo } from 'react';
 import { useAppDispatch, useAppState } from '../../lib/store';
 import { ChatPanel } from '../chat/ChatPanel';
 import { ChatroomPanel } from '../chatroom/ChatroomPanel';
 import { LensViewRenderer } from '../views/LensViewRenderer';
-import { SettingsView } from '../settings/SettingsView';
-import { A2ARelayView } from '../a2a/A2ARelayView';
-import { ExtensionsView } from '../extensions/ExtensionsView';
 import { getVisibleLensViews } from '../../lib/lensVisibility';
-import { OperatorActivityView } from '../activity/OperatorActivityView';
+
+const OperatorActivityView = lazy(async () => {
+  const mod = await import('../activity/OperatorActivityView');
+  return { default: mod.OperatorActivityView };
+});
+const SettingsView = lazy(async () => {
+  const mod = await import('../settings/SettingsView');
+  return { default: mod.SettingsView };
+});
+const ExtensionsView = lazy(async () => {
+  const mod = await import('../extensions/ExtensionsView');
+  return { default: mod.ExtensionsView };
+});
+const A2ARelayView = lazy(async () => {
+  const mod = await import('../a2a/A2ARelayView');
+  return { default: mod.A2ARelayView };
+});
+
+function LazyViewFallback() {
+  return (
+    <div role="status" className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+      Loading view...
+    </div>
+  );
+}
 
 export function ViewRouter() {
   const { activeMindId, activeView, discoveredViews, disabledLensViewKeys, featureFlags } = useAppState();
@@ -34,19 +55,35 @@ export function ViewRouter() {
   }
 
   if (activeView === 'activity') {
-    return <OperatorActivityView />;
+    return (
+      <Suspense fallback={<LazyViewFallback />}>
+        <OperatorActivityView />
+      </Suspense>
+    );
   }
 
   if (activeView === 'settings') {
-    return <SettingsView />;
+    return (
+      <Suspense fallback={<LazyViewFallback />}>
+        <SettingsView />
+      </Suspense>
+    );
   }
 
   if (activeView === 'extensions') {
-    return <ExtensionsView />;
+    return (
+      <Suspense fallback={<LazyViewFallback />}>
+        <ExtensionsView />
+      </Suspense>
+    );
   }
 
   if (activeView === 'a2a-relay' && featureFlags.switchboardRelay) {
-    return <A2ARelayView />;
+    return (
+      <Suspense fallback={<LazyViewFallback />}>
+        <A2ARelayView />
+      </Suspense>
+    );
   }
 
   const view = visibleViews.find(v => v.id === activeView);

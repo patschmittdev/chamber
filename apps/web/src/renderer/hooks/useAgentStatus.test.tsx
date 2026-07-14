@@ -94,6 +94,24 @@ describe('useAgentStatus', () => {
     expect(result.current.state.activeMindId).toBe(fakeMind.mindId);
   });
 
+  it('selects the opened mind before background mind.list hydration resolves', async () => {
+    (api.mind.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValue('C:\\test\\mind');
+    (api.mind.add as ReturnType<typeof vi.fn>).mockResolvedValue(fakeMind);
+    (api.mind.list as ReturnType<typeof vi.fn>).mockReturnValue(new Promise<MindContext[]>(() => {}));
+
+    const { result } = renderHook(() => {
+      const agentStatus = useAgentStatus();
+      const state = useAppState();
+      return { agentStatus, state };
+    }, { wrapper });
+
+    await act(async () => {
+      await result.current.agentStatus.selectMindDirectory();
+    });
+
+    expect(result.current.state.activeMindId).toBe(fakeMind.mindId);
+  });
+
   it('selectMindDirectory returns null when dialog is cancelled', async () => {
     (api.mind.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 

@@ -204,6 +204,24 @@ describe('installContentSecurityPolicy', () => {
     expect(result.responseHeaders?.['Content-Security-Policy']).toBeUndefined();
     expect(result.responseHeaders?.['X-Canvas']).toEqual(['kept']);
   });
+
+  it('keeps packaged main-frame responses on the strict app CSP when incoming headers are weaker', async () => {
+    const fake = fakeSession();
+    installContentSecurityPolicy(fake.session as never, 'production');
+
+    const result = await fake.invokeHeaders({
+      resourceType: 'mainFrame',
+      responseHeaders: {
+        'Content-Security-Policy': ["default-src * 'unsafe-inline'"],
+      },
+    });
+
+    const csp = result.responseHeaders?.['Content-Security-Policy']?.[0] ?? '';
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-eval'");
+    expect(csp).not.toContain("default-src *");
+  });
 });
 
 describe('installPermissionHandlers', () => {

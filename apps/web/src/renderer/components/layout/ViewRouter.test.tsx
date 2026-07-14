@@ -16,6 +16,10 @@ vi.mock('../views/LensViewRenderer', () => ({
   LensViewRenderer: ({ view }: { view: { name: string } }) => <div>Lens panel: {view.name}</div>,
 }));
 
+vi.mock('../settings/SettingsView', () => ({
+  SettingsView: () => <div>Settings panel</div>,
+}));
+
 function ActiveViewProbe({ onChange }: { onChange: (activeView: string) => void }) {
   const { activeView } = useAppState();
   useEffect(() => {
@@ -57,5 +61,18 @@ describe('ViewRouter', () => {
     );
 
     expect(screen.getByText('Lens panel: Briefing')).toBeTruthy();
+  });
+
+  it('lazy-loads heavy panels behind a suspense fallback', async () => {
+    render(
+      <AppStateProvider testInitialState={{ activeView: 'settings' }}>
+        <ViewRouter />
+      </AppStateProvider>,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('Loading view');
+    await waitFor(() => {
+      expect(screen.getByText('Settings panel')).toBeTruthy();
+    });
   });
 });

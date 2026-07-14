@@ -574,7 +574,7 @@ function countByQuality(
 
 function isSnapshotStale(snapshot: OperatorActivitySnapshot, now: number): boolean {
   const timestamp = Date.parse(snapshot.updatedAt);
-  if (Number.isNaN(timestamp)) return true;
+  if (Number.isNaN(timestamp) || timestamp <= 0) return true;
   return now - timestamp > STALE_AFTER_MS;
 }
 
@@ -584,12 +584,12 @@ function isOlderSnapshot(nextSnapshot: OperatorActivitySnapshot, currentSnapshot
 
 function snapshotTime(snapshot: OperatorActivitySnapshot): number {
   const timestamp = Date.parse(snapshot.updatedAt);
-  return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
+  return Number.isNaN(timestamp) || timestamp <= 0 ? Number.NEGATIVE_INFINITY : timestamp;
 }
 
 function formatTimestamp(value: string): string {
   const timestamp = Date.parse(value);
-  if (Number.isNaN(timestamp)) return 'Unavailable';
+  if (Number.isNaN(timestamp) || timestamp <= 0) return 'Unavailable';
   return formatRelativeTime(value);
 }
 

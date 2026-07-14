@@ -5,7 +5,16 @@ const log = Logger.create('tray');
 
 export interface AppTrayOptions {
   showMainWindow: () => void;
+  stopChatroomRun: () => void;
+  isChatroomRunning: () => boolean;
+  getReadyMindCount: () => number;
   quit: () => void;
+}
+
+function buildStatusLabel(options: AppTrayOptions): string {
+  const ready = options.getReadyMindCount();
+  const run = options.isChatroomRunning() ? 'running' : 'idle';
+  return `Agents: ${ready} ready | Chatroom: ${run}`;
 }
 
 function createFallbackIcon(): NativeImage {
@@ -47,12 +56,19 @@ export async function loadAppIcon(): Promise<NativeImage> {
 export function createAppTray(options: AppTrayOptions, appIcon: NativeImage): Tray {
   const tray = new Tray(createTrayIcon(appIcon));
   const menu = Menu.buildFromTemplate([
+    { label: buildStatusLabel(options), enabled: false },
+    { type: 'separator' },
     { label: 'Show Chamber', click: options.showMainWindow },
+    {
+      label: options.isChatroomRunning() ? 'Stop chatroom run' : 'No chatroom run in progress',
+      click: options.stopChatroomRun,
+      enabled: options.isChatroomRunning(),
+    },
     { type: 'separator' },
     { label: 'Quit', click: options.quit },
   ]);
 
-  tray.setToolTip('Chamber');
+  tray.setToolTip(`Chamber (${buildStatusLabel(options)})`);
   tray.setContextMenu(menu);
   tray.on('click', options.showMainWindow);
 

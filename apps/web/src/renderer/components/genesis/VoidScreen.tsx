@@ -34,7 +34,7 @@ export function VoidScreen({ onBegin, onAddMarketplace }: Props) {
 
   useEffect(() => {
     if (lineIndex < BOOT_LINES.length) {
-      setLines(prev => [...prev, BOOT_LINES[lineIndex]]);
+      setLines(BOOT_LINES.slice(0, lineIndex + 1));
     }
   }, [lineIndex]);
 
