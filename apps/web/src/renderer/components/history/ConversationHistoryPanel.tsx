@@ -9,8 +9,19 @@ import { useWindowedList } from '../../hooks/useWindowedList';
 import { usePrefetchNeighborHistory } from '../../hooks/usePrefetchNeighborHistory';
 import { Logger } from '../../lib/logger';
 import { cn } from '../../lib/utils';
-import { conversationSearchText, filterConversations, normalizeSearchQuery } from './conversationSearch';
-import { partitionConversations } from './conversationOrganize';
+import {
+  conversationSearchText,
+  filterConversations,
+  getConversationSearchFeedback,
+  normalizeSearchQuery,
+} from './conversationSearch';
+import {
+  conversationDateGroupLabel,
+  groupConversationsByDate,
+  partitionConversations,
+  resolveConversationDateGroup,
+  summarizeConversationSections,
+} from './conversationOrganize';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +31,7 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { RowActionOverflowMenu, RowContextMenu, ROW_ACTION_REVEAL, type RowActionItem } from '../ui/row-actions';
+import { TooltipFor } from '../ui/tooltip';
 
 const log = Logger.create('ConversationHistoryPanel');
 const HISTORY_COLLAPSED_STORAGE_KEY = 'chamber:conversation-history-collapsed';
@@ -71,23 +83,39 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
     return conversationHistoryByMind[activeMindId];
   }, [activeMindId, conversationHistoryByMind]);
   const visibleConversations = conversations ?? [];
-  const filteredConversations = useMemo(() => {
+  const freshSearchIndex = useMemo(() => {
     // contentIndexVersion forces recompute when best-effort content loads resolve.
     void contentIndexVersion;
     const mindIndex = activeMindId ? contentIndexByMind.current.get(activeMindId) : undefined;
-    const freshIndex = mindIndex
+    return mindIndex
       ? new Map(
           visibleConversations
             .filter((conversation) => mindIndex.get(conversation.sessionId)?.updatedAt === conversation.updatedAt)
             .map((conversation) => [conversation.sessionId, mindIndex.get(conversation.sessionId)!.text] as const),
         )
       : undefined;
-    return filterConversations(visibleConversations, debouncedQuery, freshIndex);
-  }, [visibleConversations, debouncedQuery, activeMindId, contentIndexVersion]);
+  }, [visibleConversations, activeMindId, contentIndexVersion]);
+  const filteredConversations = useMemo(
+    () => filterConversations(visibleConversations, debouncedQuery, freshSearchIndex),
+    [visibleConversations, debouncedQuery, freshSearchIndex],
+  );
+  const searchFeedback = useMemo(
+    () => getConversationSearchFeedback(visibleConversations, debouncedQuery, freshSearchIndex),
+    [visibleConversations, debouncedQuery, freshSearchIndex],
+  );
   const { pinned: pinnedConversations, regular: regularConversations, archived: archivedConversations } = useMemo(
     () => partitionConversations(filteredConversations),
     [filteredConversations],
   );
+  const sectionSummaries = useMemo(
+    () => summarizeConversationSections({ pinned: pinnedConversations, regular: regularConversations, archived: archivedConversations }),
+    [pinnedConversations, regularConversations, archivedConversations],
+  );
+  const pinnedSummary = sectionSummaries[0];
+  const regularSummary = sectionSummaries[1];
+  const archivedSummary = sectionSummaries[2];
+  const pinnedGroups = useMemo(() => groupConversationsByDate(pinnedConversations), [pinnedConversations]);
+  const archivedGroups = useMemo(() => groupConversationsByDate(archivedConversations), [archivedConversations]);
 
   usePrefetchNeighborHistory();
 
@@ -478,7 +506,9 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
               />
             ) : (
               <>
-                <div className="truncate text-sm font-medium">{conversation.title}</div>
+                <TooltipFor label={conversation.title}>
+                  <div className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</div>
+                </TooltipFor>
                 {conversation.forkOf && conversation.title !== `Fork of ${conversation.forkOf.sourceTitle}` && (
                   <div className="truncate text-xs text-muted-foreground">
                     Fork of {conversation.forkOf.sourceTitle}
@@ -600,29 +630,68 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
             ) : filteredConversations.length === 0 ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">No conversations match your search</p>
             ) : null}
+            {isSearching && searchFeedback.resultCount > 0 ? (
+              <div className="px-2 pb-2 text-xs text-muted-foreground">
+                <p>
+                  {searchFeedback.resultCount === 1 ? '1 result' : `${searchFeedback.resultCount} results`}.{' '}
+                  {searchFeedback.titleMatchCount === 1 ? '1 title match' : `${searchFeedback.titleMatchCount} title matches`}.
+                  {searchFeedback.contentOnlyMatchCount > 0
+                    ? ` ${searchFeedback.contentOnlyMatchCount === 1 ? '1 content-only match' : `${searchFeedback.contentOnlyMatchCount} content-only matches`}.`
+                    : ''}
+                </p>
+                {normalizeSearchQuery(debouncedQuery).length >= CONTENT_SEARCH_MIN_QUERY_LENGTH && searchFeedback.isIndexing ? (
+                  <p>Indexing content {searchFeedback.indexedConversationCount}/{searchFeedback.indexableConversationCount}</p>
+                ) : null}
+              </div>
+            ) : null}
             {selectedConversationError ? (
               <p role="alert" className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-2 text-xs text-destructive">
                 {selectedConversationError}
               </p>
             ) : null}
-            {pinnedConversations.length > 0 ? (
-              <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Pinned</div>
+            {pinnedSummary.count > 0 ? (
+              <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Pinned ({pinnedSummary.count})
+              </div>
             ) : null}
-            {pinnedConversations.map(renderConversationRow)}
+            {pinnedGroups.map((group) => (
+              <div key={`pinned-${group.id}`}>
+                <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/90">{group.label}</div>
+                {group.conversations.map(renderConversationRow)}
+              </div>
+            ))}
+            {regularSummary.count > 0 ? (
+              <div className="px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Recent ({regularSummary.count})
+              </div>
+            ) : null}
             <div ref={regularListRef}>
               {regularPaddingTop > 0 ? (
                 <div data-window-spacer="top" aria-hidden="true" style={{ height: regularPaddingTop }} />
               ) : null}
-              {regularConversations.slice(regularStart, regularEnd).map((conversation) => (
-                <div key={conversation.sessionId} data-window-key={conversation.sessionId} ref={measureRegularRow}>
-                  {renderConversationRow(conversation)}
-                </div>
-              ))}
+              {regularConversations.slice(regularStart, regularEnd).map((conversation, index) => {
+                const absoluteIndex = regularStart + index;
+                const groupId = resolveConversationDateGroup(conversation.updatedAt);
+                const previousGroupId = absoluteIndex > 0
+                  ? resolveConversationDateGroup(regularConversations[absoluteIndex - 1].updatedAt)
+                  : null;
+                const showGroupLabel = absoluteIndex === 0 || groupId !== previousGroupId;
+                return (
+                  <div key={conversation.sessionId} data-window-key={conversation.sessionId} ref={measureRegularRow}>
+                    {showGroupLabel ? (
+                      <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/90">
+                        {conversationDateGroupLabel(groupId)}
+                      </div>
+                    ) : null}
+                    {renderConversationRow(conversation)}
+                  </div>
+                );
+              })}
               {regularPaddingBottom > 0 ? (
                 <div data-window-spacer="bottom" aria-hidden="true" style={{ height: regularPaddingBottom }} />
               ) : null}
             </div>
-            {archivedConversations.length > 0 ? (
+            {archivedSummary.count > 0 ? (
               <div className="mt-1">
                 <button
                   type="button"
@@ -631,9 +700,16 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
                   className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-accent/50"
                 >
                   <ChevronDown size={13} className={cn('transition-transform', archivedExpanded ? '' : '-rotate-90')} />
-                  Archived ({archivedConversations.length})
+                  Archived ({archivedSummary.count})
                 </button>
-                {archivedExpanded ? archivedConversations.map(renderConversationRow) : null}
+                {archivedExpanded
+                  ? archivedGroups.map((group) => (
+                    <div key={`archived-${group.id}`}>
+                      <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/90">{group.label}</div>
+                      {group.conversations.map(renderConversationRow)}
+                    </div>
+                  ))
+                  : null}
               </div>
             ) : null}
           </div>
