@@ -218,4 +218,137 @@ describe('CronService — trust gate', () => {
     });
     await expect(svc.activateMind(mindId, mindPath)).resolves.toBeUndefined();
   });
+
+  it('getToolsForMind returns empty array for an untrusted mind', () => {
+    const trustService = makeTrustService(false);
+    const svc = new CronService({
+      scriptRunner: makeFakeRunner({ status: 'completed', graphId: 'g', output: '' }),
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService,
+    });
+    const tools = svc.getToolsForMind(mindId, mindPath);
+    expect(tools).toEqual([]);
+    expect(trustService.isMindTrustedForExecution).toHaveBeenCalledWith(mindId, mindPath);
+  });
+
+  it('getToolsForMind returns tools for a trusted mind', () => {
+    const trustService = makeTrustService(true);
+    const svc = new CronService({
+      scriptRunner: makeFakeRunner({ status: 'completed', graphId: 'g', output: '' }),
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService,
+    });
+    const tools = svc.getToolsForMind(mindId, mindPath);
+    expect(tools.length).toBeGreaterThan(0);
+  });
+
+  it('createJob throws for an untrusted mind', async () => {
+    const trustService = makeTrustService(false);
+    const svc = new CronService({
+      scriptRunner: makeFakeRunner({ status: 'completed', graphId: 'g', output: '' }),
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService,
+    });
+    // Seed the mindPath by calling a path that does not check trust
+    await svc.activateMind(mindId, mindPath);
+    expect(() =>
+      svc.createJob(mindId, mindPath, {
+        name: 'job1',
+        schedule: '0 9 * * *',
+        scriptPath: '.chamber/automation/foo.ts',
+      }),
+    ).toThrow(/execution trust/i);
+  });
+
+  it('enableJob throws for an untrusted mind that was previously trusted', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    let isTrusted = true;
+    const mutableTrust = makeTrustService(true);
+    mutableTrust.isMindTrustedForExecution.mockImplementation(() => isTrusted);
+
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService: mutableTrust,
+    });
+    await svc.activateMind(mindId, mindPath);
+    const job = svc.createJob(mindId, mindPath, {
+      name: 'job1',
+      schedule: '0 9 * * *',
+      scriptPath: '.chamber/automation/foo.ts',
+    });
+    svc.disableJob(mindId, job.id);
+
+    // Simulate trust revocation
+    isTrusted = false;
+    expect(() => svc.enableJob(mindId, job.id)).toThrow(/execution trust/i);
+    await svc.releaseMind(mindId);
+  });
+
+  it('runNow throws for an untrusted mind', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    let isTrusted = true;
+    const mutableTrust = makeTrustService(true);
+    mutableTrust.isMindTrustedForExecution.mockImplementation(() => isTrusted);
+
+    // Use a trusted service to create the job
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService: mutableTrust,
+    });
+    await svc.activateMind(mindId, mindPath);
+    const job = svc.createJob(mindId, mindPath, {
+      name: 'job1',
+      schedule: '0 9 * * *',
+      scriptPath: '.chamber/automation/foo.ts',
+    });
+
+    // Simulate trust revocation
+    isTrusted = false;
+    await expect(svc.runNow(mindId, job.id)).rejects.toThrow(/execution trust/i);
+    await svc.releaseMind(mindId);
+  });
+
+  it('runScript throws for an untrusted mind', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    let isTrusted = true;
+    const mutableTrust = makeTrustService(true);
+    mutableTrust.isMindTrustedForExecution.mockImplementation(() => isTrusted);
+
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService: mutableTrust,
+    });
+    await svc.activateMind(mindId, mindPath);
+
+    // Simulate trust revocation
+    isTrusted = false;
+    await expect(
+      svc.runScript(mindId, '.chamber/automation/foo.ts'),
+    ).rejects.toThrow(/execution trust/i);
+    await svc.releaseMind(mindId);
+  });
+
+  it('validateScript throws for an untrusted mind', async () => {
+    const runner = makeFakeRunner({ status: 'completed', graphId: 'g', output: '' });
+    let isTrusted = true;
+    const mutableTrust = makeTrustService(true);
+    mutableTrust.isMindTrustedForExecution.mockImplementation(() => isTrusted);
+
+    const svc = new CronService({
+      scriptRunner: runner,
+      createCronRunStore: () => new InMemoryRunStore(),
+      trustService: mutableTrust,
+    });
+    await svc.activateMind(mindId, mindPath);
+
+    // Simulate trust revocation
+    isTrusted = false;
+    await expect(
+      svc.validateScript(mindId, '.chamber/automation/foo.ts'),
+    ).rejects.toThrow(/execution trust/i);
+    await svc.releaseMind(mindId);
+  });
 });

@@ -11,3 +11,5 @@ export { MarketplaceEnrollmentStore } from './MarketplaceEnrollmentStore';
 export type { EnrollmentRecord } from './MarketplaceEnrollmentStore';
 export { MarketplaceApprovalStore, computeArtifactDescriptorHash } from './MarketplaceApprovalStore';
 export type { ApprovalRecord } from './MarketplaceApprovalStore';
+export { MarketplaceRefPinner, ToolMarketplaceRefPinStore } from './MarketplaceRefPinner';
+export type { IMarketplaceRefPinStore, IRefResolver } from './MarketplaceRefPinner';
