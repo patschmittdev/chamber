@@ -41,7 +41,7 @@ describe('ViewDiscovery', () => {
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
     mockLstatSync.mockReturnValue(notSymlink());
-    mockRealpathSync.mockImplementation((p: string) => p);
+    mockRealpathSync.mockImplementation((p: fs.PathLike) => String(p));
   });
 
   describe('scan', () => {

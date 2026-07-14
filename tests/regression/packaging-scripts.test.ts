@@ -127,7 +127,7 @@ describe('packaging scripts', () => {
     // is stale between releases) or computed from ## Unreleased.
     expect(stableWorkflow).toContain('INSIDER_TAG_REGEX');
     expect(stableWorkflow).toContain('recommendBumpFromChangelog');
-    expect(stableWorkflow).toContain('ref: ${{ needs.check-version.outputs.source_ref }}');
+    expect(stableWorkflow).toContain('ref: ${{ needs.check-version.outputs.resolved_sha }}');
     expect(stableWorkflow).toContain('Apply promoted version');
     expect(stableWorkflow).toContain('--allow-same-version');
     expect(stableWorkflow).toContain('promoted_from');
