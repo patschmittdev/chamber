@@ -142,10 +142,10 @@ export class ToolInstaller {
     if (!('package' in tool)) {
       throw new Error(`Cannot uninstall npm tool ${tool.id}: package is missing`);
     }
-    const result = await this.runner.run('npm', ['uninstall', '-g', tool.package]);
+    const result = await this.runner.run('npm', ['uninstall', '-g', '--ignore-scripts', tool.package]);
     if (result.exitCode !== 0) {
       throw new Error(
-        `npm uninstall -g ${tool.package} failed (exit ${result.exitCode})\n${result.stderr || result.stdout}`.trim(),
+        `npm uninstall -g --ignore-scripts ${tool.package} failed (exit ${result.exitCode})\n${result.stderr || result.stdout}`.trim(),
       );
     }
   }

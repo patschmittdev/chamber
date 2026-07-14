@@ -7,6 +7,7 @@ import type { AppConfig, InstalledTool } from '@chamber/shared/types';
 import { ToolsService } from './ToolsService';
 import { MarketplaceToolCatalog } from './MarketplaceToolCatalog';
 import { ToolInstaller, type CommandRunner, type CommandResult, type ReleaseAssetDownloader } from './ToolInstaller';
+import { MarketplaceApprovalStore } from './MarketplaceApprovalStore';
 import type { ToolMarketplaceSource } from './toolTypes';
 
 class FakeRegistryClient {
@@ -327,6 +328,28 @@ describe('ToolsService', () => {
     // Discovery-only: installer is NOT invoked.
     expect(store.config.installedTools?.[0].version).toBe('v0.4.0');
   });
+  it('installForOperator records an approval when an approvalStore is provided', async () => {
+    setupTools(client);
+    const approvalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-approval-svc-'));
+    tempDirs.push(approvalDir);
+    const approvalStore = new MarketplaceApprovalStore(approvalDir);
+    const svcWithApproval = new ToolsService(
+      new MarketplaceToolCatalog(client, [SOURCE]),
+      new ToolInstaller(runner),
+      store,
+      approvalStore,
+    );
+
+    const outcome = await svcWithApproval.installForOperator('workiq', 'github:ianphil/genesis-minds');
+    expect(outcome.status).toBe('completed');
+
+    const approvals = approvalStore.loadAll();
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0].toolId).toBe('workiq');
+    expect(approvals[0].snapshotIdentity).toBe(`github:ianphil/genesis-minds@${SOURCE.ref}`);
+    expect(approvals[0].artifactDescriptorHash).toBeTruthy();
+  });
+
 });
 
 function installedRecord(): InstalledTool {

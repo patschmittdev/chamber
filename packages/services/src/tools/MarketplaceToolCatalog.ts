@@ -107,7 +107,6 @@ function parseToolEntry(
 
   const help = optionalString(entry, 'help');
   const agentInstructions = optionalString(entry, 'agentInstructions');
-  const preflight = optionalStringArray(entry, 'preflight', pluginPath, index);
 
   return {
     id,
@@ -116,7 +115,6 @@ function parseToolEntry(
     install,
     bin,
     ...(help ? { help } : {}),
-    ...(preflight ? { preflight } : {}),
     ...(agentInstructions ? { agentInstructions } : {}),
     source: {
       owner: source.owner,

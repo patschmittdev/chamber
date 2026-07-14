@@ -598,7 +598,6 @@ export interface MarketplaceToolEntry {
   install: MarketplaceToolInstall;
   bin: string;
   help?: string;
-  preflight?: string[];
   /** Inline markdown describing how the model should invoke the CLI. Rendered into the system message. */
   agentInstructions?: string;
   source: {

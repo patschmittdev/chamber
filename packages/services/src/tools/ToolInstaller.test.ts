@@ -33,7 +33,6 @@ const TOOL: MarketplaceToolEntry = {
   install: { type: 'npm-global', package: '@microsoft/workiq', version: 'latest' },
   bin: 'workiq',
   help: 'workiq ask --help',
-  preflight: ['workiq accept-eula'],
   agentInstructions: 'Use workiq ask.',
   source: {
     owner: 'ianphil',
@@ -109,7 +108,7 @@ describe('ToolInstaller', () => {
       source: { marketplaceId: 'm', pluginId: 'p' },
       installedAt: '2026-01-01T00:00:00Z',
     });
-    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['uninstall', '-g', '@microsoft/workiq'] });
+    expect(runner.calls[0]).toEqual({ command: 'npm', args: ['uninstall', '-g', '--ignore-scripts', '@microsoft/workiq'] });
   });
 
   it('downloads a GitHub release asset, verifies its checksum, and installs it into the tools bin directory', async () => {
@@ -133,7 +132,6 @@ describe('ToolInstaller', () => {
       },
       bin: 'teams',
       help: 'teams --help',
-      preflight: undefined,
       agentInstructions: 'Use teams read.',
     });
 

@@ -69,7 +69,6 @@ describe('MarketplaceToolCatalog', () => {
     const tool = result.tools[0];
     expect(tool.id).toBe('workiq');
     expect(tool.install).toEqual({ type: 'npm-global', package: '@microsoft/workiq', version: 'latest' });
-    expect(tool.preflight).toEqual(['workiq accept-eula']);
     expect(tool.source.marketplaceId).toBe('github:ianphil/genesis-minds');
   });
 
