@@ -133,6 +133,15 @@ describe('CanvasLensView', () => {
     });
 
     expect(screen.queryByText('Action failed.')).toBeNull();
+
+    emitCanvasActionStatus?.({
+      actionId: 'action-3',
+      mindId: 'other-mind',
+      status: 'failed',
+      viewId: 'command-center',
+    });
+
+    expect(screen.queryByText('Action failed.')).toBeNull();
   });
 
   it('refreshes the view before reloading the iframe url', async () => {

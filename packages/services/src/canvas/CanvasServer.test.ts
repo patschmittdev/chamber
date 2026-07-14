@@ -77,6 +77,9 @@ describe('CanvasServer', () => {
     const html = await response.text();
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('content-security-policy')).toBe(
+      "default-src 'self'; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'",
+    );
     expect(html).toContain('--ch-background');
     expect(html).toContain('.ch-card');
     expect(html).toContain("new URLSearchParams(location.search).get('token')");

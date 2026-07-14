@@ -18,6 +18,18 @@ const MIME_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
 };
 
+const CANVAS_CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "connect-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+
 interface CanvasServerOptions {
   resolveContentDir: (mindId: string) => string | null;
   onAction: CanvasActionHandler;
@@ -396,6 +408,7 @@ export class CanvasServer implements CanvasServerLike {
 
       res.writeHead(200, {
         'Cache-Control': 'no-store',
+        'Content-Security-Policy': CANVAS_CONTENT_SECURITY_POLICY,
         'Content-Type': mimeType,
       });
       res.end(content);

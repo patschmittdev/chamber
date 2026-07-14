@@ -19,6 +19,16 @@ const ACTION_STATUS_LABELS = {
 
 type CanvasActionStatus = keyof typeof ACTION_STATUS_LABELS;
 
+function canvasMindId(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const [mindId] = new URL(url).pathname.split('/').filter(Boolean);
+    return mindId ? decodeURIComponent(mindId) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function CanvasLensView({ view }: Props) {
   const { resolvedTheme } = useTheme();
   const [url, setUrl] = useState<string | null>(null);
@@ -27,6 +37,7 @@ export function CanvasLensView({ view }: Props) {
   const [frameKey, setFrameKey] = useState(0);
   const [actionStatus, setActionStatus] = useState<CanvasActionStatus | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const mindId = canvasMindId(url);
   const canvasTheme = view.appearance === 'light' || view.appearance === 'dark'
     ? view.appearance
     : resolvedTheme;
@@ -54,8 +65,8 @@ export function CanvasLensView({ view }: Props) {
   }, [postAppearance]);
 
   useEffect(() => window.electronAPI.lens.onCanvasActionStatus((status) => {
-    if (status.viewId === view.id) setActionStatus(status.status);
-  }), [view.id]);
+    if (status.mindId === mindId && status.viewId === view.id) setActionStatus(status.status);
+  }), [mindId, view.id]);
 
   useEffect(() => {
     let cancelled = false;
