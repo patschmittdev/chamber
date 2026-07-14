@@ -586,6 +586,10 @@ export class CanvasServer implements CanvasServerLike {
     this.publishActionStatus(action, 'accepted');
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, actionId, status: 'accepted' }));
+    // Defence-in-depth terminal catch: dispatchAction cannot reject under the
+    // current implementation because publishActionStatus guards onActionStatus
+    // internally. This catch prevents an unhandled rejection if that internal
+    // guard is ever refactored away.
     void this.dispatchAction(action).catch((err) => {
       log.warn('Canvas dispatch fatal error:', { actionId: action.actionId, mindId: action.mindId, canvas: action.canvas, phase: 'dispatch' });
       void err;

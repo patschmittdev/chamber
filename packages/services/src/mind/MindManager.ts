@@ -564,12 +564,15 @@ export class MindManager extends EventEmitter {
       model: context.selectedModel,
       modelProvider: context.selectedModelProvider,
     });
-    // Explicit disposable-session lifecycle: disconnect runs in finally so cleanup
-    // always executes. A disconnect rejection propagates to the caller, which maps
-    // it to reload-failed — preserving the invariant that teardown failures are
-    // never silently promoted to success.
+    // Explicit disposable-session boundary: disconnect() runs in finally on every
+    // exit path from this point forward, including any verification work added here
+    // in the future. An empty try body is intentional — session creation is the
+    // full verification; the boundary exists to enforce the teardown contract for
+    // future callers. If disconnect() rejects, the error propagates to
+    // McpConnectorOperationsService which maps it to reload-failed and never to
+    // configuration-applied.
     try {
-      // Verification session established; MCP configuration accepted by bounded session-creation path.
+      // No additional verification work in this pass; session creation succeeded.
     } finally {
       await session.disconnect();
     }

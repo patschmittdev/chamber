@@ -3289,6 +3289,9 @@ describe('MindManager', () => {
       const mind = await manager.loadMind('/tmp/agents/q');
       const contextBefore = manager.getMind(mind.mindId);
       const activeSessionIdBefore = contextBefore?.activeSessionId;
+      // Guard: loadMind always establishes a conversation session; activeSessionId
+      // must be a non-trivial value so the assertion below is not vacuous.
+      expect(activeSessionIdBefore).toBeDefined();
 
       const verifySession = createSessionStub('verify-session-3');
       mockCreateSession.mockReturnValueOnce(verifySession);
@@ -3304,6 +3307,9 @@ describe('MindManager', () => {
       const mind = await manager.loadMind('/tmp/agents/q');
       const contextBefore = manager.getMind(mind.mindId);
       const activeSessionIdBefore = contextBefore?.activeSessionId;
+      // Guard: loadMind always establishes a conversation session; activeSessionId
+      // must be a non-trivial value so the assertion below is not vacuous.
+      expect(activeSessionIdBefore).toBeDefined();
 
       const verifySession = {
         ...createSessionStub('verify-session-4'),
