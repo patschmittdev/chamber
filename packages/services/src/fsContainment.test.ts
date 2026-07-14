@@ -76,17 +76,17 @@ describe('assertContained', () => {
       expect(() => assertContained(root, path.join('sub', '..', '..', 'up.txt'))).toThrow(ContainmentError);
     });
 
-    it('rejects an absolute path that is outside the root', () => {
+    it('rejects an absolute candidate regardless of whether it is inside the root', () => {
       const root = makeTempDir();
-      const outside = os.tmpdir();
+      const outside = path.join(root, '..', 'other');
       expect(() => assertContained(root, outside)).toThrow(ContainmentError);
     });
 
-    it('accepts an absolute path that is inside the root', () => {
+    it('rejects an absolute candidate that is inside the root', () => {
       const root = makeTempDir();
       const inside = path.join(root, 'child.txt');
-      const result = assertContained(root, inside);
-      expect(result).toBe(inside);
+      // Callers must pass relative paths; absolute candidates are always rejected.
+      expect(() => assertContained(root, inside)).toThrow(ContainmentError);
     });
   });
 

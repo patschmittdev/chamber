@@ -183,24 +183,16 @@ export class CanvasService implements ChamberToolProvider {
     const lensDir = path.join(mindPath, '.github', 'lens');
 
     // Use realpath-based containment to reject symlink escapes in the source tree.
+    // path.relative produces a traversal-detectable relative path; assertContained
+    // rejects it if any component (including intermediate directories) is a symlink.
     try {
-      assertContained(lensDir, sourcePath);
+      assertContained(lensDir, path.relative(lensDir, sourcePath));
     } catch {
       throw new Error('Canvas Lens source path must be inside the mind .github/lens directory');
     }
 
     if (!fs.existsSync(sourcePath)) {
       throw new Error(`Canvas Lens source file not found: ${sourcePath}`);
-    }
-
-    // Reject symlinks in the source file — the source tree is agent-managed and
-    // could have symlinks pointing to sensitive files outside the lens directory.
-    try {
-      if (fs.lstatSync(sourcePath).isSymbolicLink()) {
-        throw new Error(`Canvas Lens source file is a symlink: ${sourcePath}`);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('symlink')) throw err;
     }
 
     const contentDir = this.ensureMind(mindId, mindPath);

@@ -610,7 +610,7 @@ export class CanvasServer implements CanvasServerLike {
       return;
     }
 
-    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+    if (!fs.existsSync(fullPath) || !fs.lstatSync(fullPath).isFile()) {
       res.writeHead(404);
       res.end('Not found');
       return;

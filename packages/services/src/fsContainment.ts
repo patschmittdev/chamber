@@ -2,6 +2,7 @@
 // Uses lstat and realpath instead of lexical string-prefix checks to prevent
 // symlink traversal, junction escape, and check-to-use races.
 
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -36,10 +37,14 @@ export function assertContained(trustedRoot: string, candidatePath: string): str
     throw new ContainmentError(`Trusted root is inaccessible: ${trustedRoot}`);
   }
 
+  // Reject absolute candidate paths — callers must pass relative paths to prevent
+  // resolution asymmetry between the resolved root and an unresolved absolute candidate.
+  if (path.isAbsolute(candidatePath)) {
+    throw new ContainmentError(`Candidate path must be relative: ${candidatePath}`);
+  }
+
   // Build the full candidate path.
-  const joined = path.isAbsolute(candidatePath)
-    ? candidatePath
-    : path.join(resolvedRoot, candidatePath);
+  const joined = path.join(resolvedRoot, candidatePath);
 
   // Fast lexical check before walking filesystem.
   if (!isLexicallyContained(resolvedRoot, joined)) {
@@ -82,7 +87,7 @@ export function writeAtomically(targetPath: string, content: string | Buffer): v
   const dir = path.dirname(targetPath);
   const base = path.basename(targetPath);
   // Use a hidden temp name with random suffix to avoid conflicts.
-  const tempPath = path.join(dir, `.${base}.tmp.${Math.random().toString(36).slice(2)}`);
+  const tempPath = path.join(dir, `.${base}.tmp.${randomBytes(8).toString('hex')}`);
   try {
     if (typeof content === 'string') {
       fs.writeFileSync(tempPath, content, { encoding: 'utf8', flag: 'wx' });

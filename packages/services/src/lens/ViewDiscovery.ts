@@ -1,10 +1,11 @@
 // Lens view discovery — scans minds for view.json manifests, reads view data, handles prompt refresh.
 // Per-mind storage: views and watchers keyed by mindPath.
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { CanvasActionRequest } from '@chamber/shared/canvas-action-types';
 import type { LensViewManifest } from '@chamber/shared/types';
+import { assertContained } from '../fsContainment';
 import { Logger } from '../logger';
 
 const log = Logger.create('ViewDiscovery');
@@ -110,16 +111,16 @@ export class ViewDiscovery {
     if (!view || !view._basePath) return null;
     if (view.view === 'canvas') return null;
 
-    const dataPath = path.join(view._basePath, view.source);
-    if (!fs.existsSync(dataPath)) return null;
-
-    // Reject source files that are symlinks — prevents data exfiltration via
-    // symlink replacement after manifest discovery.
+    // assertContained walks every path component (not just the terminal node) to reject
+    // intermediate symlinks that could escape the lens directory.
+    let dataPath: string;
     try {
-      if (fs.lstatSync(dataPath).isSymbolicLink()) return null;
+      dataPath = assertContained(view._basePath, view.source);
     } catch {
       return null;
     }
+
+    if (!fs.existsSync(dataPath)) return null;
 
     try {
       const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
@@ -132,14 +133,13 @@ export class ViewDiscovery {
   getViewSourcePath(viewId: string, mindPath: string): string | null {
     const view = this.getViews(mindPath).find(v => v.id === viewId);
     if (!view || !view._basePath) return null;
-    const sourcePath = path.join(view._basePath, view.source);
-    // Revalidate before returning — reject symlinks installed after discovery.
+    // Revalidate before returning — assertContained walks all components to reject
+    // symlinks installed at any level after discovery.
     try {
-      if (fs.existsSync(sourcePath) && fs.lstatSync(sourcePath).isSymbolicLink()) return null;
+      return assertContained(view._basePath, view.source);
     } catch {
       return null;
     }
-    return sourcePath;
   }
 
   async refreshView(viewId: string, mindPath: string): Promise<Record<string, unknown> | null> {
@@ -147,15 +147,12 @@ export class ViewDiscovery {
     const view = views.find(v => v.id === viewId);
     if (!view || !view.prompt || !view._basePath) return this.getViewData(viewId, mindPath);
 
-    const dataPath = path.join(view._basePath, view.source);
-
-    // Revalidate source before embedding in prompt — reject symlinks placed after discovery.
+    // assertContained revalidates all path components before embedding in prompt.
+    let dataPath: string;
     try {
-      if (fs.existsSync(dataPath) && fs.lstatSync(dataPath).isSymbolicLink()) {
-        throw new Error('Lens refresh source is a symlink');
-      }
+      dataPath = assertContained(view._basePath, view.source);
     } catch (err) {
-      if (err instanceof Error && err.message.includes('symlink')) throw err;
+      throw new Error('Lens refresh source path rejected', { cause: err });
     }
 
     const outputInstruction = view.view === 'canvas'
@@ -180,14 +177,10 @@ export class ViewDiscovery {
     const view = views.find(v => v.id === viewId);
     if (!view || !view._basePath) return this.getViewData(viewId, mindPath);
 
-    const dataPath = path.join(view._basePath, view.source);
-
-    // Revalidate source before embedding in prompt.
+    // assertContained revalidates all path components before embedding in prompt.
+    let dataPath: string;
     try {
-      if (fs.existsSync(dataPath) && fs.lstatSync(dataPath).isSymbolicLink()) {
-        log.warn(`Lens action source is a symlink for ${viewId}`);
-        return null;
-      }
+      dataPath = assertContained(view._basePath, view.source);
     } catch {
       return null;
     }
@@ -211,14 +204,10 @@ export class ViewDiscovery {
     const view = views.find(v => v.id === viewId);
     if (!view || view.view !== 'canvas' || !view._basePath) return;
 
-    const sourcePath = path.join(view._basePath, view.source);
-
-    // Revalidate source before embedding in prompt.
+    // assertContained revalidates all path components before embedding in prompt.
+    let sourcePath: string;
     try {
-      if (fs.existsSync(sourcePath) && fs.lstatSync(sourcePath).isSymbolicLink()) {
-        log.warn(`Canvas action source is a symlink for ${viewId}`);
-        return;
-      }
+      sourcePath = assertContained(view._basePath, view.source);
     } catch {
       return;
     }
