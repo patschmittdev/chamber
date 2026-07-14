@@ -26,11 +26,11 @@ test.describe('electron conversation history smoke', () => {
 
     const history = page.getByLabel('Conversation history');
     await expect(history).toBeVisible();
-    await expect(history.getByLabel(/Rename /).first()).toBeVisible();
+    await expect(history.getByLabel(/^More actions for /).first()).toBeVisible();
 
     await history.getByRole('button', { name: 'New conversation' }).click();
     await expect.poll(
-      () => history.getByLabel(/Rename /).count(),
+      () => history.getByLabel(/^More actions for /).count(),
       { timeout: 60_000 },
     ).toBe(1);
 
@@ -97,7 +97,7 @@ test.describe('electron conversation history smoke', () => {
     const history = page.getByLabel('Conversation history');
     await expect(history.getByText(prompt)).toBeVisible();
     await expect(history.getByText(/^New chat ·/)).toHaveCount(0);
-    await expect(history.getByLabel(/Rename /)).toHaveCount(1);
+    await expect(history.getByLabel(/^More actions for /)).toHaveCount(1);
 
     await app?.close();
     app = await launchElectronApp({
@@ -109,7 +109,7 @@ test.describe('electron conversation history smoke', () => {
     await expect(restartedPage.getByRole('button', { name: 'Monica' }).first()).toBeVisible();
     await expect(restartedHistory.getByText(prompt)).toBeVisible();
     await expect(restartedHistory.getByText(/^New chat ·/)).toHaveCount(0);
-    await expect(restartedHistory.getByLabel(/Rename /)).toHaveCount(1);
+    await expect(restartedHistory.getByLabel(/^More actions for /)).toHaveCount(1);
     await expect(restartedPage.getByText(prompt).first()).toBeVisible();
   });
 
@@ -134,13 +134,14 @@ test.describe('electron conversation history smoke', () => {
     const history = page.getByLabel('Conversation history');
     await expect(history.getByRole('button', { name: 'New conversation' })).toBeEnabled({ timeout: 60_000 });
     await history.getByRole('button', { name: 'New conversation' }).click();
-    await expect.poll(() => history.getByLabel(/Rename /).count(), { timeout: 60_000 }).toBe(2);
+    await expect.poll(() => history.getByLabel(/^More actions for /).count(), { timeout: 60_000 }).toBe(2);
     await expect(history.getByText(prompt)).toBeVisible();
     await expect(history.getByText(/^New chat ·/)).toBeVisible();
 
-    await history.getByRole('button', { name: /^Delete New chat ·/ }).click();
+    await history.getByLabel(/^More actions for New chat ·/).click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
 
-    await expect.poll(() => history.getByLabel(/Rename /).count(), { timeout: 60_000 }).toBe(1);
+    await expect.poll(() => history.getByLabel(/^More actions for /).count(), { timeout: 60_000 }).toBe(1);
     await expect(history.getByText(/^New chat ·/)).toHaveCount(0);
     await expect(history.getByText(prompt)).toBeVisible();
     await expect(page.getByText(prompt).first()).toBeVisible();
@@ -192,14 +193,15 @@ async function addMind(page: Page, mindPath: string) {
     return loaded;
   }, mindPath);
   await page.getByRole('button', { name: mind.identity.name }).first().click();
-  await expect(page.getByLabel('Conversation history').getByLabel(/Rename /).first()).toBeVisible();
+  await expect(page.getByLabel('Conversation history').getByLabel(/^More actions for /).first()).toBeVisible();
   return mind;
 }
 
 async function renameFirstHistoryItem(page: Page, title: string): Promise<void> {
   const history = page.getByLabel('Conversation history');
-  await history.getByLabel(/Rename /).first().click();
-  const input = history.locator('input').first();
+  await history.getByLabel(/^More actions for /).first().click();
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  const input = history.locator('input:not([aria-label="Search conversations"])').first();
   await input.fill(title);
   await input.press('Enter');
   await expect(history.getByText(title)).toBeVisible();

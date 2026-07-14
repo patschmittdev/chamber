@@ -43,18 +43,18 @@ test.describe('electron model switch conversation context smoke', () => {
 
     const history = page.getByLabel('Conversation history');
     await expect(history.getByText(firstPrompt)).toBeVisible();
-    const rowsAfterFirstTurn = await history.getByLabel(/Rename /).count();
+    const rowsAfterFirstTurn = await history.getByLabel(/^More actions for /).count();
     const nextModel = await findNextModel(page, models);
     await selectModel(page, nextModel.name);
     await expectMindModel(page, mind.mindId, nextModel.id);
-    await expect.poll(() => history.getByLabel(/Rename /).count(), { timeout: 30_000 }).toBe(rowsAfterFirstTurn);
+    await expect.poll(() => history.getByLabel(/^More actions for /).count(), { timeout: 30_000 }).toBe(rowsAfterFirstTurn);
 
     const secondPrompt = 'Repeat the secret token I gave you a moment ago, exactly.';
     await sendAndWait(page, mind.mindId, secondPrompt);
 
     await expect(page.getByText(secondPrompt).first()).toBeVisible();
     await expectNoSessionError(page);
-    await expect.poll(() => history.getByLabel(/Rename /).count(), { timeout: 30_000 }).toBe(rowsAfterFirstTurn);
+    await expect.poll(() => history.getByLabel(/^More actions for /).count(), { timeout: 30_000 }).toBe(rowsAfterFirstTurn);
     await expect(history.getByText(firstPrompt)).toBeVisible();
     // Conversation context must survive an in-place model switch — the model should recall the sentinel.
     await expect(page.getByText(new RegExp(sentinelToken)).first()).toBeVisible({ timeout: 60_000 });

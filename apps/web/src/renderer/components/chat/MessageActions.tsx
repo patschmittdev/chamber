@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Check, ChevronDown, Copy, FileCode, GitFork, Pencil, RefreshCw, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { ChatMessage, ModelInfo } from '@chamber/shared/types';
 import { modelSelectionKeyFromModel } from '@chamber/shared/model-selection';
@@ -7,6 +7,7 @@ import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { toMarkdown, toPlainText } from './messageContent';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from '../ui/command';
+import type { RowActionItem } from '../ui/row-actions';
 
 const ROW_ACTION_BASE = 'flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40';
 const ROW_ACTION_NEUTRAL = 'text-muted-foreground hover:bg-accent hover:text-foreground';
@@ -24,6 +25,14 @@ interface MessageActionsProps {
   fork?: RowAction;
   /** Delete this turn and every turn after it. Omit to hide (unsaved turn or unsupported). */
   onDelete?: () => void;
+  /**
+   * Controlled pending-delete state. When provided, the inline confirm is driven
+   * by the parent so another surface (the row's right-click context menu) can open
+   * the same confirmation instead of deleting outright. Omit for standalone
+   * uncontrolled use, where the confirm is tracked internally.
+   */
+  confirmingDelete?: boolean;
+  onConfirmingDeleteChange?: (confirming: boolean) => void;
 }
 
 /**
@@ -61,10 +70,15 @@ export interface RegenerateAction {
  * in by the parent only when the host and persisted history support them, so
  * this component never has to know about capabilities itself.
  */
-export function MessageActions({ message, isBusy, regenerate, edit, fork, onDelete }: MessageActionsProps) {
+export function MessageActions({ message, isBusy, regenerate, edit, fork, onDelete, confirmingDelete: confirmingDeleteProp, onConfirmingDeleteChange }: MessageActionsProps) {
   const plain = useCopyToClipboard();
   const markdown = useCopyToClipboard();
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [uncontrolledConfirmingDelete, setUncontrolledConfirmingDelete] = useState(false);
+  const confirmingDelete = confirmingDeleteProp ?? uncontrolledConfirmingDelete;
+  const setConfirmingDelete = useCallback((next: boolean) => {
+    if (confirmingDeleteProp === undefined) setUncontrolledConfirmingDelete(next);
+    onConfirmingDeleteChange?.(next);
+  }, [confirmingDeleteProp, onConfirmingDeleteChange]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const handleCopyPlain = useCallback(() => plain.copy(toPlainText(message)), [plain, message]);
@@ -72,16 +86,18 @@ export function MessageActions({ message, isBusy, regenerate, edit, fork, onDele
   const handleConfirmDelete = useCallback(() => {
     setConfirmingDelete(false);
     onDelete?.();
-  }, [onDelete]);
+  }, [onDelete, setConfirmingDelete]);
 
   return (
     <div
       className={cn(
         'mt-1.5 flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100',
-        // Keep the row (and its caret) visible while the model menu is open: the
-        // menu content is portaled and takes focus, so hover and focus-within on
-        // the row no longer hold, and the row would otherwise collapse mid-pick.
-        modelMenuOpen ? 'opacity-100' : 'opacity-0',
+        // Keep the row (and its caret) visible while the model menu is open or a
+        // delete confirm is pending: the menu content is portaled and takes focus
+        // (and the confirm can be opened from the portaled context menu), so hover
+        // and focus-within on the row no longer hold and the row would otherwise
+        // collapse mid-interaction.
+        modelMenuOpen || confirmingDelete ? 'opacity-100' : 'opacity-0',
       )}
     >
       <ActionButton
@@ -209,6 +225,63 @@ export function MessageActions({ message, isBusy, regenerate, edit, fork, onDele
       )}
     </div>
   );
+}
+
+/**
+ * Builds the right-click context-menu action set for a message from the same
+ * capability props the inline row uses, so the discoverable path stays in sync
+ * with the visible one (shell-F4 / rail-H3). The inline row keeps its richer
+ * affordances (model submenu, inline delete confirm); the context menu offers
+ * the plain equivalents and routes each item to the identical handler.
+ */
+export function useMessageActionItems({ message, isBusy, regenerate, edit, fork, onDelete }: MessageActionsProps): RowActionItem[] {
+  const plain = useCopyToClipboard();
+  const markdown = useCopyToClipboard();
+  return useMemo(() => {
+    const items: RowActionItem[] = [
+      { id: 'copy', label: 'Copy', icon: Copy, onSelect: () => plain.copy(toPlainText(message)) },
+      { id: 'copy-markdown', label: 'Copy as markdown', icon: FileCode, onSelect: () => markdown.copy(toMarkdown(message)) },
+    ];
+    if (regenerate) {
+      items.push({
+        id: 'regenerate',
+        label: 'Regenerate',
+        icon: RefreshCw,
+        disabled: isBusy || Boolean(regenerate.disabledReason),
+        onSelect: () => regenerate.onRun(),
+      });
+    }
+    if (edit) {
+      items.push({
+        id: 'edit',
+        label: 'Edit',
+        icon: Pencil,
+        disabled: isBusy || Boolean(edit.disabledReason),
+        onSelect: () => edit.onRun(),
+      });
+    }
+    if (fork) {
+      items.push({
+        id: 'fork',
+        label: 'Fork from here',
+        icon: GitFork,
+        disabled: isBusy || Boolean(fork.disabledReason),
+        onSelect: () => fork.onRun(),
+      });
+    }
+    if (onDelete) {
+      items.push({
+        id: 'delete',
+        label: 'Delete from here',
+        icon: Trash2,
+        danger: true,
+        separatorBefore: true,
+        disabled: isBusy,
+        onSelect: () => onDelete(),
+      });
+    }
+    return items;
+  }, [message, isBusy, regenerate, edit, fork, onDelete, plain, markdown]);
 }
 
 function ActionButton({

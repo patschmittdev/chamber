@@ -38,6 +38,26 @@ export function installCmdkDom(): void {
   }
 }
 
+/**
+ * Radix menu primitives (dropdown-menu, context-menu) drive pointer capture and
+ * scroll-into-view during open/close and roving focus, none of which jsdom
+ * implements. Call once in any test that mounts a Radix menu so opening a menu
+ * does not throw. Superset of installCmdkDom (menus also use ResizeObserver).
+ */
+export function installMenuDom(): void {
+  installCmdkDom();
+  if (typeof Element === 'undefined') return;
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {};
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ContentBlock factories
 // ---------------------------------------------------------------------------

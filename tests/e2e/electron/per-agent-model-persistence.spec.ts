@@ -102,7 +102,7 @@ test.describe('electron per-agent model persistence smoke', () => {
     await expect(page.getByRole('button', { name: 'Daily briefing' })).toBeDisabled();
 
     await expectMindModel(page, beta.mindId, nextModel.id);
-    await expect(page.getByLabel('Conversation history').getByLabel(/Rename /)).toHaveCount(1);
+    await expect(page.getByLabel('Conversation history').getByLabel(/^More actions for /)).toHaveCount(1);
   });
 });
 

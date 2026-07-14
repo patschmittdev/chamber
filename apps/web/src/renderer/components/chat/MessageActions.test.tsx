@@ -2,10 +2,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { ChatMessage, ModelInfo } from '@chamber/shared/types';
-import { MessageActions } from './MessageActions';
-import { installCmdkDom } from '../../../test/helpers';
+import { MessageActions, useMessageActionItems } from './MessageActions';
+import { RowContextMenu } from '../ui/row-actions';
+import { installMenuDom } from '../../../test/helpers';
 
-installCmdkDom();
+installMenuDom();
+
+type MessageActionInput = Parameters<typeof useMessageActionItems>[0];
+
+function ContextHarness(props: MessageActionInput) {
+  const items = useMessageActionItems(props);
+  return (
+    <RowContextMenu items={items}>
+      <div data-testid="message-body">Message body</div>
+    </RowContextMenu>
+  );
+}
 
 function assistantMsg(overrides?: Partial<ChatMessage>): ChatMessage {
   return { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: '# Title\n\nBody' }], timestamp: 2, eventId: 'evt-a1', ...overrides };
@@ -275,6 +287,39 @@ describe('MessageActions', () => {
     expect(button('Delete this message and all following messages')).toBeTruthy();
   });
 
+  it('supports a controlled pending-delete state so another surface can open the same confirm', () => {
+    const onDelete = vi.fn();
+    const onConfirmingDeleteChange = vi.fn();
+    const { rerender } = render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        onDelete={onDelete}
+        confirmingDelete={false}
+        onConfirmingDeleteChange={onConfirmingDeleteChange}
+      />,
+    );
+    expect(queryButton('Confirm delete from here')).toBeNull();
+
+    rerender(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        onDelete={onDelete}
+        confirmingDelete
+        onConfirmingDeleteChange={onConfirmingDeleteChange}
+      />,
+    );
+    expect(screen.getByText('Remove this and all later turns?')).toBeTruthy();
+    expect(onDelete).not.toHaveBeenCalled();
+    const row = button('Confirm delete from here').closest('div') as HTMLElement;
+    expect(row.className.split(/\s+/)).toContain('opacity-100');
+
+    fireEvent.click(button('Confirm delete from here'));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onConfirmingDeleteChange).toHaveBeenLastCalledWith(false);
+  });
+
   it('holds mutating actions while a turn is streaming but still allows copy', () => {
     render(
       <MessageActions
@@ -292,5 +337,45 @@ describe('MessageActions', () => {
     expect(button('Fork conversation from here').disabled).toBe(true);
     expect(button('Delete this message and all following messages').disabled).toBe(true);
     expect(button('Copy message').disabled).toBe(false);
+  });
+
+  it('exposes the same actions through a right-click context menu (shell-F4/rail-H3)', () => {
+    render(
+      <ContextHarness
+        message={assistantMsg()}
+        isBusy={false}
+        regenerate={{ onRun: vi.fn() }}
+        fork={{ onRun: vi.fn() }}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('menuitem', { name: 'Copy' })).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId('message-body'));
+
+    expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy as markdown' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Regenerate' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Fork from here' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Delete from here' })).toBeTruthy();
+  });
+
+  it('routes a context-menu selection to the same handler as the inline row', () => {
+    const onRun = vi.fn();
+    render(<ContextHarness message={assistantMsg()} isBusy={false} regenerate={{ onRun }} />);
+
+    fireEvent.contextMenu(screen.getByTestId('message-body'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Regenerate' }));
+
+    expect(onRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('copies plain text through the context menu Copy item', () => {
+    render(<ContextHarness message={assistantMsg()} isBusy={false} />);
+
+    fireEvent.contextMenu(screen.getByTestId('message-body'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }));
+
+    expect(writeText).toHaveBeenCalledWith('Title\n\nBody');
   });
 });

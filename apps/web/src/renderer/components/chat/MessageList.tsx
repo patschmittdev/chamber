@@ -1,7 +1,8 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
-import { MessageActions, type RowAction, type RegenerateAction } from './MessageActions';
+import { MessageActions, useMessageActionItems, type RowAction, type RegenerateAction } from './MessageActions';
 import { MessageVariantPager } from './MessageVariantPager';
+import { RowContextMenu } from '../ui/row-actions';
 import { useAppState, useAppDispatch, getPlainContent } from '../../lib/store';
 import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useConversationActions } from '../../hooks/useConversationActions';
@@ -336,6 +337,10 @@ const MessageRow = memo(function MessageRow({
   onSelectVariant,
 }: MessageRowProps) {
   const [isEditing, setIsEditing] = useState(false);
+  // Shared pending-delete state for this row. Both the inline delete button and
+  // the right-click context menu open the same confirm; the context menu never
+  // deletes outright (data-loss guard) but instead opens this confirm.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // A turn can be mutated only once it is persisted (has a backing event id).
   // Browser mode never reconciles ids, so these actions stay hidden there; on
@@ -345,6 +350,12 @@ const MessageRow = memo(function MessageRow({
   const handleDelete = useCallback(() => onDelete(message), [onDelete, message]);
   const handleFork = useCallback(() => onFork(message), [onFork, message]);
   const deleteAction = canMutate ? handleDelete : undefined;
+  // The context menu opens the same confirm as the inline row rather than
+  // deleting on a single click, so a right-click can never destroy turns unconfirmed.
+  const requestDelete = useMemo(
+    () => (canMutate ? () => setConfirmingDelete(true) : undefined),
+    [canMutate],
+  );
   const fork = useMemo<RowAction | undefined>(
     () => canMutate ? { onRun: handleFork } : undefined,
     [canMutate, handleFork],
@@ -378,7 +389,20 @@ const MessageRow = memo(function MessageRow({
     )
     : null;
 
+  const isAssistant = message.role === 'assistant';
+  const contextActionItems = useMessageActionItems({
+    message,
+    isBusy,
+    regenerate: isAssistant ? regenerate : undefined,
+    edit: isAssistant ? undefined : edit,
+    fork,
+    onDelete: requestDelete,
+  });
+  const actionsReady = !message.isStreaming && (isAssistant ? getPlainContent(message).trim().length > 0 : true);
+  const rowContextItems = actionsReady ? contextActionItems : [];
+
   return (
+    <RowContextMenu items={rowContextItems}>
     <div
       className={cn('group flex gap-3', launch ? 'chamber-launch' : animate && 'chamber-fade-in')}
       style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 140px' } as React.CSSProperties}
@@ -426,6 +450,8 @@ const MessageRow = memo(function MessageRow({
                 regenerate={regenerate}
                 fork={fork}
                 onDelete={deleteAction}
+                confirmingDelete={confirmingDelete}
+                onConfirmingDeleteChange={setConfirmingDelete}
               />
             )}
           </>
@@ -486,12 +512,15 @@ const MessageRow = memo(function MessageRow({
                 edit={edit}
                 fork={fork}
                 onDelete={deleteAction}
+                confirmingDelete={confirmingDelete}
+                onConfirmingDeleteChange={setConfirmingDelete}
               />
             )}
           </div>
         )}
       </div>
     </div>
+    </RowContextMenu>
   );
 });
 

@@ -5,12 +5,19 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationSummary, MindContext } from '@chamber/shared/types';
-import { installElectronAPI, mockElectronAPI } from '../../../test/helpers';
+import { installElectronAPI, installMenuDom, mockElectronAPI } from '../../../test/helpers';
 import { AppStateProvider } from '../../lib/store';
 import type { AppState } from '../../lib/store/state';
 import { ConversationHistoryPanel } from './ConversationHistoryPanel';
 
+installMenuDom();
+
 const STORAGE_KEY = 'chamber:conversation-history-collapsed';
+
+function openRowMenu(title: string): void {
+  const trigger = screen.getByRole('button', { name: `More actions for ${title}` });
+  fireEvent.keyDown(trigger, { key: 'Enter' });
+}
 
 const mind: MindContext = {
   mindId: 'mind-1',
@@ -131,7 +138,7 @@ describe('ConversationHistoryPanel', () => {
     warn.mockRestore();
   });
 
-  it('keeps row actions visible for keyboard focus', () => {
+  it('keeps the row overflow control visible for keyboard focus', () => {
     const conversation = makeConversation({ title: 'Planning thread' });
     renderHistoryPanel({
       activeMindId: mind.mindId,
@@ -141,14 +148,66 @@ describe('ConversationHistoryPanel', () => {
       conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
     });
 
-    const rename = screen.getByRole('button', { name: 'Rename Planning thread' });
-    const deleteButton = screen.getByRole('button', { name: 'Delete Planning thread' });
+    const overflow = screen.getByRole('button', { name: 'More actions for Planning thread' });
 
-    expect(rename.className).toContain('group-focus-within:opacity-100');
-    expect(rename.className).toContain('focus-visible:opacity-100');
-    expect(deleteButton.className).toContain('group-focus-within:opacity-100');
-    expect(deleteButton.className).toContain('focus-visible:opacity-100');
+    expect(overflow.className).toContain('group-focus-within:opacity-100');
+    expect(overflow.className).toContain('focus-visible:opacity-100');
     expect(screen.getByText(/just now/).className).toContain('text-xs');
+  });
+
+  it('groups the secondary row actions in the overflow menu and keeps pin inline (rail-H2)', () => {
+    const conversation = makeConversation({ title: 'Planning thread', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+    });
+
+    expect(screen.getByRole('button', { name: 'Pin Planning thread' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Archive' })).toBeNull();
+
+    openRowMenu('Planning thread');
+
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Export as Markdown' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Export as JSON' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Pin' })).toBeNull();
+  });
+
+  it('opens a right-click context menu exposing pin and the secondary actions (shell-F4/rail-H3)', () => {
+    const conversation = makeConversation({ title: 'Planning thread', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+    });
+
+    expect(screen.queryByRole('menuitem', { name: 'Pin' })).toBeNull();
+    fireEvent.contextMenu(screen.getByText('Planning thread'));
+
+    expect(screen.getByRole('menuitem', { name: 'Pin' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy();
+  });
+
+  it('yields to the native menu while a row is being renamed', () => {
+    const conversation = makeConversation({ title: 'Planning thread', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+    });
+
+    openRowMenu('Planning thread');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+
+    const renameInput = screen.getByDisplayValue('Planning thread');
+    fireEvent.contextMenu(renameInput);
+
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Pin' })).toBeNull();
   });
 
   it('shows source metadata for forked conversations', () => {
@@ -190,7 +249,8 @@ describe('ConversationHistoryPanel', () => {
       conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Keep me honest' }));
+    openRowMenu('Keep me honest');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
 
     expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(screen.getByText('Delete "Keep me honest"?')).toBeTruthy();
@@ -219,7 +279,8 @@ describe('ConversationHistoryPanel', () => {
       conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Empty draft' }));
+    openRowMenu('Empty draft');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
 
     expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(() => {
@@ -310,8 +371,8 @@ describe('ConversationHistoryPanel', () => {
       conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export Planning thread' }));
-    fireEvent.click(await screen.findByText('Export as Markdown'));
+    openRowMenu('Planning thread');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export as Markdown' }));
 
     await waitFor(() => {
       expect(api.conversationHistory.export).toHaveBeenCalledWith(mind.mindId, conversation.sessionId, 'markdown');
@@ -333,8 +394,8 @@ describe('ConversationHistoryPanel', () => {
       conversationViewByMind: { [mind.mindId]: { status: 'ready', sessionId: conversation.sessionId, streaming: false, modelSwitching: false } },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export Planning thread' }));
-    fireEvent.click(await screen.findByText('Export as JSON'));
+    openRowMenu('Planning thread');
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export as JSON' }));
 
     await waitFor(() => {
       expect(api.conversationHistory.export).toHaveBeenCalledWith(mind.mindId, conversation.sessionId, 'json');
@@ -381,7 +442,8 @@ describe('ConversationHistoryPanel', () => {
       conversationHistoryByMind: { [mind.mindId]: [alpha, bravo] },
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Archive Bravo' }));
+    openRowMenu('Bravo');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
 
     await waitFor(() => {
       expect(api.conversationHistory.setArchived).toHaveBeenCalledWith(mind.mindId, 's-bravo', true);
@@ -394,7 +456,8 @@ describe('ConversationHistoryPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archived \(1\)/ }));
 
     expect(screen.getByText('Bravo')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Unarchive Bravo' })).toBeTruthy();
+    openRowMenu('Bravo');
+    expect(screen.getByRole('menuitem', { name: 'Unarchive' })).toBeTruthy();
   });
 
   it('keeps organization actions available for keyboard focus with honest labels', () => {
@@ -406,11 +469,11 @@ describe('ConversationHistoryPanel', () => {
     });
 
     const pin = screen.getByRole('button', { name: 'Pin Planning thread' });
-    const archive = screen.getByRole('button', { name: 'Archive Planning thread' });
+    const overflow = screen.getByRole('button', { name: 'More actions for Planning thread' });
 
     expect(pin.className).toContain('group-focus-within:opacity-100');
-    expect(archive.className).toContain('group-focus-within:opacity-100');
-    expect(archive.className).toContain('focus-visible:opacity-100');
+    expect(overflow.className).toContain('group-focus-within:opacity-100');
+    expect(overflow.className).toContain('focus-visible:opacity-100');
   });
 
   it('reveals matching archived conversations while searching and restores the collapsed state when cleared', async () => {
