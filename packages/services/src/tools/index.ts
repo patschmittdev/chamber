@@ -7,3 +7,7 @@ export { ToolsService } from './ToolsService';
 export type { ToolInventoryEntry, ToolInventoryResult, ToolInventorySourceStatus } from './ToolsService';
 export { buildToolsSection } from './toolsSystemMessage';
 export { getChamberToolsBinDir } from './toolPaths';
+export { MarketplaceEnrollmentStore } from './MarketplaceEnrollmentStore';
+export type { EnrollmentRecord } from './MarketplaceEnrollmentStore';
+export { MarketplaceApprovalStore, computeArtifactDescriptorHash } from './MarketplaceApprovalStore';
+export type { ApprovalRecord } from './MarketplaceApprovalStore';

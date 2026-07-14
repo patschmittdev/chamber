@@ -598,7 +598,6 @@ export interface MarketplaceToolEntry {
   install: MarketplaceToolInstall;
   bin: string;
   help?: string;
-  preflight?: string[];
   /** Inline markdown describing how the model should invoke the CLI. Rendered into the system message. */
   agentInstructions?: string;
   source: {
@@ -634,7 +633,7 @@ export interface ToolOperationEntry {
   readonly description: string;
   readonly marketplaceId: string;
   readonly marketplaceLabel: string;
-  readonly installation: 'installed' | 'available';
+  readonly installation: 'installed' | 'available' | 'legacy-unverified';
   readonly updateAvailable: boolean;
 }
 

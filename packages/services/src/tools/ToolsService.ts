@@ -12,6 +12,8 @@ import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { Logger } from '../logger';
 import { MarketplaceToolCatalog } from './MarketplaceToolCatalog';
 import { ToolInstaller } from './ToolInstaller';
+import { MarketplaceApprovalStore, computeArtifactDescriptorHash } from './MarketplaceApprovalStore';
+import type { MarketplaceArtifactDescriptor } from './toolTypes';
 
 const log = Logger.create('ToolsService');
 
@@ -21,7 +23,7 @@ export interface ToolInventoryEntry {
   readonly description: string;
   readonly marketplaceId: string;
   readonly marketplaceLabel: string;
-  readonly status: 'installed' | 'available';
+  readonly status: 'installed' | 'available' | 'legacy-unverified';
   readonly installedVersion?: string;
   readonly updateAvailable: boolean;
 }
@@ -46,7 +48,7 @@ interface ConfigStore {
 /**
  * Orchestrates the marketplace-tool lifecycle: list (catalog ∪ installed),
  * install (npm i -g + persist), uninstall (npm uninstall -g + persist), and
- * startup reconciliation (install everything new since last run).
+ * startup reconciliation (discovery-only, no automatic installation).
  */
 export class ToolsService {
   private operationQueue = Promise.resolve();
@@ -55,6 +57,7 @@ export class ToolsService {
     private readonly catalog: MarketplaceToolCatalog,
     private readonly installer: ToolInstaller,
     private readonly configStore: ConfigStore,
+    private readonly approvalStore?: MarketplaceApprovalStore,
   ) {}
 
   async list(): Promise<ToolCatalogEntry[]> {
@@ -81,7 +84,12 @@ export class ToolsService {
     const installedByKey = new Map(installed.map((tool) => [toolInventoryKey(tool.id, tool.source.marketplaceId), tool]));
     const result = await this.catalog.listTools();
     const catalogKeys = new Set<string>();
-    const tools = result.tools.map((tool) => {
+    const mutableRefSourceIds = new Set(
+      result.errors
+        .filter((e) => isMutableRefError(e.message))
+        .map((e) => e.marketplaceId),
+    );
+    const tools: ToolInventoryEntry[] = result.tools.map((tool) => {
       const key = toolInventoryKey(tool.id, tool.source.marketplaceId);
       catalogKeys.add(key);
       const persisted = installedByKey.get(key);
@@ -104,7 +112,9 @@ export class ToolsService {
         description: tool.description,
         marketplaceId: tool.source.marketplaceId,
         marketplaceLabel: tool.source.marketplaceId,
-        status: 'installed' as const,
+        status: mutableRefSourceIds.has(tool.source.marketplaceId)
+          ? 'legacy-unverified' as const
+          : 'installed' as const,
         installedVersion: tool.version,
         updateAvailable: false,
       })));
@@ -227,40 +237,53 @@ export class ToolsService {
   }
 
   /**
-   * Install any marketplace tools that are not already in installedTools[].
-   * Errors on individual tools are logged and skipped — other tools still install.
+   * Discovery-only reconciliation. Reports marketplace tools pending explicit
+   * operator installation and any installed tools whose source is now in error
+   * (typically because the source uses a mutable ref that has been rejected).
+   * This method never calls the installer or executes any binary.
    */
-  async reconcile(): Promise<{ installed: InstalledTool[]; errors: Array<{ toolId: string; message: string }> }> {
+  async reconcile(): Promise<{
+    pending: MarketplaceToolEntry[];
+    legacyUnverified: string[];
+    errors: Array<{ toolId: string; message: string }>;
+  }> {
     const result = await this.catalog.listTools();
     const installed = this.getInstalled();
     const installedById = new Map(installed.map((tool) => [tool.id, tool]));
-    const newTools = result.tools.filter((tool) => {
-      const persisted = installedById.get(tool.id);
-      return !persisted || persisted.version !== marketplaceToolVersion(tool);
-    });
 
-    const newlyInstalled: InstalledTool[] = [];
+    const pending: MarketplaceToolEntry[] = [];
     const errors: Array<{ toolId: string; message: string }> = [];
 
-    for (const tool of newTools) {
-      const outcome = await this.installEntry(tool);
-      if (outcome.success) {
-        newlyInstalled.push(outcome.tool);
-      } else {
-        log.warn(`Reconcile failed for tool ${tool.id}: ${outcome.error}`);
-        errors.push({ toolId: tool.id, message: outcome.error });
+    for (const catalogError of result.errors) {
+      errors.push({ toolId: catalogError.marketplaceId, message: catalogError.message });
+    }
+
+    for (const tool of result.tools) {
+      const persisted = installedById.get(tool.id);
+      if (!persisted || persisted.version !== marketplaceToolVersion(tool)) {
+        pending.push(tool);
       }
     }
+
+    // Collect IDs of installed tools whose source is specifically rejected for a mutable ref.
+    // These tools retain their installed binaries but are surfaced as legacy-unverified.
+    const mutableRefSourceIds = new Set(
+      result.errors.filter((e) => isMutableRefError(e.message)).map((e) => e.marketplaceId),
+    );
+    const legacyUnverified = installed
+      .filter((tool) => mutableRefSourceIds.has(tool.source.marketplaceId))
+      .map((tool) => tool.id);
+
+    return { pending, legacyUnverified, errors };
 
     function marketplaceToolVersion(tool: MarketplaceToolEntry): string {
       return tool.install.type === 'npm-global' ? tool.install.version : tool.install.tag;
     }
-
-    return { installed: newlyInstalled, errors };
   }
 
   private async installEntry(tool: MarketplaceToolEntry): Promise<ToolActionResult> {
     try {
+      this.recordApproval(tool);
       const installed = await this.installer.install(tool);
       const current = this.getInstalled();
       const next = [...current.filter((entry) => entry.id !== installed.id), installed];
@@ -292,6 +315,7 @@ export class ToolsService {
     action: 'install' | 'update',
   ): Promise<ToolOperationResult> {
     try {
+      this.recordApproval(tool);
       const installed = await this.installer.install(tool);
       const current = this.getInstalled();
       this.persist([...current.filter((entry) => entry.id !== installed.id), installed]);
@@ -300,6 +324,19 @@ export class ToolsService {
       log.warn(`Marketplace tool ${action} failed for ${tool.id}.`);
       return { status: 'failed', action };
     }
+  }
+
+  private recordApproval(tool: MarketplaceToolEntry): void {
+    if (!this.approvalStore) return;
+    const descriptor = buildArtifactDescriptor(tool);
+    const hash = computeArtifactDescriptorHash(descriptor);
+    this.approvalStore.approve({
+      sourceId: tool.source.marketplaceId,
+      toolId: tool.id,
+      snapshotIdentity: `${tool.source.marketplaceId}@${tool.source.ref}`,
+      artifactDescriptorHash: hash,
+      approvedAt: new Date().toISOString(),
+    });
   }
 
   private getInstalled(): InstalledTool[] {
@@ -316,9 +353,39 @@ function toolInventoryKey(id: string, marketplaceId: string): string {
   return `${marketplaceId}\u0000${id}`;
 }
 
+/**
+ * Builds a canonical {@link MarketplaceArtifactDescriptor} from a catalog entry.
+ * All executable-affecting fields are captured so any change invalidates a prior
+ * approval hash.
+ */
+function buildArtifactDescriptor(tool: MarketplaceToolEntry): MarketplaceArtifactDescriptor {
+  if (tool.install.type === 'npm-global') {
+    return { type: 'npm-global', bin: tool.bin, package: tool.install.package, version: tool.install.version };
+  }
+  return {
+    type: 'github-release-asset',
+    bin: tool.bin,
+    owner: tool.install.owner,
+    repo: tool.install.repo,
+    tag: tool.install.tag,
+    // Encode the full assets array so any per-platform sha256/name/arch change is detected.
+    assetName: JSON.stringify(tool.install.assets),
+  };
+}
+
 function isUpdateAvailable(installed: InstalledTool, candidate: MarketplaceToolEntry): boolean {
   const candidateVersion = candidate.install.type === 'npm-global'
     ? candidate.install.version
     : candidate.install.tag;
   return installed.version !== candidateVersion;
+}
+
+/**
+ * Returns true when an error message indicates a source was rejected because
+ * it uses a mutable ref (branch, tag, abbreviated SHA). Used to distinguish
+ * legacy-unverified tools from tools that are merely unavailable due to a
+ * transient catalog error.
+ */
+function isMutableRefError(message: string): boolean {
+  return /mutable ref/i.test(message);
 }

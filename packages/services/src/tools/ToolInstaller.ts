@@ -44,7 +44,7 @@ export class ToolInstaller {
     }
     const spec = `${tool.install.package}@${tool.install.version}`;
     log.info(`Installing tool ${tool.id} (${spec}) globally via npm`);
-    const installResult = await this.runner.run('npm', ['install', '-g', spec]);
+    const installResult = await this.runner.run('npm', ['install', '-g', '--ignore-scripts', spec]);
     if (installResult.exitCode !== 0) {
       throw new Error(
         `npm install -g ${spec} failed (exit ${installResult.exitCode})\n${installResult.stderr || installResult.stdout}`.trim(),
@@ -54,16 +54,6 @@ export class ToolInstaller {
     const verifyResult = await this.runner.run(tool.bin, ['--version']);
     if (verifyResult.exitCode !== 0) {
       log.warn(`Tool ${tool.bin} --version exited ${verifyResult.exitCode}; continuing.`);
-    }
-
-    for (const command of tool.preflight ?? []) {
-      const [bin, ...args] = command.split(/\s+/).filter(Boolean);
-      if (!bin) continue;
-      log.info(`Running preflight: ${command}`);
-      const preflightResult = await this.runner.run(bin, args);
-      if (preflightResult.exitCode !== 0) {
-        log.warn(`Preflight "${command}" exited ${preflightResult.exitCode}: ${preflightResult.stderr.trim()}`);
-      }
     }
 
     return {
@@ -152,10 +142,10 @@ export class ToolInstaller {
     if (!('package' in tool)) {
       throw new Error(`Cannot uninstall npm tool ${tool.id}: package is missing`);
     }
-    const result = await this.runner.run('npm', ['uninstall', '-g', tool.package]);
+    const result = await this.runner.run('npm', ['uninstall', '-g', '--ignore-scripts', tool.package]);
     if (result.exitCode !== 0) {
       throw new Error(
-        `npm uninstall -g ${tool.package} failed (exit ${result.exitCode})\n${result.stderr || result.stdout}`.trim(),
+        `npm uninstall -g --ignore-scripts ${tool.package} failed (exit ${result.exitCode})\n${result.stderr || result.stdout}`.trim(),
       );
     }
   }

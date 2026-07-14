@@ -62,6 +62,12 @@ export class MarketplaceToolCatalog {
   }
 
   private async readSource(source: ToolMarketplaceSource): Promise<MarketplaceToolEntry[]> {
+    if (!isImmutableSha(source.ref)) {
+      throw new Error(
+        `Source ${source.owner}/${source.repo} uses a mutable ref "${source.ref}". `
+        + `Re-enroll the source with a full 40-character commit SHA to use marketplace tools.`,
+      );
+    }
     const pluginPath = `plugins/${source.plugin}/plugin.json`;
     const plugin = await this.registryClient.fetchJsonContent(source.owner, source.repo, pluginPath, source.ref);
     if (!isRecord(plugin)) {
@@ -101,7 +107,6 @@ function parseToolEntry(
 
   const help = optionalString(entry, 'help');
   const agentInstructions = optionalString(entry, 'agentInstructions');
-  const preflight = optionalStringArray(entry, 'preflight', pluginPath, index);
 
   return {
     id,
@@ -110,7 +115,6 @@ function parseToolEntry(
     install,
     bin,
     ...(help ? { help } : {}),
-    ...(preflight ? { preflight } : {}),
     ...(agentInstructions ? { agentInstructions } : {}),
     source: {
       owner: source.owner,
@@ -233,6 +237,11 @@ function optionalStringArray(
 
 function isSafeCommandName(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value) && !value.includes('..');
+}
+
+/** A full immutable Git commit SHA must be exactly 40 lowercase or uppercase hex characters. */
+function isImmutableSha(ref: string): boolean {
+  return /^[a-fA-F0-9]{40}$/.test(ref);
 }
 
 function optionalArchive(record: Record<string, unknown>, prefix: string): 'zip' | 'tar.gz' | undefined {
