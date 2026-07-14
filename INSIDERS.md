@@ -21,7 +21,7 @@ If you would like to be removed from the invite list, tell whoever invited you. 
 
 ## Install
 
-**Windows (x64)**
+### Windows (x64)
 
 1. Download the latest Windows installer:
 
@@ -35,7 +35,7 @@ If you would like to be removed from the invite list, tell whoever invited you. 
 
 3. Done. Future updates are automatic.
 
-**macOS (Apple Silicon / arm64)**
+### macOS (Apple Silicon / arm64)
 
 1. Download the latest macOS DMG from the insiders blob (URL shared out-of-band with testers, e.g. `Chamber-vX.Y.Z-insiders.N-arm64.dmg`).
 2. Open the DMG, drag Chamber to Applications.
