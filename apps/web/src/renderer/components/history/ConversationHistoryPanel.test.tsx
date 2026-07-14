@@ -13,6 +13,7 @@ import { ConversationHistoryPanel } from './ConversationHistoryPanel';
 installMenuDom();
 
 const STORAGE_KEY = 'chamber:conversation-history-collapsed';
+const WIDTH_STORAGE_KEY = 'chamber:conversation-history-width';
 
 function openRowMenu(title: string): void {
   const trigger = screen.getByRole('button', { name: `More actions for ${title}` });
@@ -46,11 +47,14 @@ describe('ConversationHistoryPanel', () => {
 
     const history = screen.getByLabelText('Conversation history');
     expect(history.className).toContain('w-80');
+    expect(history.className).toContain('duration-200');
+    expect(history.style.width).toBe('320px');
     expect(screen.getByRole('button', { name: 'Collapse history panel' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse history panel' }));
 
     expect(history.className).toContain('w-10');
+    expect(history.className).toContain('duration-200');
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true');
     expect(screen.getByRole('button', { name: 'Expand history panel' })).toBeTruthy();
 
@@ -58,6 +62,25 @@ describe('ConversationHistoryPanel', () => {
 
     expect(history.className).toContain('w-80');
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
+  });
+
+  it('restores, pointer-resizes, and keyboard-resizes the persisted history width', () => {
+    localStorage.setItem(WIDTH_STORAGE_KEY, '280');
+    renderHistoryPanel({ activeMindId: mind.mindId, minds: [mind], conversationHistoryByMind: { [mind.mindId]: [] } });
+
+    const history = screen.getByLabelText('Conversation history');
+    const resizeHandle = screen.getByRole('separator', { name: 'Resize history panel' });
+    expect(history.style.width).toBe('280px');
+    expect(resizeHandle.getAttribute('aria-valuenow')).toBe('280');
+
+    fireEvent.pointerDown(resizeHandle, { button: 0, clientX: 500 });
+    fireEvent.pointerMove(document, { clientX: 450 });
+    fireEvent.pointerUp(document);
+    expect(history.style.width).toBe('330px');
+
+    fireEvent.keyDown(resizeHandle, { key: 'ArrowLeft' });
+    expect(history.style.width).toBe('350px');
+    expect(localStorage.getItem(WIDTH_STORAGE_KEY)).toBe('350');
   });
 
   it('restores the saved collapsed preference while preserving the history landmark', () => {
@@ -89,6 +112,7 @@ describe('ConversationHistoryPanel', () => {
     expect(history.className).toContain('w-10');
     const expand = screen.getByRole('button', { name: 'Expand history panel' }) as HTMLButtonElement;
     expect(expand.disabled).toBe(true);
+    expect(screen.queryByRole('separator', { name: 'Resize history panel' })).toBeNull();
   });
 
   it('distinguishes no selected agent, loading history, and empty selected history', async () => {

@@ -5,6 +5,7 @@ import type { ConversationExportFormat, ConversationSummary } from '@chamber/sha
 import { useAppDispatch, useAppState } from '../../lib/store';
 import { useNewConversation } from '../../hooks/useNewConversation';
 import { usePersistedCollapse } from '../../hooks/usePersistedCollapse';
+import { useResizableRail } from '../../hooks/useResizableRail';
 import { useWindowedList } from '../../hooks/useWindowedList';
 import { usePrefetchNeighborHistory } from '../../hooks/usePrefetchNeighborHistory';
 import { Logger } from '../../lib/logger';
@@ -35,7 +36,10 @@ import { TooltipFor } from '../ui/tooltip';
 
 const log = Logger.create('ConversationHistoryPanel');
 const HISTORY_COLLAPSED_STORAGE_KEY = 'chamber:conversation-history-collapsed';
+const HISTORY_WIDTH_STORAGE_KEY = 'chamber:conversation-history-width';
 const ARCHIVED_EXPANDED_STORAGE_KEY = 'chamber:conversation-archived-expanded';
+const MIN_WIDTH = 140;
+const MAX_WIDTH = 400;
 const SEARCH_DEBOUNCE_MS = 180;
 const CONTENT_SEARCH_MIN_QUERY_LENGTH = 2;
 const MAX_CONTENT_LOADS_PER_PASS = 8;
@@ -64,6 +68,14 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
   const [loadingMindId, setLoadingMindId] = useState<string | null>(null);
   const [manualCollapsed, setManualCollapsed] = usePersistedCollapse(HISTORY_COLLAPSED_STORAGE_KEY);
   const [archivedExpandedPref, setArchivedExpandedPref] = usePersistedCollapse(ARCHIVED_EXPANDED_STORAGE_KEY);
+  const { isResizing, resizeHandleProps, width } = useResizableRail({
+    defaultWidth: 320,
+    label: 'Resize history panel',
+    maxWidth: MAX_WIDTH,
+    minWidth: MIN_WIDTH,
+    side: 'right',
+    storageKey: HISTORY_WIDTH_STORAGE_KEY,
+  });
   const collapsed = autoCollapsed || manualCollapsed;
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -553,10 +565,18 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
     <aside
       aria-label="Conversation history"
       className={cn(
-        'shrink-0 bg-card border border-border rounded-xl overflow-hidden flex flex-col transition-[width]',
+        'relative shrink-0 bg-card border border-border rounded-xl overflow-hidden flex flex-col',
+        isResizing ? 'transition-none' : 'transition-[width] duration-200 ease-out motion-reduce:transition-none',
         collapsed ? 'w-10' : 'w-80',
       )}
+      style={collapsed ? undefined : { width }}
     >
+      {!collapsed ? (
+        <div
+          {...resizeHandleProps}
+          className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize hover:bg-accent/50 focus-visible:w-1.5 focus-visible:bg-accent focus-visible:outline-none active:bg-accent"
+        />
+      ) : null}
       {collapsed ? (
         <button
           type="button"
