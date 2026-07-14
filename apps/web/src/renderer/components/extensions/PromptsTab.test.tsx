@@ -42,7 +42,7 @@ describe('PromptsTab', () => {
     expect(api.prompts.list).toHaveBeenCalled();
   });
 
-  it('lists saved prompts with their description and body', async () => {
+  it('lists saved prompts without disclosing their body outside the editor', async () => {
     vi.mocked(api.prompts.list).mockResolvedValue([
       prompt({ id: 'p1', title: 'Standup', description: 'Daily update', body: 'What did I ship today?' }),
     ]);
@@ -50,7 +50,7 @@ describe('PromptsTab', () => {
 
     await waitFor(() => expect(screen.getByText('Standup')).toBeTruthy());
     expect(screen.getByText('Daily update')).toBeTruthy();
-    expect(screen.getByText('What did I ship today?')).toBeTruthy();
+    expect(screen.queryByText('What did I ship today?')).toBeNull();
   });
 
   it('shows a New prompt action', async () => {
@@ -59,7 +59,7 @@ describe('PromptsTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'New prompt' })).toBeTruthy());
   });
 
-  it('creates a prompt through the dialog and refreshes the list', async () => {
+  it('creates a prompt through the focused editor and refreshes the list', async () => {
     vi.mocked(api.prompts.list).mockResolvedValue([]);
     vi.mocked(api.prompts.save).mockResolvedValue({
       success: true,
@@ -82,7 +82,7 @@ describe('PromptsTab', () => {
     await waitFor(() => expect(screen.getByText('Greeting')).toBeTruthy());
   });
 
-  it('opens the create dialog from a pending create-prompt intent', async () => {
+  it('opens the focused editor from a pending create-prompt intent', async () => {
     vi.mocked(api.prompts.list).mockResolvedValue([]);
     renderTab(api, { pendingExtensionsIntent: { tab: 'prompts', action: 'create-prompt' } });
 
@@ -101,13 +101,13 @@ describe('PromptsTab', () => {
 
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'a'.repeat(201) } });
     fireEvent.change(screen.getByLabelText('Prompt body'), { target: { value: 'Body only' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save prompt' }));
+    fireEvent.blur(screen.getByLabelText('Title'));
 
     await waitFor(() => expect(screen.getByText('Title must be at most 200 characters.')).toBeTruthy());
     expect(api.prompts.save).not.toHaveBeenCalled();
   });
 
-  it('surfaces a save failure and keeps the dialog open', async () => {
+  it('surfaces a save failure and keeps the editor open', async () => {
     vi.mocked(api.prompts.list).mockResolvedValue([]);
     vi.mocked(api.prompts.save).mockResolvedValue({ success: false, error: 'Prompt library is desktop-only in browser mode.' });
     renderTab(api);
@@ -132,8 +132,8 @@ describe('PromptsTab', () => {
     });
     renderTab(api);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Greeting' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Greeting' }));
+    await waitFor(() => expect(screen.getByRole('option', { name: /Greeting/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Greeting/ }));
 
     const body = await screen.findByLabelText('Prompt body');
     expect((body as HTMLTextAreaElement).value).toBe('Hello there');
@@ -153,23 +153,43 @@ describe('PromptsTab', () => {
     vi.mocked(api.prompts.delete).mockResolvedValue({ success: true, prompts: [] });
     renderTab(api);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Delete Greeting' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Greeting' }));
+    await waitFor(() => expect(screen.getByRole('option', { name: /Greeting/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Greeting/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete prompt' }));
 
     await waitFor(() => expect(api.prompts.delete).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(screen.getByText('No saved prompts')).toBeTruthy());
   });
 
-  it('renders untrusted prompt content as text without executing markup', async () => {
+  it('renders untrusted prompt content as text in the authorized editor without executing markup', async () => {
     const untrusted = '<script>alert(1)</script> **bold**';
     vi.mocked(api.prompts.list).mockResolvedValue([
       prompt({ id: 'p1', title: 'Greeting', body: untrusted }),
     ]);
     renderTab(api);
 
+    await waitFor(() => expect(screen.getByRole('option', { name: /Greeting/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Greeting/ }));
     await waitFor(() => expect(screen.getByText(untrusted)).toBeTruthy());
     expect(document.querySelector('script')).toBeNull();
+  });
+
+  it('requires an explicit discard before switching away from unsaved edits', async () => {
+    vi.mocked(api.prompts.list).mockResolvedValue([
+      prompt({ id: 'p1', title: 'Greeting', body: 'Hello there' }),
+      prompt({ id: 'p2', title: 'Standup', body: 'Yesterday' }),
+    ]);
+    renderTab(api);
+
+    await waitFor(() => expect(screen.getByRole('option', { name: /Greeting/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Greeting/ }));
+    fireEvent.change(await screen.findByLabelText('Prompt body'), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByRole('option', { name: /Standup/ }));
+
+    expect(screen.getByText('You have unsaved edits. Discard them and continue?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+    expect((await screen.findByLabelText('Prompt body') as HTMLTextAreaElement).value).toBe('Yesterday');
   });
 
   it('links manual prompt authoring to agentic authoring in chat', async () => {
@@ -182,6 +202,29 @@ describe('PromptsTab', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Draft with active mind' }));
+    expect(screen.getByTestId('active-view').textContent).toBe('chat');
+    expect(screen.getByTestId('compose-draft').textContent).toContain('Create a reusable prompt');
+  });
+
+  it('requires an explicit discard before handing unsaved prompt edits to the active mind', async () => {
+    vi.mocked(api.prompts.list).mockResolvedValue([
+      prompt({ id: 'p1', title: 'Greeting', body: 'Hello there' }),
+    ]);
+    installElectronAPI(api);
+    render(
+      <AppStateProvider testInitialState={{ activeMindId: 'mind-1', activeView: 'extensions' }}>
+        <PromptsTab />
+        <StateProbe />
+      </AppStateProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('option', { name: /Greeting/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('option', { name: /Greeting/ }));
+    fireEvent.change(await screen.findByLabelText('Prompt body'), { target: { value: 'Unsaved' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Draft with active mind' }));
+
+    expect(screen.getByText('You have unsaved edits. Discard them and continue?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
     expect(screen.getByTestId('active-view').textContent).toBe('chat');
     expect(screen.getByTestId('compose-draft').textContent).toContain('Create a reusable prompt');
   });

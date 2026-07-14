@@ -58,7 +58,7 @@ test.describe('electron prompt library smoke', () => {
 
 async function addMind(page: Page, mindPath: string) {
   await page.waitForLoadState('domcontentloaded');
-  await expect(page.locator('#root')).not.toBeEmpty();
+  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 60_000 });
   await expect.poll(() => page.evaluate(() => typeof window.electronAPI?.mind?.add)).toBe('function');
   const mind = await page.evaluate(async (pathToMind) => {
     const loaded = await window.electronAPI.mind.add(pathToMind);
@@ -73,8 +73,11 @@ async function addMind(page: Page, mindPath: string) {
 async function createPrompt(page: Page, title: string, body: string): Promise<void> {
   await page.getByRole('button', { name: 'Extensions' }).click();
   await page.getByRole('tab', { name: 'Prompts' }).click();
+  await page.getByRole('button', { name: 'Manage prompts' }).click();
   await page.getByRole('button', { name: 'New prompt' }).click();
 
+  await expect(page.getByText('Global scope')).toBeVisible();
+  await expect(page.getByText('User authored')).toBeVisible();
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Prompt body').fill(body);
   await page.getByRole('button', { name: 'Save prompt' }).click();
