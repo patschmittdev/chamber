@@ -23,6 +23,10 @@ export interface GitHubRegistryClientOptions {
   userAgent?: string;
 }
 
+interface GitHubCommitResponse {
+  sha: unknown;
+}
+
 interface GitHubTreeResponse {
   tree: unknown;
 }
@@ -94,6 +98,20 @@ export class GitHubRegistryClient {
       throw new Error(`GitHub content response for ${owner}/${repo}/${filePath} did not include content`);
     }
     return JSON.parse(Buffer.from(response.content, 'base64').toString('utf8'));
+  }
+
+  /**
+   * Resolves a mutable ref (branch name or tag) to its current commit SHA.
+   * Returns a full 40-character lowercase hex SHA suitable for immutable pinning.
+   */
+  async resolveCommitSha(owner: string, repo: string, ref: string): Promise<string> {
+    const response = await this.requestJson<GitHubCommitResponse>(
+      `/repos/${encodePath(owner)}/${encodePath(repo)}/commits/${encodePath(ref)}`,
+    );
+    if (typeof response.sha !== 'string' || !/^[0-9a-f]{40}$/i.test(response.sha)) {
+      throw new Error(`GitHub returned an invalid commit SHA for ${owner}/${repo}@${ref}`);
+    }
+    return response.sha.toLowerCase();
   }
 
   private async requestJson<T>(pathAndQuery: string): Promise<T> {

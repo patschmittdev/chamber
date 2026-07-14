@@ -8,7 +8,10 @@ interface RegistryClient {
   fetchJsonContent(owner: string, repo: string, filePath: string, ref: string): Promise<unknown>;
 }
 
-type SourceProvider = ToolMarketplaceSource[] | (() => ToolMarketplaceSource[]);
+type SourceProvider = 
+  | ToolMarketplaceSource[] 
+  | (() => ToolMarketplaceSource[]) 
+  | (() => Promise<ToolMarketplaceSource[]>);
 
 export interface MarketplaceToolCatalogResult {
   tools: MarketplaceToolEntry[];
@@ -38,7 +41,7 @@ export class MarketplaceToolCatalog {
     const errors: MarketplaceToolCatalogResult['errors'] = [];
     const sources: MarketplaceToolCatalogSourceStatus[] = [];
 
-    for (const source of this.getSources()) {
+    for (const source of await this.getSources()) {
       const id = source.id ?? `github:${source.owner}/${source.repo}`;
       const label = source.label ?? `${source.owner}/${source.repo}`;
       if (source.enabled === false) {
@@ -81,7 +84,7 @@ export class MarketplaceToolCatalog {
     return rawTools.map((entry, index) => parseToolEntry(entry, index, pluginPath, source));
   }
 
-  private getSources(): ToolMarketplaceSource[] {
+  private async getSources(): Promise<ToolMarketplaceSource[]> {
     return typeof this.sourceProvider === 'function' ? this.sourceProvider() : this.sourceProvider;
   }
 }

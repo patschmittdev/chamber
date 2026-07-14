@@ -102,6 +102,8 @@ import {
   createByoLlmModelsProvider,
   FakeTranscriptionProvider,
   FoundryTranscriptionProvider,
+  MarketplaceRefPinner,
+  ToolMarketplaceRefPinStore,
   MindTrustService,
   type PermissionInspector,
   probeEndpoint,
@@ -439,7 +441,12 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
   void managedSkillService.refresh().catch((err: unknown) => {
     log.warn('Marketplace managed skill refresh failed (non-fatal):', err);
   });
-  const marketplaceToolCatalog = new MarketplaceToolCatalog(githubRegistryClient, getGenesisMarketplaceSources);
+  const marketplaceRefPinStore = new ToolMarketplaceRefPinStore(appPaths.userData);
+  const marketplaceRefPinner = new MarketplaceRefPinner(marketplaceRefPinStore, githubRegistryClient);
+  const marketplaceToolCatalog = new MarketplaceToolCatalog(
+    githubRegistryClient,
+    () => marketplaceRefPinner.pinSources(getGenesisMarketplaceSources()),
+  );
   toolsService = new ToolsService(
     marketplaceToolCatalog,
     new ToolInstaller(
@@ -1100,7 +1107,11 @@ app.on('ready', async () => {
     { getMindPath: (mindId) => mindManager.getMind(mindId)?.mindPath },
     capabilityInventoryService,
   );
-  setupTrustIPC(mindTrustService, cronService);
+  setupTrustIPC(mindTrustService, cronService, async (mindId) => {
+    await mindManager.reloadMind(mindId).catch((err: unknown) => {
+      log.warn(`[trust] reloadMind after revocation failed for ${mindId}:`, err);
+    });
+  });
   setupAuthIPC(authService, mindManager, async () => {
     await chamberCopilotService?.resetAuthState();
   });

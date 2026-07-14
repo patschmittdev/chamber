@@ -46,6 +46,7 @@ export class CronService implements ChamberToolProvider {
   constructor(private readonly options: CronServiceOptions) {}
 
   getToolsForMind(mindId: string, mindPath: string): Tool[] {
+    if (!this.isTrusted(mindId, mindPath)) return [];
     return buildCronTools(mindId, mindPath, this) as Tool[];
   }
 
@@ -80,6 +81,7 @@ export class CronService implements ChamberToolProvider {
   }
 
   createJob(mindId: string, mindPath: string, input: CreateCronJobInput): CronJobListEntry {
+    this.requireTrusted(mindId, mindPath);
     validateSchedule(input.schedule);
     validateScriptPath(mindPath, input.scriptPath);
     const store = this.ensureStore(mindId, mindPath);
@@ -101,6 +103,7 @@ export class CronService implements ChamberToolProvider {
   }
 
   enableJob(mindId: string, jobId: string): CronJobListEntry {
+    this.requireTrustedByMindId(mindId);
     const store = this.requireStore(mindId);
     const job = store.updateJob(jobId, (existing) => ({ ...existing, enabled: true }));
     this.scheduleJob(mindId, job);
@@ -116,6 +119,7 @@ export class CronService implements ChamberToolProvider {
   }
 
   async runNow(mindId: string, jobId: string): Promise<CronJobRunRecord> {
+    this.requireTrustedByMindId(mindId);
     return this.runJob(mindId, jobId, 'manual');
   }
 
@@ -124,6 +128,7 @@ export class CronService implements ChamberToolProvider {
    * job. Backs the `automation_run` tool.
    */
   async runScript(mindId: string, scriptPath: string): Promise<CronJobRunRecord> {
+    this.requireTrustedByMindId(mindId);
     const mindPath = this.requireMindPath(mindId);
     const runStore = this.ensureRunStore(mindId, mindPath);
     const startedAt = new Date().toISOString();
@@ -160,6 +165,7 @@ export class CronService implements ChamberToolProvider {
   }
 
   async validateScript(mindId: string, scriptPath: string): Promise<{ ok: boolean; output: string }> {
+    this.requireTrustedByMindId(mindId);
     const mindPath = this.requireMindPath(mindId);
     return this.options.scriptRunner.validateScript({ mindPath, scriptPath });
   }
@@ -183,6 +189,12 @@ export class CronService implements ChamberToolProvider {
   private async runJob(mindId: string, jobId: string, source: RunSource): Promise<CronJobRunRecord> {
     const store = this.requireStore(mindId);
     const mindPath = this.requireMindPath(mindId);
+    // Defense-in-depth: re-check trust before executing any script. Catches the
+    // case where a scheduled timer fires after trust has been revoked (race between
+    // cancelJobsForMind and an already-queued timer callback).
+    if (!this.isTrusted(mindId, mindPath)) {
+      throw new Error(`Mind ${mindId} does not have execution trust`);
+    }
     const runStore = this.ensureRunStore(mindId, mindPath);
     const job = store.getJob(jobId);
     if (!job) throw new Error(`Cron job ${jobId} not found`);
@@ -333,5 +345,25 @@ export class CronService implements ChamberToolProvider {
   private isTrusted(mindId: string, mindPath: string): boolean {
     if (!this.options.trustService) return true;
     return this.options.trustService.isMindTrustedForExecution(mindId, mindPath);
+  }
+
+  /**
+   * Throws when mindPath is known and the mind's execution trust has been
+   * revoked. Called by methods that take only mindId (no explicit mindPath).
+   * If the mindPath is not yet registered (mind never activated), the error
+   * from requireMindPath/requireStore downstream is more specific and fires next.
+   */
+  private requireTrustedByMindId(mindId: string): void {
+    const mindPath = this.mindPaths.get(mindId);
+    if (mindPath && !this.isTrusted(mindId, mindPath)) {
+      throw new Error(`Mind ${mindId} does not have execution trust`);
+    }
+  }
+
+  /** Throws when the mind does not have execution trust. Used by methods that receive mindPath explicitly. */
+  private requireTrusted(mindId: string, mindPath: string): void {
+    if (!this.isTrusted(mindId, mindPath)) {
+      throw new Error(`Mind ${mindId} does not have execution trust`);
+    }
   }
 }
