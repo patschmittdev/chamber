@@ -13,6 +13,14 @@ type SourceProvider = ToolMarketplaceSource[] | (() => ToolMarketplaceSource[]);
 export interface MarketplaceToolCatalogResult {
   tools: MarketplaceToolEntry[];
   errors: Array<{ marketplaceId: string; message: string }>;
+  sources: MarketplaceToolCatalogSourceStatus[];
+}
+
+export interface MarketplaceToolCatalogSourceStatus {
+  id: string;
+  label: string;
+  status: 'healthy' | 'disabled' | 'error';
+  toolCount?: number;
 }
 
 /**
@@ -28,21 +36,29 @@ export class MarketplaceToolCatalog {
   async listTools(): Promise<MarketplaceToolCatalogResult> {
     const tools: MarketplaceToolEntry[] = [];
     const errors: MarketplaceToolCatalogResult['errors'] = [];
+    const sources: MarketplaceToolCatalogSourceStatus[] = [];
 
     for (const source of this.getSources()) {
-      if (source.enabled === false) continue;
+      const id = source.id ?? `github:${source.owner}/${source.repo}`;
+      const label = source.label ?? `${source.owner}/${source.repo}`;
+      if (source.enabled === false) {
+        sources.push({ id, label, status: 'disabled' });
+        continue;
+      }
       try {
         const sourceTools = await this.readSource(source);
         tools.push(...sourceTools);
+        sources.push({ id, label, status: 'healthy', toolCount: sourceTools.length });
       } catch (error) {
         errors.push({
-          marketplaceId: source.id ?? `github:${source.owner}/${source.repo}`,
+          marketplaceId: id,
           message: getErrorMessage(error),
         });
+        sources.push({ id, label, status: 'error' });
       }
     }
 
-    return { tools, errors };
+    return { tools, errors, sources };
   }
 
   private async readSource(source: ToolMarketplaceSource): Promise<MarketplaceToolEntry[]> {

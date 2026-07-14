@@ -474,7 +474,7 @@ async function initializeRuntime(voiceRuntimeAvailable: boolean): Promise<void> 
     listSkills: (mindPath) => skillDiscovery.listDetails(mindPath),
     listMarketplaceSkills: () => marketplaceSkillCatalog.listSkills(),
     listMcpServers: listMcpServerSummaries,
-    listTools: () => toolsService.list(),
+    listTools: () => toolsService.listInventory(),
     listPrompts: () => promptLibraryService.list(),
     listLensViews: (mindPath) => viewDiscovery.getViews(mindPath),
     isLensViewEnabled: (mindId, viewId) => lensPreferencesService.isViewEnabled(mindId, viewId),

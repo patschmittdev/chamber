@@ -5,9 +5,9 @@ import type {
   MarketplaceSkillSourceStatus,
   Prompt,
   SkillDetail,
-  ToolCatalogEntry,
 } from '@chamber/shared';
 import type { McpServerSummary } from '../mind/mcpServerStore';
+import type { ToolInventoryEntry } from '../tools/ToolsService';
 import { CapabilityInventoryService, type CapabilityInventoryDependencies } from './CapabilityInventoryService';
 
 describe('CapabilityInventoryService', () => {
@@ -72,9 +72,42 @@ describe('CapabilityInventoryService', () => {
       '@scope/tool',
       'C:\\tools\\tool.exe',
       'RAW_ERROR_DETAIL',
+      'marketplace-secret',
     ]) {
       expect(serialized).not.toContain(value);
     }
+  });
+
+  it('treats discovered skill metadata as local and omits marketplace URLs', async () => {
+    const service = new CapabilityInventoryService({
+      ...dependencies(),
+      listSkills: async () => [{
+        ...installedSkill(),
+        managed: {
+          version: '1.0.0',
+          capabilities: [],
+          metadataPath: '.github/skills/installed-skill/.chamber-skill.json',
+          files: [],
+          source: {
+            type: 'marketplace',
+            marketplaceId: 'untrusted-marketplace',
+            marketplaceLabel: 'Untrusted marketplace',
+            marketplaceUrl: 'https://catalog-user:marketplace-secret@example.test/catalog?token=secret',
+            owner: 'example',
+            repo: 'catalog',
+            ref: 'main',
+            plugin: 'catalog',
+            root: 'skills',
+          },
+        },
+      }],
+    });
+
+    const result = await service.list({ mindId: 'lucy' }, 'C:\\minds\\lucy');
+    const skill = result.items.find((item) => item.ref.id === 'installed-skill');
+
+    expect(skill?.provenance).toEqual({ kind: 'local', label: 'Mind local files' });
+    expect(JSON.stringify(result)).not.toContain('marketplace-secret');
   });
 
   it('reports a display-safe source failure while retaining unrelated items', async () => {
@@ -114,7 +147,7 @@ function dependencies(): CapabilityInventoryDependencies {
       errors: [],
     }),
     listMcpServers: () => [{ name: 'filesystem', transport: 'stdio' } satisfies McpServerSummary],
-    listTools: async () => [tool()],
+    listTools: async () => ({ tools: [tool()], sources: [] }),
     listPrompts: () => [prompt()],
     listLensViews: () => [lens()],
     isLensViewEnabled: () => false,
@@ -155,7 +188,7 @@ function availableSkill(): MarketplaceSkillEntry {
       plugin: 'catalog',
       marketplaceId: 'github:example/catalog',
       marketplaceLabel: 'Example catalog',
-      marketplaceUrl: 'https://github.com/example/catalog',
+      marketplaceUrl: 'https://catalog-user:marketplace-secret@example.test/catalog?token=secret',
     },
   };
 }
@@ -182,22 +215,13 @@ function prompt(): Prompt {
   };
 }
 
-function tool(): ToolCatalogEntry {
+function tool(): ToolInventoryEntry {
   return {
     id: 'tool',
     displayName: 'Tool',
     description: 'Catalog tool',
-    bin: 'tool',
-    install: { type: 'npm-global', package: '@scope/tool', version: '1.0.0' },
-    source: {
-      owner: 'example',
-      repo: 'catalog',
-      ref: 'main',
-      plugin: 'catalog',
-      marketplaceId: 'github:example/catalog',
-      marketplaceLabel: 'Example catalog',
-      marketplaceUrl: 'https://github.com/example/catalog',
-    },
+    marketplaceId: 'github:example/catalog',
+    marketplaceLabel: 'Example catalog',
     status: 'installed',
     installedVersion: '1.0.0',
   };

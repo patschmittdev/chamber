@@ -6,6 +6,28 @@ import { ToolInstaller } from './ToolInstaller';
 
 const log = Logger.create('ToolsService');
 
+export interface ToolInventoryEntry {
+  readonly id: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly marketplaceId: string;
+  readonly marketplaceLabel: string;
+  readonly status: 'installed' | 'available';
+  readonly installedVersion?: string;
+}
+
+export interface ToolInventorySourceStatus {
+  readonly id: string;
+  readonly label: string;
+  readonly status: 'healthy' | 'disabled' | 'error';
+  readonly capabilityCount?: number;
+}
+
+export interface ToolInventoryResult {
+  readonly tools: readonly ToolInventoryEntry[];
+  readonly sources: readonly ToolInventorySourceStatus[];
+}
+
 interface ConfigStore {
   load(): AppConfig;
   save(config: AppConfig): void;
@@ -36,6 +58,52 @@ export class ToolsService {
       };
     });
     return catalogEntries;
+  }
+
+  /**
+   * Projects persisted tools and marketplace catalog state without installation
+   * details or catalog failure messages.
+   */
+  async listInventory(): Promise<ToolInventoryResult> {
+    const installed = this.getInstalled();
+    const installedByKey = new Map(installed.map((tool) => [toolInventoryKey(tool.id, tool.source.marketplaceId), tool]));
+    const result = await this.catalog.listTools();
+    const catalogKeys = new Set<string>();
+    const tools = result.tools.map((tool) => {
+      const key = toolInventoryKey(tool.id, tool.source.marketplaceId);
+      catalogKeys.add(key);
+      const persisted = installedByKey.get(key);
+      return {
+        id: tool.id,
+        displayName: tool.displayName,
+        description: tool.description,
+        marketplaceId: tool.source.marketplaceId,
+        marketplaceLabel: tool.source.marketplaceLabel,
+        status: persisted ? 'installed' as const : 'available' as const,
+        ...(persisted ? { installedVersion: persisted.version } : {}),
+      };
+    });
+    tools.push(...installed
+      .filter((tool) => !catalogKeys.has(toolInventoryKey(tool.id, tool.source.marketplaceId)))
+      .map((tool) => ({
+        id: tool.id,
+        displayName: tool.displayName,
+        description: tool.description,
+        marketplaceId: tool.source.marketplaceId,
+        marketplaceLabel: tool.source.marketplaceId,
+        status: 'installed' as const,
+        installedVersion: tool.version,
+      })));
+
+    return {
+      tools,
+      sources: result.sources.map((source) => ({
+        id: source.id,
+        label: source.label,
+        status: source.status,
+        ...(source.toolCount === undefined ? {} : { capabilityCount: source.toolCount }),
+      })),
+    };
   }
 
   async install(toolId: string, marketplaceId?: string): Promise<ToolActionResult> {
@@ -118,4 +186,8 @@ export class ToolsService {
     const config = this.configStore.load();
     this.configStore.save({ ...config, installedTools: tools });
   }
+}
+
+function toolInventoryKey(id: string, marketplaceId: string): string {
+  return `${marketplaceId}\u0000${id}`;
 }

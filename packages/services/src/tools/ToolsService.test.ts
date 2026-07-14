@@ -109,6 +109,29 @@ describe('ToolsService', () => {
     expect(list[0].installedVersion).toBe('latest');
   });
 
+  it('keeps persisted tools and redacted source health when a catalog source fails', async () => {
+    store.config.installedTools = [installedRecord()];
+    client.manifests.set('plugins/genesis-minds/plugin.json', { tools: {} });
+
+    const result = await svc.listInventory();
+
+    expect(result.tools).toEqual([{
+      id: 'workiq',
+      displayName: 'Microsoft Work IQ',
+      description: 'Query M365 data.',
+      marketplaceId: 'github:ianphil/genesis-minds',
+      marketplaceLabel: 'github:ianphil/genesis-minds',
+      status: 'installed',
+      installedVersion: 'latest',
+    }]);
+    expect(result.sources).toEqual([{
+      id: 'github:ianphil/genesis-minds',
+      label: 'Public Genesis Minds',
+      status: 'error',
+    }]);
+    expect(JSON.stringify(result)).not.toContain('non-array');
+  });
+
   it('install persists the InstalledTool and rejects unknown ids', async () => {
     setupTools(client);
     const ok = await svc.install('workiq');

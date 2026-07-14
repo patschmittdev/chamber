@@ -12,10 +12,10 @@ import type {
   MarketplaceSkillSourceStatus,
   Prompt,
   SkillDetail,
-  ToolCatalogEntry,
 } from '@chamber/shared';
 import type { MarketplaceSkillCatalogResult } from '../skills';
 import type { McpServerSummary } from '../mind/mcpServerStore';
+import type { ToolInventoryEntry, ToolInventoryResult } from '../tools/ToolsService';
 
 const GLOBAL_SCOPE = { kind: 'global' } as const;
 const COMPATIBLE: CapabilityCompatibility = { status: 'compatible' };
@@ -35,7 +35,7 @@ export interface CapabilityInventoryDependencies {
   readonly listSkills: (mindPath: string) => Promise<SkillDetail[]>;
   readonly listMarketplaceSkills: () => Promise<MarketplaceSkillCatalogResult>;
   readonly listMcpServers: (mindPath: string) => readonly McpServerSummary[];
-  readonly listTools: () => Promise<ToolCatalogEntry[]>;
+  readonly listTools: () => Promise<ToolInventoryResult>;
   readonly listPrompts: () => readonly Prompt[];
   readonly listLensViews: (mindPath: string) => readonly LensViewManifest[];
   readonly isLensViewEnabled: (mindId: string, viewId: string) => boolean;
@@ -74,7 +74,9 @@ export class CapabilityInventoryService {
     }
 
     try {
-      items.push(...(await this.dependencies.listTools()).map(toToolItem));
+      const tools = await this.dependencies.listTools();
+      items.push(...tools.tools.map(toToolItem));
+      sources.push(...tools.sources);
     } catch {
       sources.push(sourceFailure('cli-tools', 'CLI tools'));
     }
@@ -150,19 +152,19 @@ function toPromptItem(prompt: Prompt): CapabilityInventoryItem {
   };
 }
 
-function toToolItem(tool: ToolCatalogEntry): CapabilityInventoryItem {
+function toToolItem(tool: ToolInventoryEntry): CapabilityInventoryItem {
   const installed = tool.status === 'installed';
   return {
-    ref: { kind: 'cli-tool', id: `${tool.source.marketplaceId}:${tool.id}`, scope: GLOBAL_SCOPE },
+    ref: { kind: 'cli-tool', id: `${tool.marketplaceId}:${tool.id}`, scope: GLOBAL_SCOPE },
     displayName: tool.displayName,
     description: tool.description,
     ...(tool.installedVersion ? { version: tool.installedVersion } : {}),
-    provenance: marketplaceProvenance(tool.source),
+    provenance: marketplaceProvenance(tool),
     lifecycle: installed ? INSTALLED_ENABLED : AVAILABLE_DISABLED,
     requirements: [],
-    compatibility: tool.status === 'error' ? { status: 'unknown', code: 'catalog-error' } : COMPATIBLE,
+    compatibility: COMPATIBLE,
     declaredCapabilities: [],
-    health: tool.status === 'error' ? { status: 'error', code: 'catalog-error' } : HEALTHY,
+    health: HEALTHY,
   };
 }
 
@@ -174,11 +176,9 @@ function toSkillItem(mindId: string, skill: SkillDetail): CapabilityInventoryIte
     displayName: skill.name,
     ...(skill.description ? { description: skill.description } : {}),
     ...(skill.version ? { version: skill.version } : {}),
-    provenance: skill.managed?.source
-      ? marketplaceProvenance(skill.managed.source)
-      : skill.isCore
-        ? { kind: 'built-in', label: 'Chamber' }
-        : { kind: 'local', label: 'Mind local files' },
+    provenance: skill.isCore
+      ? { kind: 'built-in', label: 'Chamber' }
+      : { kind: 'local', label: 'Mind local files' },
     lifecycle: INSTALLED_ENABLED,
     requirements: skill.requiredFiles.length === 0
       ? []
@@ -228,7 +228,6 @@ function toLensItem(mindId: string, view: LensViewManifest, enabled: boolean): C
 function marketplaceProvenance(source: {
   marketplaceId: string;
   marketplaceLabel: string;
-  marketplaceUrl: string;
 }): CapabilityProvenance {
   return {
     kind: 'marketplace',
@@ -236,7 +235,6 @@ function marketplaceProvenance(source: {
     marketplace: {
       id: source.marketplaceId,
       label: source.marketplaceLabel,
-      url: source.marketplaceUrl,
     },
   };
 }
