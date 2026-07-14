@@ -7,6 +7,9 @@ import type { CanvasGestureGrant } from '@chamber/shared/canvas-action-types';
 import { canonicalRequestJson, parseCanvasActionRequest } from '@chamber/shared/canvas-action-types';
 import { assertContained } from '../fsContainment';
 import type { CanvasAction, CanvasActionHandler, CanvasActionStatusEvent, CanvasServerLike } from './types';
+import { Logger } from '../logger';
+
+const log = Logger.create('canvas-server');
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -374,7 +377,10 @@ export class CanvasServer implements CanvasServerLike {
 
     return new Promise<number>((resolve, reject) => {
       const server = createServer((req, res) => {
-        void this.handleRequest(req, res);
+        void this.handleRequest(req, res).catch((err) => {
+          log.warn('Canvas request handler terminated unexpectedly:', { phase: 'request' });
+          void err;
+        });
       });
 
       server.once('error', reject);
@@ -580,7 +586,10 @@ export class CanvasServer implements CanvasServerLike {
     this.publishActionStatus(action, 'accepted');
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, actionId, status: 'accepted' }));
-    void this.dispatchAction(action);
+    void this.dispatchAction(action).catch((err) => {
+      log.warn('Canvas dispatch fatal error:', { actionId: action.actionId, mindId: action.mindId, canvas: action.canvas, phase: 'dispatch' });
+      void err;
+    });
   }
 
   private handleStaticFile(res: ServerResponse, mindId: string, segments: string[], token: string | null): void {
@@ -667,7 +676,11 @@ export class CanvasServer implements CanvasServerLike {
       actionId: action.actionId,
       status,
     };
-    this.options.onActionStatus(statusEvent);
+    try {
+      this.options.onActionStatus(statusEvent);
+    } catch {
+      log.warn('Canvas action status observer threw:', { actionId: action.actionId, mindId: action.mindId, canvas: action.canvas, phase: status });
+    }
     const clients = this.sseClients.get(this.clientKey(action.mindId, action.canvas));
     if (!clients) return;
     const payload = JSON.stringify({ actionId: action.actionId, status });

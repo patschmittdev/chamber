@@ -514,6 +514,179 @@ describe('CanvasServer', () => {
     });
   });
 
+  describe('lifecycle isolation', () => {
+    function makeLifecycleRequest() {
+      return { schemaVersion: 1 as const, variant: 'user-action' as const, label: 'submit', fields: { id: 'x' } };
+    }
+
+    function makeLifecycleGrant(req: ReturnType<typeof makeLifecycleRequest>): CanvasGestureGrant {
+      return {
+        mindId: 'mind-1',
+        viewId: 'v',
+        actionVariant: 'user-action',
+        nonce: 'lifecycle-nonce-' + Math.random().toString(36).slice(2),
+        expiresAt: Date.now() + 5000,
+        issuedAt: Date.now(),
+        requestHash: createHash('sha256').update(canonicalRequestJson(req)).digest('hex'),
+      };
+    }
+
+    it('throwing onActionStatus callback is isolated from the dispatch path and does not prevent the accepted response', async () => {
+      const throwingServer = new CanvasServer({
+        resolveContentDir: (mindId) => mindDirs.get(mindId) ?? null,
+        onAction: vi.fn().mockResolvedValue(undefined),
+        onActionStatus: vi.fn().mockImplementation(() => {
+          throw new Error('observer-crash-should-be-isolated');
+        }),
+        authorizeRequest: (mindId, filename, token) => tokens.get(`${mindId}:${filename}`) === token,
+      });
+
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const req = makeLifecycleRequest();
+      const grant = makeLifecycleGrant(req);
+      throwingServer.registerGrant(grant);
+
+      try {
+        const port = await throwingServer.start();
+        // Before the fix, onActionStatus throwing before res.writeHead causes the server to never
+        // respond. The fetch will hang or be aborted. After the fix, 202 is returned immediately.
+        const response = await fetch(
+          `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ request: req, grant }),
+            signal: AbortSignal.timeout(2000),
+          },
+        ).catch((err: unknown) => {
+          if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+            throw new Error('Server did not respond within 2 s: onActionStatus exception likely escaped publishActionStatus boundary and prevented the response');
+          }
+          throw err;
+        });
+
+        expect(response.status).toBe(202);
+
+        // Drain microtasks; any unhandled rejection from void dispatchAction would surface here.
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      } finally {
+        await throwingServer.stop();
+      }
+    });
+
+    it('isolated onActionStatus exception produces a bounded-field warning and does not leak error details', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const throwingServer = new CanvasServer({
+        resolveContentDir: (mindId) => mindDirs.get(mindId) ?? null,
+        onAction: vi.fn().mockResolvedValue(undefined),
+        onActionStatus: vi.fn().mockImplementation(() => {
+          throw new Error('secret-sdk-token=abc123');
+        }),
+        authorizeRequest: (mindId, filename, token) => tokens.get(`${mindId}:${filename}`) === token,
+      });
+
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const req = makeLifecycleRequest();
+      const grant = makeLifecycleGrant(req);
+      throwingServer.registerGrant(grant);
+
+      try {
+        const port = await throwingServer.start();
+        const response = await fetch(
+          `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ request: req, grant }),
+            signal: AbortSignal.timeout(2000),
+          },
+        ).catch((err: unknown) => {
+          if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+            throw new Error('Server did not respond within 2 s: onActionStatus exception likely escaped and prevented the response');
+          }
+          throw err;
+        });
+        expect(response.status).toBe(202);
+
+        // Allow dispatch microtasks to complete.
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+        const allWarnArgs = warnSpy.mock.calls.flatMap((call) => call.map(String));
+        const loggedString = allWarnArgs.join(' ');
+
+        // The warning must have been emitted from the canvas-server tag.
+        expect(loggedString).toContain('[canvas-server]');
+        // Error details (the exception message) must not appear in logs.
+        expect(loggedString).not.toContain('secret-sdk-token');
+        expect(loggedString).not.toContain('abc123');
+        // The logged context object must contain only bounded fields.
+        const warnArgs = warnSpy.mock.calls.find((call) => String(call[0]).includes('canvas-server'));
+        expect(warnArgs).toBeDefined();
+        if (warnArgs) {
+          const contextArg = warnArgs.find((a) => typeof a === 'object' && a !== null);
+          expect(contextArg).toBeDefined();
+          if (contextArg) {
+            const contextStr = JSON.stringify(contextArg);
+            expect(contextStr).not.toContain('data');
+            expect(contextStr).not.toContain('secret');
+            expect(contextStr).toContain('actionId');
+            expect(contextStr).toContain('mindId');
+            expect(contextStr).toContain('canvas');
+          }
+        }
+      } finally {
+        warnSpy.mockRestore();
+        await throwingServer.stop();
+      }
+    });
+
+    it('action handler rejection still reaches terminal failed status when onActionStatus throws', async () => {
+      const statusTransitions: string[] = [];
+      const recordingServer = new CanvasServer({
+        resolveContentDir: (mindId) => mindDirs.get(mindId) ?? null,
+        onAction: vi.fn().mockRejectedValue(new Error('handler-rejected')),
+        onActionStatus: vi.fn().mockImplementation((status: { status: string }) => {
+          statusTransitions.push(status.status);
+          if (status.status === 'failed') {
+            throw new Error('secondary-observer-crash');
+          }
+        }),
+        authorizeRequest: (mindId, filename, token) => tokens.get(`${mindId}:${filename}`) === token,
+      });
+
+      const mindDir = makeMindDir();
+      mindDirs.set('mind-1', mindDir);
+      tokens.set('mind-1:report.html', 'secret-token');
+
+      const req = makeLifecycleRequest();
+      const grant = makeLifecycleGrant(req);
+      recordingServer.registerGrant(grant);
+
+      try {
+        const port = await recordingServer.start();
+        await fetch(
+          `http://127.0.0.1:${port}/mind-1/_action?canvas=report.html&token=secret-token`,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request: req, grant }) },
+        );
+
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+        // The action handler failed, so status must reach 'failed' — never 'completed'.
+        expect(statusTransitions).toContain('failed');
+        expect(statusTransitions).not.toContain('completed');
+      } finally {
+        await recordingServer.stop();
+      }
+    });
+  });
+
   describe('symlink containment in static file serving', () => {
     function tryCreateSymlink(target: string, linkPath: string): boolean {
       try {

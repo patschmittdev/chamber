@@ -563,9 +563,16 @@ export class MindManager extends EventEmitter {
       tools: this.getSessionTools(mindId, context.mindPath),
       model: context.selectedModel,
       modelProvider: context.selectedModelProvider,
-      sessionId: randomUUID(),
     });
-    await session.disconnect();
+    // Explicit disposable-session lifecycle: disconnect runs in finally so cleanup
+    // always executes. A disconnect rejection propagates to the caller, which maps
+    // it to reload-failed — preserving the invariant that teardown failures are
+    // never silently promoted to success.
+    try {
+      // Verification session established; MCP configuration accepted by bounded session-creation path.
+    } finally {
+      await session.disconnect();
+    }
   }
 
   async recoverActiveConversationSession(mindId: string): Promise<CopilotSession> {
