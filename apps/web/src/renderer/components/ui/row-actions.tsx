@@ -119,6 +119,17 @@ export function RowActionOverflowMenu({
 }
 
 /**
+ * True when the user currently has a non-empty text selection. When they do, a
+ * right-click should surface the browser's native "Copy selection" menu rather
+ * than our row action menu, so the guard below yields to the native handler.
+ */
+function hasActiveTextSelection(): boolean {
+  if (typeof window === "undefined") return false
+  const selection = window.getSelection?.()
+  return Boolean(selection && selection.toString().length > 0)
+}
+
+/**
  * Wraps a row so right-clicking it opens the same action set as the kebab. When
  * there are no items (or `disabled`), it renders the row untouched so native
  * right-click behaviour is preserved for non-actionable rows.
@@ -137,9 +148,23 @@ export function RowContextMenu({
   if (disabled || items.length === 0) {
     return children
   }
+  const childProps = children.props as {
+    onContextMenuCapture?: React.MouseEventHandler
+  }
+  // Capture-phase guard on the trigger child: it runs before Radix's bubble-phase
+  // onContextMenu, so stopping propagation here keeps the menu from opening and
+  // lets the native "Copy selection" menu through when text is selected.
+  const guardedChild = React.cloneElement(children, {
+    onContextMenuCapture: (event: React.MouseEvent) => {
+      if (hasActiveTextSelection()) {
+        event.stopPropagation()
+      }
+      childProps.onContextMenuCapture?.(event)
+    },
+  } as React.HTMLAttributes<HTMLElement>)
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{guardedChild}</ContextMenuTrigger>
       <ContextMenuContent className={className}>
         {items.map((item, index) => (
           <React.Fragment key={item.id}>

@@ -5,9 +5,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AppStateProvider, useAppDispatch } from '../../lib/store';
 import { MessageList } from './MessageList';
 import type { ChatMessage, MindContext, MessageVariantGroup, ModelInfo } from '@chamber/shared/types';
-import { installCmdkDom, installElectronAPI } from '../../../test/helpers';
+import { installCmdkDom, installElectronAPI, installMenuDom } from '../../../test/helpers';
 
 installCmdkDom();
+installMenuDom();
 
 const Q: MindContext = {
   mindId: 'q',
@@ -461,6 +462,29 @@ describe('MessageList', () => {
       expect(query('Regenerate response')).toBeNull();
       // Copy stays available regardless of persistence.
       expect(screen.getAllByRole('button', { name: 'Copy message' }).length).toBeGreaterThan(0);
+    });
+
+    it('routes the context-menu Delete through the inline confirmation instead of deleting outright (data-loss guard)', () => {
+      const api = installElectronAPI();
+      const deleteSpy = api.chat.deleteMessage as ReturnType<typeof vi.fn>;
+      renderMessages([
+        {
+          id: 'u-text',
+          role: 'user',
+          eventId: 'evt-text',
+          blocks: [{ type: 'text', content: 'plain question' }],
+          timestamp: 1000,
+        },
+      ]);
+
+      fireEvent.contextMenu(screen.getByText('plain question'));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete from here' }));
+
+      expect(deleteSpy).not.toHaveBeenCalled();
+      expect(screen.getByText('Remove this and all later turns?')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm delete from here' }));
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
     });
 
     it('enables Edit, Delete, and Fork for a saved text-only user turn', () => {

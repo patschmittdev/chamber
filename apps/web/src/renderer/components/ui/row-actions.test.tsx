@@ -77,4 +77,20 @@ describe('RowContextMenu', () => {
     expect(screen.queryByRole('menuitem')).toBeNull();
     expect(screen.getByText('Plain row')).toBeTruthy();
   });
+
+  it('yields to the native menu when text is selected so Copy selection survives', () => {
+    const original = window.getSelection;
+    window.getSelection = (() => ({ toString: () => 'picked text' })) as typeof window.getSelection;
+    try {
+      render(
+        <RowContextMenu items={items()}>
+          <div>Monica row</div>
+        </RowContextMenu>,
+      );
+      fireEvent.contextMenu(screen.getByText('Monica row'));
+      expect(screen.queryByRole('menuitem')).toBeNull();
+    } finally {
+      window.getSelection = original;
+    }
+  });
 });

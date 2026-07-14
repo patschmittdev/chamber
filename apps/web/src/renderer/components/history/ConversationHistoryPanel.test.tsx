@@ -192,6 +192,24 @@ describe('ConversationHistoryPanel', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy();
   });
 
+  it('yields to the native menu while a row is being renamed', () => {
+    const conversation = makeConversation({ title: 'Planning thread', active: false });
+    renderHistoryPanel({
+      activeMindId: mind.mindId,
+      minds: [mind],
+      conversationHistoryByMind: { [mind.mindId]: [conversation] },
+    });
+
+    openRowMenu('Planning thread');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+
+    const renameInput = screen.getByDisplayValue('Planning thread');
+    fireEvent.contextMenu(renameInput);
+
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Pin' })).toBeNull();
+  });
+
   it('shows source metadata for forked conversations', () => {
     const conversation = makeConversation({
       title: 'Follow-up idea',

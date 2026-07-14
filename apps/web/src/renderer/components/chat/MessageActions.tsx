@@ -25,6 +25,14 @@ interface MessageActionsProps {
   fork?: RowAction;
   /** Delete this turn and every turn after it. Omit to hide (unsaved turn or unsupported). */
   onDelete?: () => void;
+  /**
+   * Controlled pending-delete state. When provided, the inline confirm is driven
+   * by the parent so another surface (the row's right-click context menu) can open
+   * the same confirmation instead of deleting outright. Omit for standalone
+   * uncontrolled use, where the confirm is tracked internally.
+   */
+  confirmingDelete?: boolean;
+  onConfirmingDeleteChange?: (confirming: boolean) => void;
 }
 
 /**
@@ -62,10 +70,15 @@ export interface RegenerateAction {
  * in by the parent only when the host and persisted history support them, so
  * this component never has to know about capabilities itself.
  */
-export function MessageActions({ message, isBusy, regenerate, edit, fork, onDelete }: MessageActionsProps) {
+export function MessageActions({ message, isBusy, regenerate, edit, fork, onDelete, confirmingDelete: confirmingDeleteProp, onConfirmingDeleteChange }: MessageActionsProps) {
   const plain = useCopyToClipboard();
   const markdown = useCopyToClipboard();
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [uncontrolledConfirmingDelete, setUncontrolledConfirmingDelete] = useState(false);
+  const confirmingDelete = confirmingDeleteProp ?? uncontrolledConfirmingDelete;
+  const setConfirmingDelete = useCallback((next: boolean) => {
+    if (confirmingDeleteProp === undefined) setUncontrolledConfirmingDelete(next);
+    onConfirmingDeleteChange?.(next);
+  }, [confirmingDeleteProp, onConfirmingDeleteChange]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const handleCopyPlain = useCallback(() => plain.copy(toPlainText(message)), [plain, message]);
@@ -73,16 +86,18 @@ export function MessageActions({ message, isBusy, regenerate, edit, fork, onDele
   const handleConfirmDelete = useCallback(() => {
     setConfirmingDelete(false);
     onDelete?.();
-  }, [onDelete]);
+  }, [onDelete, setConfirmingDelete]);
 
   return (
     <div
       className={cn(
         'mt-1.5 flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100',
-        // Keep the row (and its caret) visible while the model menu is open: the
-        // menu content is portaled and takes focus, so hover and focus-within on
-        // the row no longer hold, and the row would otherwise collapse mid-pick.
-        modelMenuOpen ? 'opacity-100' : 'opacity-0',
+        // Keep the row (and its caret) visible while the model menu is open or a
+        // delete confirm is pending: the menu content is portaled and takes focus
+        // (and the confirm can be opened from the portaled context menu), so hover
+        // and focus-within on the row no longer hold and the row would otherwise
+        // collapse mid-interaction.
+        modelMenuOpen || confirmingDelete ? 'opacity-100' : 'opacity-0',
       )}
     >
       <ActionButton

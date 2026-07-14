@@ -337,6 +337,10 @@ const MessageRow = memo(function MessageRow({
   onSelectVariant,
 }: MessageRowProps) {
   const [isEditing, setIsEditing] = useState(false);
+  // Shared pending-delete state for this row. Both the inline delete button and
+  // the right-click context menu open the same confirm; the context menu never
+  // deletes outright (data-loss guard) but instead opens this confirm.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // A turn can be mutated only once it is persisted (has a backing event id).
   // Browser mode never reconciles ids, so these actions stay hidden there; on
@@ -346,6 +350,12 @@ const MessageRow = memo(function MessageRow({
   const handleDelete = useCallback(() => onDelete(message), [onDelete, message]);
   const handleFork = useCallback(() => onFork(message), [onFork, message]);
   const deleteAction = canMutate ? handleDelete : undefined;
+  // The context menu opens the same confirm as the inline row rather than
+  // deleting on a single click, so a right-click can never destroy turns unconfirmed.
+  const requestDelete = useMemo(
+    () => (canMutate ? () => setConfirmingDelete(true) : undefined),
+    [canMutate],
+  );
   const fork = useMemo<RowAction | undefined>(
     () => canMutate ? { onRun: handleFork } : undefined,
     [canMutate, handleFork],
@@ -386,7 +396,7 @@ const MessageRow = memo(function MessageRow({
     regenerate: isAssistant ? regenerate : undefined,
     edit: isAssistant ? undefined : edit,
     fork,
-    onDelete: deleteAction,
+    onDelete: requestDelete,
   });
   const actionsReady = !message.isStreaming && (isAssistant ? getPlainContent(message).trim().length > 0 : true);
   const rowContextItems = actionsReady ? contextActionItems : [];
@@ -440,6 +450,8 @@ const MessageRow = memo(function MessageRow({
                 regenerate={regenerate}
                 fork={fork}
                 onDelete={deleteAction}
+                confirmingDelete={confirmingDelete}
+                onConfirmingDeleteChange={setConfirmingDelete}
               />
             )}
           </>
@@ -500,6 +512,8 @@ const MessageRow = memo(function MessageRow({
                 edit={edit}
                 fork={fork}
                 onDelete={deleteAction}
+                confirmingDelete={confirmingDelete}
+                onConfirmingDeleteChange={setConfirmingDelete}
               />
             )}
           </div>

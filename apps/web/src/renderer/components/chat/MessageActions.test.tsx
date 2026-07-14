@@ -287,6 +287,39 @@ describe('MessageActions', () => {
     expect(button('Delete this message and all following messages')).toBeTruthy();
   });
 
+  it('supports a controlled pending-delete state so another surface can open the same confirm', () => {
+    const onDelete = vi.fn();
+    const onConfirmingDeleteChange = vi.fn();
+    const { rerender } = render(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        onDelete={onDelete}
+        confirmingDelete={false}
+        onConfirmingDeleteChange={onConfirmingDeleteChange}
+      />,
+    );
+    expect(queryButton('Confirm delete from here')).toBeNull();
+
+    rerender(
+      <MessageActions
+        message={assistantMsg()}
+        isBusy={false}
+        onDelete={onDelete}
+        confirmingDelete
+        onConfirmingDeleteChange={onConfirmingDeleteChange}
+      />,
+    );
+    expect(screen.getByText('Remove this and all later turns?')).toBeTruthy();
+    expect(onDelete).not.toHaveBeenCalled();
+    const row = button('Confirm delete from here').closest('div') as HTMLElement;
+    expect(row.className.split(/\s+/)).toContain('opacity-100');
+
+    fireEvent.click(button('Confirm delete from here'));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onConfirmingDeleteChange).toHaveBeenLastCalledWith(false);
+  });
+
   it('holds mutating actions while a turn is streaming but still allows copy', () => {
     render(
       <MessageActions

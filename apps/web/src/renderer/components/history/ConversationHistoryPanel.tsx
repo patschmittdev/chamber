@@ -447,7 +447,11 @@ export function ConversationHistoryPanel({ autoCollapsed = false }: { autoCollap
     const contextActions: RowActionItem[] = [pinItem, ...secondaryActions];
 
     return (
-      <RowContextMenu key={conversation.sessionId} items={contextActions}>
+      <RowContextMenu
+        key={conversation.sessionId}
+        items={contextActions}
+        disabled={renamingId === conversation.sessionId}
+      >
         <div
           className={cn(
             'group flex items-center gap-2 rounded-lg border-l-2 px-2 py-2 transition-colors',
