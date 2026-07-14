@@ -157,6 +157,25 @@ describe('ExtensionsView', () => {
     expect(screen.getByText('Unavailable')).toBeTruthy();
   });
 
+  it('preserves safe declarations and compatibility for curated directory details', async () => {
+    vi.mocked(api.capabilities.list).mockResolvedValue({
+      items: [capability({
+        ref: { kind: 'cli-tool', id: 'catalog:release-helper', scope: { kind: 'global' } },
+        displayName: 'Release Helper',
+        provenance: { kind: 'marketplace', label: 'Enrolled catalog' },
+        lifecycle: { installation: 'available', activation: 'disabled', availability: 'available' },
+        compatibility: { status: 'incompatible' },
+        declaredCapabilities: [{ id: 'release-notes', label: 'Release notes' }],
+      })],
+      sources: [],
+    });
+    renderView(api);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View details for Release Helper' }));
+    expect(screen.getByText('release-notes')).toBeTruthy();
+    expect(screen.getByText('Incompatible')).toBeTruthy();
+  });
+
   it('shows a loading state while the inventory is pending', () => {
     vi.mocked(api.capabilities.list).mockReturnValue(new Promise(() => {}));
     renderView(api);

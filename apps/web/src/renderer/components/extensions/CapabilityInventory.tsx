@@ -308,8 +308,9 @@ function normalizeItem(value: unknown): CapabilityInventoryItem | null {
   const provenance = normalizeProvenance(record.provenance);
   const lifecycle = normalizeLifecycle(record.lifecycle);
   const health = normalizeHealth(record.health);
+  const compatibility = normalizeCompatibility(record.compatibility);
   const displayName = boundedString(record.displayName);
-  if (!ref || !provenance || !lifecycle || !health || !displayName) return null;
+  if (!ref || !provenance || !lifecycle || !health || !compatibility || !displayName) return null;
   const description = optionalBoundedString(record.description);
   const version = optionalBoundedString(record.version);
   return {
@@ -325,8 +326,13 @@ function normalizeItem(value: unknown): CapabilityInventoryItem | null {
         return normalized ? [normalized] : [];
       })
       : [],
-    compatibility: { status: 'unknown' },
-    declaredCapabilities: [],
+    compatibility,
+    declaredCapabilities: Array.isArray(record.declaredCapabilities)
+      ? record.declaredCapabilities.flatMap((declaration) => {
+        const normalized = normalizeDeclaration(declaration);
+        return normalized ? [normalized] : [];
+      })
+      : [],
     health,
   };
 }
@@ -367,6 +373,20 @@ function normalizeHealth(value: unknown): CapabilityHealth | null {
   const record = recordValue(value);
   const status = record ? enumValue(record.status, ['healthy', 'degraded', 'unknown', 'error'] as const) : null;
   return status ? { status } : null;
+}
+
+function normalizeCompatibility(value: unknown): CapabilityInventoryItem['compatibility'] | null {
+  const record = recordValue(value);
+  const status = record ? enumValue(record.status, ['compatible', 'incompatible', 'unknown'] as const) : null;
+  const code = record ? optionalBoundedString(record.code) : undefined;
+  return status ? { status, ...(code ? { code } : {}) } : null;
+}
+
+function normalizeDeclaration(value: unknown): CapabilityInventoryItem['declaredCapabilities'][number] | null {
+  const record = recordValue(value);
+  const id = record ? boundedString(record.id) : null;
+  const label = record ? optionalBoundedString(record.label) : undefined;
+  return id ? { id, ...(label ? { label } : {}) } : null;
 }
 
 function normalizeRequirement(value: unknown): CapabilityRequirement | null {

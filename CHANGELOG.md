@@ -74,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Expanded command palette and keyboard coverage** - Registered the shipped-but-unlisted features as palette commands (pin/archive/rename/export, view working memory, set/clear per-conversation system prompt, regenerate, toggle theme, open Extensions, open A2A relay), bound the common ones with conflict-checked keybindings (Mod+Shift+O new conversation, Mod+Shift+M working memory, Mod+Shift+L toggle theme), surfaced every command (bound and unbound) in the Keyboard shortcuts overlay, and moved New skill and New prompt into a dedicated Create group (shell-F3, rail-H4, shell-F6, ext-E10/shell-F8).
 - **Add a renderer-safe capability inventory contract** — Provides a normalized read-only lifecycle projection for skills, MCP connectors, CLI tools, prompts, and Lens views without exposing configuration, paths, credentials, raw errors, or generic capability actions.
 - **Add installed Extensions workspace** — Organize renderer-safe capability inventory by skills, connectors, tools, prompts, and Lens views with source-specific management actions.
+- **Add curated extension discovery** — Adds a safe, searchable directory with bounded details and an inline install preflight that routes tool changes to the existing source-specific management flow.
 
 ### Refactor
 
