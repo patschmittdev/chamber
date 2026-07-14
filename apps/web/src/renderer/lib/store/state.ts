@@ -16,6 +16,29 @@ export interface AgentProfileSummary {
   accentColor?: string | null;
 }
 
+/**
+ * User-facing failure state for a mind's most recent turn. Set when a turn ends
+ * in an error/timeout or completes with no assistant content, and cleared when a
+ * new turn starts or a turn completes with content. Drives the inline chat error
+ * banner + Retry surface (single source of truth in the reducer).
+ */
+export interface ChatError {
+  message: string;
+  failedMessageId: string;
+}
+
+/**
+ * A single queued toast for the app-wide notification host. Feature-agnostic on
+ * purpose: any surface can enqueue one through useToast, and the Toaster renders
+ * the queue as stacked ui/Alert banners.
+ */
+export interface ToastNotification {
+  id: string;
+  title?: string;
+  message: string;
+  variant: 'default' | 'destructive';
+}
+
 // Per-mind conversation view state machine:
 // idle -> hydrating -> ready. Streaming and model switching are orthogonal
 // flags scoped to the same mind/session so history selection and chat content
@@ -36,6 +59,12 @@ export interface AppState {
   runtimePhase: 'ready' | 'switching-account';
   switchingAccountLogin: string | null;
   messagesByMind: Record<string, ChatMessage[]>;
+  /**
+   * Per-mind failure state for the most recent turn. Absent when the mind's
+   * last turn succeeded or is in flight. Rendered as the inline chat error
+   * banner for the active mind.
+   */
+  errorByMind: Record<string, ChatError>;
   /**
    * Authoritative retained edit/regenerate variant groups per mind, mirrored
    * from the service store after each turn/resume/switch. Drives the version
@@ -97,6 +126,12 @@ export interface AppState {
   chatroomMetrics: { elapsedMs: number; totalTasks: number; completedTasks: number; failedTasks: number; agentsUsed: number; orchestrationMode: string } | null;
   /** Mind IDs the user has disabled in the chatroom; excluded from broadcasts. */
   chatroomDisabledMindIds: string[];
+  /**
+   * App-wide toast queue. Decoupled from any feature: the Toaster host mounted
+   * once in AppShell renders these as stacked ui/Alert banners with auto and
+   * manual dismiss.
+   */
+  notifications: ToastNotification[];
 }
 
 export type AppAction =
@@ -151,7 +186,9 @@ export type AppAction =
   | { type: 'SET_HANDOFF_CONFIG'; payload: HandoffConfig | null }
   | { type: 'SET_MAGENTIC_CONFIG'; payload: MagenticConfig | null }
   | { type: 'CHATROOM_ACTIVE_SPEAKER'; payload: { mindId: string; mindName: string; phase: 'speaking' | 'moderating' | 'synthesizing' } | null }
-  | { type: 'SET_CHATROOM_DISABLED_MIND_IDS'; payload: string[] };
+  | { type: 'SET_CHATROOM_DISABLED_MIND_IDS'; payload: string[] }
+  | { type: 'ENQUEUE_NOTIFICATION'; payload: ToastNotification }
+  | { type: 'DISMISS_NOTIFICATION'; payload: { id: string } };
 
 export const initialState: AppState = {
   minds: [],
@@ -160,6 +197,7 @@ export const initialState: AppState = {
   runtimePhase: 'ready',
   switchingAccountLogin: null,
   messagesByMind: {},
+  errorByMind: {},
   variantGroupsByMind: {},
   variantSelectionByMind: {},
   conversationHistoryByMind: {},
@@ -190,4 +228,5 @@ export const initialState: AppState = {
   chatroomTaskLedger: [],
   chatroomMetrics: null,
   chatroomDisabledMindIds: [],
+  notifications: [],
 };

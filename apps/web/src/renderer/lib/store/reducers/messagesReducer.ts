@@ -1,6 +1,6 @@
 import type { ChatMessage, ContentBlock } from '@chamber/shared/types';
 import type { AppState, AppAction } from '../state';
-import { conversationViewFor, handleChatEvent, isMindChatStreaming, reconcileMessageEventIds, setConversationView, withoutKey } from './helpers';
+import { conversationViewFor, deriveChatError, handleChatEvent, isMindChatStreaming, reconcileMessageEventIds, setConversationView, withoutKey } from './helpers';
 
 type Handler<T extends AppAction['type']> = (
   state: AppState,
@@ -65,6 +65,9 @@ function addAssistantMessage(state: AppState, action: Extract<AppAction, { type:
   return {
     isStreaming: true,
     streamingByMind: { ...state.streamingByMind, [activeMindId]: true },
+    // A fresh turn supersedes the previous failure, so clear the inline error
+    // for this mind at turn start (single clear point for the send/regenerate paths).
+    errorByMind: withoutKey(state.errorByMind, activeMindId),
     conversationViewByMind: setConversationView(state, activeMindId, {
       status: 'ready',
       sessionId: state.activeConversationByMind[activeMindId] ?? conversationViewFor(state, activeMindId).sessionId,
@@ -98,8 +101,17 @@ function chatEvent(state: AppState, action: Extract<AppAction, { type: 'CHAT_EVE
   const activeMindIsStreaming = state.activeMindId
     ? isMindChatStreaming(state, state.activeMindId, newStreamingByMind, newConversationViewByMind)
     : false;
+  // Single source of truth for the inline error: set it on error/timeout or an
+  // empty completion; a completion that carried content clears any prior error.
+  const chatError = deriveChatError(messageId, event, newMessages);
+  const errorByMind = chatError
+    ? { ...state.errorByMind, [mindId]: chatError }
+    : event.type === 'done'
+      ? withoutKey(state.errorByMind, mindId)
+      : state.errorByMind;
   return {
     messagesByMind: { ...state.messagesByMind, [mindId]: newMessages },
+    errorByMind,
     isStreaming: isDone ? activeMindIsStreaming : state.isStreaming,
     streamingByMind: newStreamingByMind,
     conversationViewByMind: newConversationViewByMind,
@@ -123,6 +135,7 @@ function clearMessages(state: AppState): Partial<AppState> {
   if (!state.activeMindId) return state;
   return {
     messagesByMind: { ...state.messagesByMind, [state.activeMindId]: [] },
+    errorByMind: withoutKey(state.errorByMind, state.activeMindId),
     variantGroupsByMind: withoutKey(state.variantGroupsByMind, state.activeMindId),
     variantSelectionByMind: withoutKey(state.variantSelectionByMind, state.activeMindId),
   };
@@ -143,6 +156,9 @@ function newConversation(state: AppState, action: Extract<AppAction, { type: 'NE
     messagesByMind: conversationMindId
       ? { ...state.messagesByMind, [conversationMindId]: [] }
       : state.messagesByMind,
+    errorByMind: conversationMindId
+      ? withoutKey(state.errorByMind, conversationMindId)
+      : state.errorByMind,
     variantGroupsByMind: conversationMindId
       ? withoutKey(state.variantGroupsByMind, conversationMindId)
       : state.variantGroupsByMind,

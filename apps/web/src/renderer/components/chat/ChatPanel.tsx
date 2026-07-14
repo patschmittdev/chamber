@@ -3,6 +3,7 @@ import { useChatStreaming } from '../../hooks/useChatStreaming';
 import { useDelayedFlag } from '../../hooks/useDelayedFlag';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
+import { ChatErrorNotice } from './ChatErrorNotice';
 import { ChatSystemPromptControl } from './ChatSystemPromptControl';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AgentWelcome } from './AgentWelcome';
@@ -13,8 +14,9 @@ import { cn } from '../../lib/utils';
 const log = Logger.create('ChatPanel');
 
 export function ChatPanel() {
-  const { messagesByMind, activeMindId, minds, availableModels, selectedModel, conversationViewByMind, conversationHistoryByMind, composeDraftByMind } = useAppState();
+  const { messagesByMind, activeMindId, minds, availableModels, selectedModel, conversationViewByMind, conversationHistoryByMind, composeDraftByMind, errorByMind } = useAppState();
   const messages = activeMindId ? (messagesByMind[activeMindId] ?? []) : [];
+  const activeError = activeMindId ? errorByMind[activeMindId] : undefined;
   const conversationView = activeMindId ? conversationViewByMind[activeMindId] : undefined;
   const isConversationHydrating = conversationView?.status === 'hydrating';
   // The conversation hasn't settled until its saved-history list has loaded
@@ -36,7 +38,7 @@ export function ChatPanel() {
   const isModelSwitching = Boolean(conversationView?.modelSwitching);
   const connected = minds.length > 0;
   const dispatch = useAppDispatch();
-  const { sendMessage, stopStreaming, isStreaming, isBusy } = useChatStreaming();
+  const { sendMessage, stopStreaming, regenerate, isStreaming, isBusy } = useChatStreaming();
   // Per-mind unsent compose draft (#221). Reading from the store keeps the
   // textarea in sync when the active mind changes; writing back on every
   // edit preserves drafts for future visits to the same mind.
@@ -95,6 +97,14 @@ export function ChatPanel() {
           ) : (
             <MessageList />
           )}
+
+          {activeError ? (
+            <ChatErrorNotice
+              message={activeError.message}
+              onRetry={() => { void regenerate(); }}
+              retryDisabled={isBusy}
+            />
+          ) : null}
 
           <ChatInput
             onSend={sendMessage}
