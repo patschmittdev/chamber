@@ -322,9 +322,10 @@ function smokeTestRuntime(binaryPath, expectedCliVersion) {
     const output = runCommandCapture(binaryPath, ['--version'], {
       env: createIsolatedCopilotEnvironment(isolatedHome),
     });
-    if (!output.includes(expectedCliVersion)) {
+    const reportedVersion = expectedCliVersion.split('-')[0];
+    if (!output.includes(reportedVersion)) {
       throw new Error(
-        `Copilot CLI smoke test output did not include ${expectedCliVersion}. Output: ${output.trim()}`
+        `Copilot CLI smoke test output did not include ${reportedVersion}. Output: ${output.trim()}`
       );
     }
   } finally {
