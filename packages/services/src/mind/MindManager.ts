@@ -58,6 +58,12 @@ interface CreateMindSessionRequest {
   model?: string;
   modelProvider?: ModelProvider;
   sessionId?: string;
+  /**
+   * When true, the session is created with no MCP servers, regardless of trust.
+   * Set for the no-tools Canvas-action path so untrusted canvas HTML cannot
+   * reach MCP-provided tools. Tool-enabled isolated prompts leave this false.
+   */
+  denyMcpServers?: boolean;
 }
 
 interface ConversationForkSeedStorePort {
@@ -1824,6 +1830,7 @@ export class MindManager extends EventEmitter {
       mindPath: context.mindPath,
       systemMessage: context.identity.systemMessage,
       tools: [], // Intentionally empty — Canvas actions must not have tool access.
+      denyMcpServers: true, // Canvas actions must not reach MCP-provided tools either.
       model: context.selectedModel,
       modelProvider: context.selectedModelProvider,
     });
@@ -1952,12 +1959,20 @@ export class MindManager extends EventEmitter {
       model,
       modelProvider,
       sessionId,
+      denyMcpServers = false,
     } = req;
     this.assertCreateSessionPolicy(kind, sessionId);
     const rawMcpServers = loadMcpServersFromMindPath(mindPath);
-    const mcpServers = this.trustService
-      ? this.trustService.getApprovedMcpServers(mindId, mindPath, rawMcpServers)
-      : rawMcpServers;
+    // No-tools Canvas-action sessions (denyMcpServers) must not reach MCP
+    // servers either, otherwise a trusted mind's approved servers would leak
+    // tool access into the untrusted, tool-free canvas-action prompt and break
+    // the "cannot invoke side-effect tools" guarantee. Tool-enabled isolated
+    // prompts (e.g. lens refreshes) keep their trust-approved servers.
+    const mcpServers = denyMcpServers
+      ? {}
+      : this.trustService
+        ? this.trustService.getApprovedMcpServers(mindId, mindPath, rawMcpServers)
+        : rawMcpServers;
     const skillDirectories = this.getMindSkillDirectories(mindPath);
     const chamberMindConfig = loadChamberMindConfig(mindPath);
     const provider = this.resolveProviderForSelection(modelProvider);

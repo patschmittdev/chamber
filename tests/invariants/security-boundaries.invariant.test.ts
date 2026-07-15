@@ -162,6 +162,30 @@ describe('security boundary invariants', () => {
     expect(providerRegistration).toBeLessThan(restoreCall);
   });
 
+  it('wires the mind trust service into MindManager and CronService', () => {
+    // Covers the desktop composition root (main.ts), where the shipped app
+    // wires the per-mind execution trust gate. Other entrypoints opt in separately.
+    const source = fs.readFileSync(path.join(repoRoot, 'apps', 'desktop', 'src', 'main.ts'), 'utf8');
+
+    const trustCtor = source.indexOf('mindTrustService = new MindTrustService(');
+    const mindManagerCtor = source.indexOf('new MindManager(');
+    const cronServiceCtor = source.indexOf('new CronService({');
+
+    expect(trustCtor).toBeGreaterThan(-1);
+    expect(mindManagerCtor).toBeGreaterThan(-1);
+    expect(cronServiceCtor).toBeGreaterThan(-1);
+
+    // The trust service must be injected into MindManager: its identifier appears
+    // in the constructor argument list, ahead of the later CronService call.
+    const mindManagerTrustArg = source.indexOf('mindTrustService,', mindManagerCtor);
+    expect(mindManagerTrustArg).toBeGreaterThan(mindManagerCtor);
+    expect(mindManagerTrustArg).toBeLessThan(cronServiceCtor);
+
+    // The trust service must be injected into CronService as trustService.
+    const cronTrustArg = source.indexOf('trustService: mindTrustService', cronServiceCtor);
+    expect(cronTrustArg).toBeGreaterThan(cronServiceCtor);
+  });
+
   it('script runner redacts bridge tokens from captured output and errors', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'packages', 'services', 'src', 'cron', 'ScriptRunner.ts'), 'utf8');
 
