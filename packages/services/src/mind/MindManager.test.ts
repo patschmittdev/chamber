@@ -2619,6 +2619,53 @@ describe('MindManager', () => {
       expect(config).toBeDefined();
       expect(Object.prototype.hasOwnProperty.call(config, 'mcpServers')).toBe(false);
     });
+
+    it('omits mcpServers from Canvas-action no-tools isolated sessions even when .mcp.json is present', async () => {
+      const mcpJson = JSON.stringify({
+        mcpServers: { memory: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory'] } },
+      });
+      vi.mocked(fs.existsSync).mockImplementation(() => true);
+      vi.mocked(fs.readFileSync).mockImplementation((candidate) =>
+        String(candidate).endsWith('.mcp.json') ? mcpJson : '# TestAgent\nSome content',
+      );
+      const mind = await manager.loadMind('/tmp/agents/q');
+
+      const isolatedSession = createSessionStub();
+      isolatedSession.sendAndWait.mockResolvedValue({
+        type: 'assistant.message',
+        data: { content: 'ok', messageId: 'assistant-1' },
+      });
+      mockCreateSession.mockReturnValueOnce(isolatedSession);
+
+      await manager.runIsolatedPromptNoTools(mind.mindId, 'render the canvas');
+
+      const isolatedConfig = mockCreateSession.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(isolatedConfig.tools).toEqual([]);
+      expect(Object.prototype.hasOwnProperty.call(isolatedConfig, 'mcpServers')).toBe(false);
+    });
+
+    it('keeps mcpServers for tool-enabled isolated prompts', async () => {
+      const mcpJson = JSON.stringify({
+        mcpServers: { memory: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory'] } },
+      });
+      vi.mocked(fs.existsSync).mockImplementation(() => true);
+      vi.mocked(fs.readFileSync).mockImplementation((candidate) =>
+        String(candidate).endsWith('.mcp.json') ? mcpJson : '# TestAgent\nSome content',
+      );
+      const mind = await manager.loadMind('/tmp/agents/q');
+
+      const isolatedSession = createSessionStub();
+      isolatedSession.sendAndWait.mockResolvedValue({
+        type: 'assistant.message',
+        data: { content: 'ok', messageId: 'assistant-1' },
+      });
+      mockCreateSession.mockReturnValueOnce(isolatedSession);
+
+      await manager.runIsolatedPrompt(mind.mindId, 'summarize the current state');
+
+      const isolatedConfig = mockCreateSession.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(Object.prototype.hasOwnProperty.call(isolatedConfig, 'mcpServers')).toBe(true);
+    });
   });
 
   describe('managed skill discovery', () => {

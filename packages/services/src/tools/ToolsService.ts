@@ -12,8 +12,6 @@ import { getErrorMessage } from '@chamber/shared/getErrorMessage';
 import { Logger } from '../logger';
 import { MarketplaceToolCatalog } from './MarketplaceToolCatalog';
 import { ToolInstaller } from './ToolInstaller';
-import { MarketplaceApprovalStore, computeArtifactDescriptorHash } from './MarketplaceApprovalStore';
-import type { MarketplaceArtifactDescriptor } from './toolTypes';
 
 const log = Logger.create('ToolsService');
 
@@ -57,7 +55,6 @@ export class ToolsService {
     private readonly catalog: MarketplaceToolCatalog,
     private readonly installer: ToolInstaller,
     private readonly configStore: ConfigStore,
-    private readonly approvalStore?: MarketplaceApprovalStore,
   ) {}
 
   async list(): Promise<ToolCatalogEntry[]> {
@@ -283,7 +280,6 @@ export class ToolsService {
 
   private async installEntry(tool: MarketplaceToolEntry): Promise<ToolActionResult> {
     try {
-      this.recordApproval(tool);
       const installed = await this.installer.install(tool);
       const current = this.getInstalled();
       const next = [...current.filter((entry) => entry.id !== installed.id), installed];
@@ -315,7 +311,6 @@ export class ToolsService {
     action: 'install' | 'update',
   ): Promise<ToolOperationResult> {
     try {
-      this.recordApproval(tool);
       const installed = await this.installer.install(tool);
       const current = this.getInstalled();
       this.persist([...current.filter((entry) => entry.id !== installed.id), installed]);
@@ -324,19 +319,6 @@ export class ToolsService {
       log.warn(`Marketplace tool ${action} failed for ${tool.id}.`);
       return { status: 'failed', action };
     }
-  }
-
-  private recordApproval(tool: MarketplaceToolEntry): void {
-    if (!this.approvalStore) return;
-    const descriptor = buildArtifactDescriptor(tool);
-    const hash = computeArtifactDescriptorHash(descriptor);
-    this.approvalStore.approve({
-      sourceId: tool.source.marketplaceId,
-      toolId: tool.id,
-      snapshotIdentity: `${tool.source.marketplaceId}@${tool.source.ref}`,
-      artifactDescriptorHash: hash,
-      approvedAt: new Date().toISOString(),
-    });
   }
 
   private getInstalled(): InstalledTool[] {
@@ -351,26 +333,6 @@ export class ToolsService {
 
 function toolInventoryKey(id: string, marketplaceId: string): string {
   return `${marketplaceId}\u0000${id}`;
-}
-
-/**
- * Builds a canonical {@link MarketplaceArtifactDescriptor} from a catalog entry.
- * All executable-affecting fields are captured so any change invalidates a prior
- * approval hash.
- */
-function buildArtifactDescriptor(tool: MarketplaceToolEntry): MarketplaceArtifactDescriptor {
-  if (tool.install.type === 'npm-global') {
-    return { type: 'npm-global', bin: tool.bin, package: tool.install.package, version: tool.install.version };
-  }
-  return {
-    type: 'github-release-asset',
-    bin: tool.bin,
-    owner: tool.install.owner,
-    repo: tool.install.repo,
-    tag: tool.install.tag,
-    // Encode the full assets array so any per-platform sha256/name/arch change is detected.
-    assetName: JSON.stringify(tool.install.assets),
-  };
 }
 
 function isUpdateAvailable(installed: InstalledTool, candidate: MarketplaceToolEntry): boolean {

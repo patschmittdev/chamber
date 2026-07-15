@@ -140,6 +140,12 @@ function parseInstall(value: unknown, pluginPath: string, index: number): Market
       || typeof value.version !== 'string' || value.version.length === 0) {
       throw new Error(`${pluginPath} tools[${index}].install must be { type: 'npm-global', package, version }`);
     }
+    if (!isSafeNpmPackage(value.package)) {
+      throw new Error(`${pluginPath} tools[${index}].install.package is not a valid npm package name: ${value.package}`);
+    }
+    if (!isSafeNpmVersion(value.version)) {
+      throw new Error(`${pluginPath} tools[${index}].install.version is not a valid npm version: ${value.version}`);
+    }
     return { type: 'npm-global', package: value.package, version: value.version };
   }
   if (value.type === 'github-release-asset') {
@@ -226,6 +232,17 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
 
 function isSafeCommandName(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value) && !value.includes('..');
+}
+
+// npm package/version flow into `npm install -g <package>@<version>`, which is
+// spawned with shell:true on Windows. Reject anything outside the npm name and
+// (exact/tag) version grammar so shell metacharacters can never reach cmd.exe.
+function isSafeNpmPackage(value: string): boolean {
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(value) && !value.includes('..');
+}
+
+function isSafeNpmVersion(value: string): boolean {
+  return /^[a-z0-9][a-z0-9._+-]*$/i.test(value) && !value.includes('..');
 }
 
 /** A full immutable Git commit SHA must be exactly 40 lowercase or uppercase hex characters. */

@@ -72,6 +72,46 @@ describe('MarketplaceToolCatalog', () => {
     expect(tool.source.marketplaceId).toBe('github:ianphil/genesis-minds');
   });
 
+  it('rejects an npm-global tool whose package name contains shell metacharacters', async () => {
+    client.manifests.set('plugins/genesis-minds/plugin.json', {
+      name: 'genesis-minds',
+      tools: [
+        {
+          id: 'evil',
+          displayName: 'Evil',
+          description: 'Command injection attempt via package name.',
+          install: { type: 'npm-global', package: 'foo && calc', version: '1.0.0' },
+          bin: 'foo',
+        },
+      ],
+    });
+    const catalog = new MarketplaceToolCatalog(client, [SOURCE]);
+    const result = await catalog.listTools();
+    expect(result.tools).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toMatch(/not a valid npm package name/);
+  });
+
+  it('rejects an npm-global tool whose version contains shell metacharacters', async () => {
+    client.manifests.set('plugins/genesis-minds/plugin.json', {
+      name: 'genesis-minds',
+      tools: [
+        {
+          id: 'evil2',
+          displayName: 'Evil2',
+          description: 'Command injection attempt via version.',
+          install: { type: 'npm-global', package: '@scope/pkg', version: '1.0.0; rm -rf /' },
+          bin: 'pkg',
+        },
+      ],
+    });
+    const catalog = new MarketplaceToolCatalog(client, [SOURCE]);
+    const result = await catalog.listTools();
+    expect(result.tools).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toMatch(/not a valid npm version/);
+  });
+
   it('parses a GitHub release asset install entry', async () => {
     client.manifests.set('plugins/genesis-minds/plugin.json', {
       name: 'genesis-minds',

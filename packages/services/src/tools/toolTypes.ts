@@ -16,27 +16,4 @@ export interface ToolMarketplaceSource {
   enabled?: boolean;
 }
 
-/**
- * Canonical representation of the executable artifact fields that must be
- * approved before a tool can be installed. Any change to these fields
- * invalidates a prior approval and requires explicit operator re-approval.
- */
-export interface MarketplaceArtifactDescriptor {
-  type: 'npm-global' | 'github-release-asset';
-  bin: string;
-  // npm-global fields
-  package?: string;
-  version?: string;
-  // github-release-asset fields
-  owner?: string;
-  repo?: string;
-  tag?: string;
-  assetName?: string;
-  sha256?: string;
-  platform?: string;
-  arch?: string;
-  archive?: string;
-  binPath?: string;
-}
-
 export type { MarketplaceToolEntry };
