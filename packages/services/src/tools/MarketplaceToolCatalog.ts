@@ -224,20 +224,6 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function optionalStringArray(
-  record: Record<string, unknown>,
-  key: string,
-  pluginPath: string,
-  index: number,
-): string[] | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw new Error(`${pluginPath} tools[${index}].${key} must be a string array`);
-  }
-  return value as string[];
-}
-
 function isSafeCommandName(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value) && !value.includes('..');
 }

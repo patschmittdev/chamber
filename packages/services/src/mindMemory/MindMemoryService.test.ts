@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -108,16 +108,38 @@ describe('MindMemoryService', () => {
 });
 
 describe('assertConfined', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'chamber-confine-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   it('throws when the target escapes the mind root', () => {
-    const root = path.join(os.tmpdir(), 'chamber-confine-root');
-    const escaped = path.join(os.tmpdir(), 'chamber-confine-other', 'memory.md');
+    const escaped = path.join(root, '..', 'chamber-confine-other', 'memory.md');
     expect(() => assertConfined(root, escaped)).toThrow(/escape/i);
   });
 
   it('does not throw for a path confined to the mind root', () => {
-    const root = path.join(os.tmpdir(), 'chamber-confine-root');
     const confined = path.join(root, '.working-memory', 'memory.md');
     expect(() => assertConfined(root, confined)).not.toThrow();
+  });
+
+  it.skipIf(!CAN_SYMLINK)('throws when a path component is a symlink', () => {
+    const memoryDir = path.join(root, '.working-memory');
+    fs.mkdirSync(memoryDir);
+    const outside = path.join(root, '..', `chamber-confine-target-${Date.now()}.md`);
+    const link = path.join(memoryDir, 'memory.md');
+    try {
+      fs.writeFileSync(outside, 'SECRET');
+      fs.symlinkSync(outside, link, 'file');
+      expect(() => assertConfined(root, link)).toThrow(/symlink/i);
+    } finally {
+      fs.rmSync(outside, { force: true });
+    }
   });
 });
 

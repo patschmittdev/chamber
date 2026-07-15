@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { assertContained, ContainmentError } from '../fsContainment';
 import type {
   MindWorkingMemory,
   MindWorkingMemoryFile,
@@ -112,24 +113,25 @@ function readBounded(filePath: string, size: number, maxBytes: number): { conten
 }
 
 /**
- * Ensures `targetPath` stays within `mindRoot` and that no segment between the
- * two is a symlink, mirroring the profile-editor path guard. Throws otherwise.
- * Exported so the confinement logic can be unit-tested without symlink
+ * Ensures `targetPath` (absolute) stays within `mindRoot`, rejecting traversal
+ * and any symlink between the two. Delegates the containment decision to the
+ * shared `assertContained` primitive (realpath-canonicalized root plus a
+ * per-component symlink walk) and re-frames its error with a working-memory
+ * message. Exported so the confinement logic can be unit-tested without symlink
  * privileges on the host platform.
  */
 export function assertConfined(mindRoot: string, targetPath: string): void {
-  const root = path.resolve(mindRoot);
-  const relative = path.relative(root, targetPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('Working-memory path escapes the mind directory.');
-  }
-
-  let current = root;
-  for (const segment of relative.split(path.sep)) {
-    current = path.join(current, segment);
-    if (!fs.existsSync(current)) break;
-    if (fs.lstatSync(current).isSymbolicLink()) {
-      throw new Error('Working-memory files cannot be symlinks.');
+  try {
+    assertContained(mindRoot, path.relative(path.resolve(mindRoot), targetPath));
+  } catch (error) {
+    if (error instanceof ContainmentError) {
+      throw new Error(
+        /symlink|junction/i.test(error.message)
+          ? 'Working-memory files cannot be symlinks.'
+          : 'Working-memory path escapes the mind directory.',
+        { cause: error },
+      );
     }
+    throw error;
   }
 }

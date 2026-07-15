@@ -259,7 +259,7 @@ describe('CanvasService', () => {
       if (!canCreate) return;
 
       await expect(service.showLensCanvas('mind-1', mindPath, 'view-a', linkPath))
-        .rejects.toThrow('symlink');
+        .rejects.toThrow('must be inside');
     });
 
     it('rejects a Lens canvas source where an ancestor directory is a symlink', async () => {
