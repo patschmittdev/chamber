@@ -124,10 +124,11 @@ export function applyResolvedTheme(resolved: ResolvedTheme, options: ApplyThemeO
   root.dataset.theme = resolved;
   // Repaint the native Windows titleBarOverlay so the OS chrome stays legible
   // against the new app background.
-  try {
-    void window.desktop?.setTheme?.(resolved);
-  } catch {
-    /* desktop bridge may not be present in browser smoke tests */
+  const setTheme = window.desktop?.setTheme;
+  if (setTheme) {
+    void setTheme(resolved).catch(() => {
+      /* desktop bridge call can fail in browser-targeted tests */
+    });
   }
 }
 
