@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { MindContext } from '@chamber/shared/types';
 import { AppStateProvider } from '../../lib/store';
@@ -15,9 +15,10 @@ class MockResizeObserver {
   unobserve(): void {}
   disconnect(): void {}
 }
-(globalThis as unknown as { ResizeObserver: typeof MockResizeObserver }).ResizeObserver =
-  MockResizeObserver;
+const originalResizeObserver = (globalThis as unknown as { ResizeObserver?: typeof MockResizeObserver }).ResizeObserver;
+(globalThis as unknown as { ResizeObserver: typeof MockResizeObserver }).ResizeObserver = MockResizeObserver;
 // jsdom does not implement Element.scrollIntoView; cmdk calls it on focus.
+const originalScrollIntoView = typeof Element !== 'undefined' ? Element.prototype.scrollIntoView : undefined;
 if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {};
 }
@@ -65,6 +66,13 @@ describe('CommandPalette', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    (globalThis as unknown as { ResizeObserver?: typeof MockResizeObserver }).ResizeObserver = originalResizeObserver;
+    if (typeof Element !== 'undefined') {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   it('is closed until the Ctrl+K shortcut is pressed', () => {

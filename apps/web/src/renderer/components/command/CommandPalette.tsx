@@ -222,6 +222,9 @@ export function CommandPalette() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.isComposing) {
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === 'k' || event.key === 'K')) {
         event.preventDefault();
         setOpen((previous) => !previous);
